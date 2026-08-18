@@ -1019,6 +1019,24 @@ async function shareCard(c, env, ctx, origin) {
   if (hit) return hit;
 
   let bytes = await getShareCard(env, c.slug);
+
+  // A scored corner has no composited card and compositing 7,353 of them
+  // would be 7,353 Street View fetches and 7,353 KV writes, which is the
+  // shape the shards exist to avoid. It falls back to the card for its grade:
+  // a static asset, no generation, no KV write, and the grade is the claim the
+  // page makes. The corner's name and exact index ride in og:title and
+  // og:description, which every platform renders beside the image.
+  if (!bytes && isScored(c) && c.sweep?.grade) {
+    const card = await asset(env, origin, `/og/grade-${c.sweep.grade}.jpg`).catch(() => null);
+    if (card?.ok) {
+      const res = new Response(card.body, {
+        headers: { "content-type": "image/jpeg", "cache-control": "public, max-age=86400" },
+      });
+      ctx.waitUntil(caches.default.put(key, res.clone()));
+      return res;
+    }
+  }
+
   // No composited card for this corner yet. The plain frame is a worse card but
   // an honest one, and it means every corner has a preview.
   if (!bytes) bytes = await getImage(env, c.slug, "today");

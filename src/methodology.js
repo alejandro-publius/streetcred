@@ -117,6 +117,44 @@ that drifts with nothing changed on the ground is a grade nobody can cite, and p
 public comment. If a recalibration ever becomes genuinely unavoidable, it ships with a version bump, an
 entry on every affected corner's grade history, and a plain explanation here.</p>
 
+<h2>How the whole city is graded</h2>
+<p><b>Every intersection in San Francisco has a grade, and only some have an audit.</b> Those are
+different claims and the site keeps them apart everywhere it makes them.</p>
+<p><b>The sweep.</b> <code>tools/sweep.mjs</code> pulls the two datasets in bulk once, buckets every row
+into a 100 meter grid, and counts within 80 meters of each of the 8,254 crossings locally. That is
+about a dozen paged requests instead of the roughly 25,000 API calls one query per corner would cost,
+and the local counter was proved to reproduce production's own <code>within_circle</code> counts
+exactly, corner by corner, before a single number was written down.
+<code>tools/sweep_districts.mjs</code> then places each corner in a Supervisor district by the majority
+of collision rows within 150 meters, using the same vote the live resolver uses.</p>
+<p><b>The shards.</b> <code>tools/build_city_shards.mjs</code> packs the 7,353 corners with recorded
+harm into 71 KV bundles keyed by the first character of the slug, largest bundle 175 KB. One KV record
+per corner would be 7,353 writes to publish the city and 7,353 more to correct it; a corner page is
+instead one read of one bundle. The builder refuses to run if the committed census artifact and the
+frozen array in <code>src/distribution.js</code> have drifted apart, because a grade measured against a
+different yardstick than the one the code uses is worse than no grade.</p>
+<p><b>The three tiers.</b></p>
+<ul>
+  <li><b>AUDITED</b>: every evidence lane has been checked here. Records, press, resident accounts and
+  the visual audit have all run, and the corner has its two generated imagery states.</li>
+  <li><b>ENRICHED</b>: records and index checked and stored, no visual audit yet. These are the corners
+  the daily cron works through next.</li>
+  <li><b>SCORED</b>: graded against the citywide census, no lane checked beyond the official record.</li>
+</ul>
+<p><b>A SCORED grade uses the identical formula and census as an AUDITED grade; the difference is how
+many evidence lanes have been checked, never the math.</b> A scored corner's Cred Check therefore lights
+official records and marks the other three lanes not yet checked, rather than counting them as failures:
+absence of a check is not a failed check.</p>
+<p><b>The freshness rule.</b> A SCORED corner's numbers are as of the sweep date, which is printed under
+its tiles, in its verdict sentence and on its source tag. ENRICHED and AUDITED corners show numbers
+pulled live at the moment you load them. Any corner promoted by the morning cron or resolved on demand
+switches to live numbers from that moment on. The provenance links under a swept number re-run the query
+live against data.sfgov.org today, which is why the caption states the as-of date in advance: a reader
+who clicks through and finds a slightly different count should already know why.</p>
+<p>One more footprint note, because it is easy to trip over: a swept corner's tiles count within
+<b>80 meters over twelve months of 311</b>, matching the grade's own footprint, where a live corner's
+tiles count within 150 meters over three years. Each tile says which it is.</p>
+
 <h2>The exposure caveat, in full</h2>
 <p>The index ranks <b>reported harm, not risk per crossing</b>. A corner ten thousand people cross daily
 and a corner a hundred people cross daily are ranked on their raw counts. There is no reliable public
