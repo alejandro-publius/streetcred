@@ -26,13 +26,21 @@ export function kvEnv(root, extra = {}) {
       out = execFileSync(
         "npx",
         ["wrangler", "kv", "key", "get", key, "--namespace-id", NS, "--remote"],
-        { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] },
+        { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] },
       );
-    } catch {
-      // A missing key and a failed CLI call both exit non-zero and are
-      // indistinguishable here, so neither is cached. Caching would turn one
-      // transient failure into a value this process believes for its lifetime,
-      // which is how a verification bar silently switches itself off.
+    } catch (e) {
+      // A missing key and a failed call both exit non-zero, and telling them
+      // apart matters: an absent key is an answer, a failed call is not. Read
+      // as "absent", a failed budget read says zero spent, which is how a tool
+      // talks itself past a spending ceiling. Cloudflare returns 404 for the
+      // first and something else for the second, including the transient
+      // authentication errors this CLI produces under load.
+      const stderr = String(e.stderr || "");
+      if (!/404: Not Found/.test(stderr)) {
+        throw new Error(`kv read failed for ${key}: ${stderr.replace(/\s+/g, " ").slice(0, 160)}`);
+      }
+      // Not cached either way: a transient failure must not become a value
+      // this process believes for its lifetime.
       return null;
     }
     let value = out;

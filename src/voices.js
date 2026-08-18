@@ -311,6 +311,19 @@ export async function rescoreVoices(env, slug, corner) {
     rescoredAt: new Date().toISOString(),
     items,
   });
+  // The ledger has to follow, or it keeps reporting what the first ingest kept
+  // while the page shows what the current filter keeps, and the two disagree
+  // in public. No cost: a rescore reads datasets already paid for.
+  await appendActorCost(env, {
+    slug,
+    name: rec.name,
+    at: new Date().toISOString(),
+    event: "rescored",
+    commissionedAt: rec.commissionedAt,
+    costUsd: 0,
+    candidates: candidates.length,
+    kept: items.length,
+  }).catch(() => {});
   return { ok: true, slug, candidates: candidates.length, kept: items.length, items };
 }
 

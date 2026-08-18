@@ -131,6 +131,8 @@ ${(spend.costs || [])
   ${
     c.event === "commissioned"
       ? `${(c.runs || []).length} run${(c.runs || []).length === 1 ? "" : "s"} commissioned, in flight`
+      : c.event === "rescored"
+      ? `rescored to ${c.kept ?? 0} voice${c.kept === 1 ? "" : "s"} from ${c.candidates ?? 0}, no new spend`
       : `${c.kept ?? 0} voice${c.kept === 1 ? "" : "s"} kept from ${c.candidates ?? 0}`
   }</span>
   <span class="ms">${esc(String(c.at || "").slice(0, 10))} &middot; ${
