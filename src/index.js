@@ -29,6 +29,7 @@ import { handleAgentReport, journalStats, JOURNAL_CAP } from "./agent.js";
 import { WATCHDOG } from "./watchdog.js";
 import { METHODOLOGY } from "./methodology.js";
 import { CHANGES } from "./changes.js";
+import { STATUS } from "./status.js";
 
 // DataSF open datasets, keyless.
 const DS_CRASHES = "ubvf-ztfx";
@@ -1357,6 +1358,19 @@ export default {
         const changes = (await getChanges(env).catch(() => [])).slice(0, 50);
         if (p === "/api/changes") return json({ source: "live", changes });
         return new Response(CHANGES(changes, origin), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+
+      if (p === "/status" || p === "/status/") {
+        const [synthRaw, incidents, changes] = await Promise.all([
+          env.STORE?.get("synth:log").catch(() => null),
+          getTrustIncidents(env).catch(() => []),
+          getChanges(env).catch(() => []),
+        ]);
+        let synth = [];
+        try { synth = synthRaw ? JSON.parse(synthRaw) : []; } catch { synth = []; }
+        return new Response(STATUS(synth, incidents, changes, origin), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }

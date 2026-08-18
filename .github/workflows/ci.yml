@@ -1,0 +1,33 @@
+# Red blocks main. The checks are the ones that have already caught real bugs
+# in this repo, not aspirational ones: the projection test, the corroboration
+# label test, the endpoint shape contract over recorded fixtures, a key-pattern
+# grep over the tree, and a dry-run build so a syntax error cannot reach a
+# deploy.
+name: ci
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: unit and shape tests
+        run: node --test tools/*.test.mjs
+
+      - name: verifier doctored-letter cases
+        run: node tools/verify.test.mjs
+
+      - name: key pattern grep
+        run: |
+          ! grep -rInE "AIza[0-9A-Za-z_-]{30,}|AQ\.[A-Za-z0-9_-]{30,}|apify_api_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}" \
+            --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.github .
+
+      - name: build dry run
+        run: npx wrangler deploy --dry-run --outdir /tmp/build

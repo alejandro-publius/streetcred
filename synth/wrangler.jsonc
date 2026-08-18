@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "streetcred-synth",
+  "main": "index.js",
+  "compatibility_date": "2026-08-01",
+  // The same namespace the site uses, so /status is one KV read away from the
+  // monitor's log. The monitor only ever touches synth:* keys.
+  "kv_namespaces": [{ "binding": "STORE", "id": "6918c07a1e1540f0ac9b6c499c5917b7" }],
+  // workers.dev-to-workers.dev fetches inside one account die at the edge
+  // (instant 404s, error 1104), so the monitor reaches the site through a
+  // service binding, the sanctioned worker-to-worker path. Honest caveat: this
+  // exercises the Worker directly rather than the public edge route, so an
+  // edge-level outage in front of a healthy Worker would not show here.
+  "services": [{ "binding": "SITE", "service": "streetcred" }],
+  "triggers": { "crons": ["7 * * * *"] }
+}

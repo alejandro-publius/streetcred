@@ -237,6 +237,14 @@ wrangler dev
 
 `GET /api/health` pings every dependency and reports them individually.
 
+## Service level
+
+An hourly synthetic monitor (its source is `synth/` in this repo) loads the homepage, a flagship
+corner, and that corner's data lanes, and records every result to a public log. [/status](https://streetcred.thealexschroeder.workers.dev/status)
+counts those records. The target is modest and stated plainly: **99% of synthetic checks passing over
+any 7 days**. This is a civic reference built on free tiers, not a paged service; when it misses, the
+status page says so rather than the number quietly improving.
+
 ## Honest limits
 
 - The hazard overlay is a model reading of a photograph. It marks zones, it does not measure them.
