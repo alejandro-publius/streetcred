@@ -263,6 +263,11 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
    both are deliberate and neither used to say so, which left the letter
    citing two different collision counts in one paragraph. */
 .rad{font-style:normal;font-size:11px;color:var(--dim);opacity:.85;display:inline-block;margin-top:3px}
+.lpop{font-family:Poppins,system-ui,sans-serif;font-size:12.5px;line-height:1.5;color:var(--ink)}
+.lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
+.lpop-s{color:var(--dim);font-size:11.5px}
+.lpop a{color:var(--accent);font-weight:600;text-decoration:none}
+.leafshell{transition:opacity 300ms ease-out;z-index:1}
 
 /* Lane eyebrow: the page is one long column, so each lane gets a small label
    and a hairline to separate it from the one above. */
@@ -542,10 +547,10 @@ ${BASE_CSS}
 
 <section class="lane" id="maplane" hidden>
   <div class="panel lane-corner" id="mappanel">
-    <div class="phs"><h2>Location</h2><span class="tag">Google Maps</span></div>
+    <div class="phs"><h2>Location</h2><span class="tag" id="maptag">Google Maps</span></div>
     <div class="pbody">
       <img id="mapimg" class="mapimg" alt="Roadmap showing the location of ${c.name}, ${c.city}">
-      <p class="mapfoot">${c.name}, District ${c.district}. Map data: Google.</p>
+      <p class="mapfoot">${c.name}, District ${c.district}. <span id="mapprov">Map data: Google.</span></p>
     </div>
   </div>
 </section>
@@ -616,6 +621,7 @@ const CAPS = {
 };
 const X = "?x=${c.slug}";
 const CORNER_SLUG = "${c.slug}";
+const CORNER_GEO = {lat: ${c.lat}, lon: ${c.lon}, name: ${JSON.stringify(c.short || c.name)}};
 let IMG = null, state = "today";
 
 const el = id => document.getElementById(id);
@@ -805,10 +811,51 @@ loadImagery();
 // A failed Static Maps request removes it rather than leaving a broken image.
 (function(){
   const img = el("mapimg");
-  img.addEventListener("load", () => el("maplane").hidden = false);
+  img.addEventListener("load", () => { el("maplane").hidden = false; upgradeMap(); });
   img.addEventListener("error", () => el("maplane").remove());
   img.src = "/map.jpg" + X;
 })();
+
+// Interactive map over the static thumbnail, progressive enhancement: the
+// thumbnail stays until Leaflet's tiles are actually on screen, and any
+// failure leaves it standing. Zoom 16: this map is about one corner, with its
+// audited neighbors, the scored tier, and the census dots for context.
+function upgradeMap(){
+  if(!window.fetch) return;
+  const img = el("mapimg");
+  const wrap = document.createElement("div");
+  wrap.style.position = "relative";
+  img.parentNode.insertBefore(wrap, img);
+  wrap.appendChild(img);
+  wrap.style.height = img.clientHeight ? img.clientHeight + "px" : "300px";
+  img.style.position = "absolute"; img.style.inset = "0";
+  img.style.width = "100%"; img.style.height = "100%"; img.style.objectFit = "cover";
+  const s = document.createElement("script");
+  s.src = "/leafmap.js"; s.defer = true;
+  s.onload = () => {
+    StreetMap.whenNear(wrap, () => {
+      Promise.all([
+        fetch("/data/scoretier.json").then(r => r.ok ? r.json() : {corners:[]}).catch(() => ({corners:[]})),
+        fetch("/api/board").then(r => r.ok ? r.json() : {corners:[]}).catch(() => ({corners:[]})),
+      ]).then(([tier, board]) => {
+        const audited = (board.corners||[]).filter(c => c.slug !== CORNER_SLUG);
+        const auditedSlugs = new Set(audited.map(c => c.slug));
+        const scored = (tier.corners||[]).filter(c => !auditedSlugs.has(c.slug) && c.slug !== CORNER_SLUG);
+        StreetMap.upgrade(wrap, {
+          center: [CORNER_GEO.lat, CORNER_GEO.lon], zoom: 16,
+          audited, scored, heatUrl: "/data/heat.json",
+          focus: CORNER_GEO,
+          onReady: () => {
+            const t = el("maptag"); if(t) t.textContent = "OpenStreetMap";
+            const p = el("mapprov");
+            if(p) p.textContent = "Map data (c) OpenStreetMap contributors (c) CARTO.";
+          }
+        });
+      });
+    });
+  };
+  document.head.appendChild(s);
+}
 
 fetch("/api/stats" + X).then(r => r.json()).then(d => {
   // A null district means no clear majority, which prints as "n/a" rather than

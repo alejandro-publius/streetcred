@@ -100,7 +100,14 @@ function severityLine(c) {
 }
 
 export const HOME = (corners, origin = "", cotd = [], suggestion = null) => {
-  const ranked = [...corners].sort((a, b) => b.index - a.index);
+  // A corner without finite geometry poisons every pin: fitView produces a NaN
+  // center and every overlay lands at left:NaN%. One bad row on the board must
+  // cost that row its pin, not the whole map its anchors. It happened: a board
+  // restore once wrote a corner with no lat, and every pin on the homepage went
+  // dead while the static image kept smiling underneath.
+  const ranked = [...corners]
+    .filter((c) => Number.isFinite(c.lat) && Number.isFinite(c.lon))
+    .sort((a, b) => b.index - a.index);
   // Newest first. The log is append only, so the last entry is this morning's.
   const runs = [...cotd].filter((e) => e && e.slug).reverse();
   const today = runs[0] || null;
@@ -130,7 +137,12 @@ ${FONT_LINK}
 <style>
 ${BASE_CSS}
 .hero-map{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line2);
-  background:var(--card);margin:0 0 8px}
+  background:var(--card);margin:0 0 8px;
+  /* The container owns its height, not the image inside it. When the Leaflet
+     upgrade removes the static image, an auto-height container collapses to
+     zero and takes the mounted map with it, invisibly: the DOM dump shows a
+     working map and the screen shows nothing. */
+  aspect-ratio:640/520}
 .hero-map img{display:block;width:100%;height:auto}
 /* Google anchors a marker's tip at the coordinate and draws the body above it,
    so the tap target is biased upward to sit on the part you can actually see. */
@@ -172,6 +184,11 @@ ${BASE_CSS}
 .cotdg{font-size:13px;font-weight:700;min-width:28px;height:28px;border-radius:8px;display:grid;
   place-items:center;color:#fff;background:var(--dim)}
 .cotdlog{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 26px}
+.lpop{font-family:Poppins,system-ui,sans-serif;font-size:12.5px;line-height:1.5;color:var(--ink)}
+.lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
+.lpop-s{color:var(--dim);font-size:11.5px}
+.lpop a{color:var(--accent);font-weight:600;text-decoration:none}
+.leafshell{transition:opacity 300ms ease-out;z-index:1}
 .cotdi{display:inline-flex;align-items:center;gap:5px;text-decoration:none;color:var(--dim);
   font-size:10.5px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
 .cotdi:hover{color:var(--ink);border-color:var(--line3)}
@@ -248,13 +265,17 @@ ${
     })
     .join("\n  ")}
 </div>
+<p class="mapfoot" id="maplegend" hidden>
+  <span class="key"><i style="background:none;border:2px solid var(--dim);width:7px;height:7px"></i>scored, audit pending</span>
+  <span>Dots show intersections with reported harm; unmarked intersections had none in the record.</span>
+</p>
 <p class="mapfoot">
   <span class="key"><i style="background:var(--green)"></i>A</span>
   <span class="key"><i style="background:rgba(120,140,93,.62)"></i>B</span>
   <span class="key"><i style="background:var(--blue)"></i>C</span>
   <span class="key"><i style="background:rgba(240,126,38,.7)"></i>D</span>
   <span class="key"><i style="background:var(--accent)"></i>F</span>
-  <span>Map data: Google. Danger Index ranks reported harm, not risk per crossing.</span>
+  <span id="mapdata">Map data: Google. Danger Index ranks reported harm, not risk per crossing.</span>
 </p>`
     : ""
 }
@@ -321,6 +342,40 @@ document.querySelectorAll(".eyebrow").forEach(e => e.classList.add("drawn"));
   input.addEventListener("input", () => say(""));
   const nudge = el("nudge");
   if(nudge) nudge.addEventListener("click", () => { input.focus(); input.select(); });
+})();
+
+var VIEW = {lat: ${view.center.lat}, lon: ${view.center.lon}, zoom: ${view.zoom}};
+var AUDITED = ${JSON.stringify(
+    ranked.map((c) => ({ slug: c.slug, name: c.name, lat: c.lat, lon: c.lon, grade: c.grade, index: c.index })),
+  )};
+// Interactive map, progressive enhancement. The static image and its anchor
+// pins are the baseline; Leaflet replaces them in place only once tiles have
+// actually arrived. Failure at any step leaves the baseline untouched.
+(function(){
+  var mapEl = document.getElementById("map");
+  if(!mapEl || !window.fetch) return;
+  var s = document.createElement("script");
+  s.src = "/leafmap.js"; s.defer = true;
+  s.onload = function(){
+    StreetMap.whenNear(mapEl, function(){
+      fetch("/data/scoretier.json").then(function(r){return r.ok?r.json():{corners:[]};}).catch(function(){return {corners:[]};})
+      .then(function(tier){
+        var auditedSlugs = new Set(AUDITED.map(function(c){return c.slug;}));
+        var scored = (tier.corners||[]).filter(function(c){return !auditedSlugs.has(c.slug);});
+        StreetMap.upgrade(mapEl, {
+          center: [VIEW.lat, VIEW.lon], zoom: VIEW.zoom,
+          audited: AUDITED, scored: scored, heatUrl: "/data/heat.json",
+          onReady: function(map){
+            var md = document.getElementById("mapdata");
+            if(md) md.textContent = "Map data (c) OpenStreetMap contributors (c) CARTO. Danger Index ranks reported harm, not risk per crossing.";
+            var lg = document.getElementById("maplegend");
+            if(lg) lg.hidden = false;
+          }
+        });
+      });
+    });
+  };
+  document.head.appendChild(s);
 })();
 </script>
 </body>
