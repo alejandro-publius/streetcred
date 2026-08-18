@@ -17,7 +17,7 @@ import { journalStats } from "./agent.js";
 const esc = (t) =>
   String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 
-const REPO = "https://github.com/thealexschroeder/streetcred-watchdog";
+const REPO = "https://github.com/alejandro-publius/streetcred-watchdog";
 
 // Pacific, matching the cron and the cotd log, so the diary and the rest of the
 // site never disagree about which morning something happened.
