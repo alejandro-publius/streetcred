@@ -47,6 +47,32 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .corner b{display:block;font-size:15px;color:var(--ink);font-weight:600}
 .lede{font-size:15px;color:var(--dim);max-width:660px;margin:0 0 26px;line-height:1.6}
 
+/* Danger Index. The grade chip and the severity ramp stay inside the existing
+   palette: ink reads as most severe, then the accent, then two accent tints. No
+   new hues, so the score cannot fight the rest of the page. */
+.scorewrap{display:flex;gap:24px;align-items:center;background:var(--panel);border:1px solid var(--line);
+  border-radius:14px;padding:18px 20px;margin-bottom:12px;flex-wrap:wrap}
+.scorefig{display:flex;align-items:center;gap:12px}
+.scoren{font-size:50px;font-weight:700;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.scoren small{font-size:17px;font-weight:600;color:var(--dim);letter-spacing:0}
+.scoreg{font-size:21px;font-weight:700;min-width:40px;height:40px;padding:0 9px;border-radius:11px;
+  display:grid;place-items:center;color:#fff;background:var(--dim)}
+.scoreg.gA,.scoreg.gB{background:var(--green)}
+.scoreg.gC{background:var(--blue)}
+.scoreg.gD{background:rgba(240,126,38,.72)}
+.scoreg.gF{background:var(--accent)}
+.scoremeta{flex:1;min-width:230px}
+.scorelabel{font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:9px}
+.sevbar{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--card);margin-bottom:9px}
+.sevbar i{display:block;height:100%}
+.sevbar i.f{background:var(--ink)}
+.sevbar i.s{background:var(--accent)}
+.sevbar i.o{background:rgba(240,126,38,.55)}
+.sevbar i.p{background:rgba(240,126,38,.25)}
+.sevkey{display:flex;gap:13px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin-bottom:7px}
+.sevkey b{font-weight:600;color:var(--ink)}
+.scorecav{font-size:11.5px;color:var(--dim);line-height:1.5}
+
 .toggle{display:flex;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;width:max-content;margin-bottom:16px}
 .toggle button{font-family:inherit;font-size:14px;font-weight:600;color:var(--dim);background:none;border:0;padding:10px 20px;border-radius:8px;cursor:pointer}
 .toggle button[disabled]{opacity:.42;cursor:default}
@@ -164,6 +190,18 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 <p class="cap"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
 
 <div class="eyebrow"><span>Official record</span></div>
+<div class="scorewrap" id="scorewrap" hidden>
+  <div class="scorefig">
+    <div class="scoren" id="scoren">0<small>/100</small></div>
+    <div class="scoreg" id="scoreg"></div>
+  </div>
+  <div class="scoremeta">
+    <div class="scorelabel">Danger Index, reported harm within 80 meters</div>
+    <div class="sevbar" id="sevbar"></div>
+    <div class="sevkey" id="sevkey"></div>
+    <div class="scorecav" id="scorecav"></div>
+  </div>
+</div>
 <div class="stats" id="stats">
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Injury collisions, last 5 years</div></div>
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-condition 311 reports, 3 years</div></div>
@@ -343,6 +381,29 @@ fetch("/api/stats" + X).then(r => r.json()).then(d => {
   el("stats").innerHTML = n.map((v,i) =>
     '<div class="stat"><div class="n">' + v + '</div><div class="l">' + l[i] +
     (d.source === "sample" && i === 0 ? ' <span class="tag sample">sample</span>' : '') + '</div></div>').join("");
+});
+
+// The Danger Index. Every number here came out of DataSF arithmetic, so the
+// caveat travels with it on the page rather than being buried in the README.
+fetch("/api/score" + X).then(r => r.json()).then(d => {
+  if(!d || typeof d.index !== "number") return;
+  el("scorewrap").hidden = false;
+  el("scoren").innerHTML = d.index + '<small>/100</small>';
+  const g = el("scoreg");
+  g.textContent = d.grade;
+  g.className = "scoreg g" + d.grade;
+  const c = d.counts || {};
+  const parts = [["f","Fatal",c.fatal],["s","Severe",c.severe],
+                 ["o","Other visible",c.otherVisible],["p","Complaint of pain",c.pain]];
+  const total = parts.reduce((n,[,,v]) => n + (v||0), 0);
+  el("sevbar").innerHTML = total
+    ? parts.filter(([,,v]) => v).map(([k,,v]) =>
+        '<i class="' + k + '" style="width:' + (100*v/total) + '%"></i>').join("")
+    : '';
+  el("sevkey").innerHTML = parts.filter(([,,v]) => v)
+    .map(([,label,v]) => '<span><b>' + v + '</b> ' + label + '</span>').join("")
+    || '<span>No injury collisions recorded in 5 years</span>';
+  el("scorecav").textContent = d.caveat || "";
 });
 
 fetch("/api/news" + X).then(r => r.json()).then(d => {

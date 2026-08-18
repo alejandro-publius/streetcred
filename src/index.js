@@ -1,7 +1,10 @@
-import { CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, canonicalSlug, makeCorner } from "./data.js";
+import {
+  CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, canonicalSlug, makeCorner, SERVICE_NAMES,
+} from "./data.js";
 import { PAGE } from "./page.js";
 import { parseQuery, locate, districtFor, soql } from "./resolve.js";
-import { getCorner, putCorner, getImage, rateLimit } from "./store.js";
+import { getCorner, putCorner, getImage, rateLimit, getScore, putScore } from "./store.js";
+import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import { imageryFor } from "./imagery.js";
 
 // DataSF open datasets, keyless.
@@ -9,8 +12,17 @@ const DS_CRASHES = "ubvf-ztfx";
 const DS_311 = "vw6y-z8j6";
 const GEMINI_TEXT_MODEL = "gemini-3.7-flash";
 // Bump to invalidate every edge-cached payload. Corrected figures must not be
-// served from a cache holding the old ones.
-const CACHE_VERSION = "v2";
+// served from a cache holding the old ones. The edge cache is per-colo, so
+// without this a correction lands unevenly across data centers and some
+// visitors keep reading the old numbers for the life of the TTL.
+const CACHE_VERSION = "v3";
+
+// The letter embeds live figures, press headlines, and the Danger Index, so it
+// goes stale in more ways than any other lane and it is the one artifact a
+// person might actually send to an official. It carries its own version on top
+// of CACHE_VERSION: bump this whenever the prompt, the facts fed into it, or the
+// score semantics change, even if nothing else does.
+const LETTER_VERSION = "v2";
 
 // Small in-process cache. The Worker isolate holds this between requests, which
 // is all the caching this product needs: every slow artifact (imagery, scraped
@@ -82,21 +94,6 @@ function asset(env, origin, path) {
 }
 
 // ---------------------------------------------------------------- stats
-// 311 service types that describe the physical street. An earlier substring
-// match on "Street" swept in Street and Sidewalk Cleaning, which is a sanitation
-// queue, not a street-condition signal, and inflated this corner from 354 to
-// 8,546. Explicit allow list only.
-const SERVICE_NAMES = [
-  "Street Defects",
-  "Street Defect",
-  "Sign Repair",
-  "Streetlights",
-  "Sidewalk or Curb",
-  "Sidewalk and Curb",
-  "Blocked Street or SideWalk",
-  "Blocked Street and Sidewalk",
-  "Color Curb",
-];
 
 async function getStats(c) {
   const circle = `within_circle(point, ${c.lat}, ${c.lon}, ${c.radiusMeters})`;
@@ -138,6 +135,17 @@ async function getStats(c) {
     // majority is addressed citywide instead of to a Supervisor picked at random.
     district: Number.isFinite(resolved) && resolved > 0 ? resolved : null,
   };
+}
+
+// ---------------------------------------------------------------- score
+// Computed once per corner and parked in KV, so a grade holds still. The lane
+// runs in parallel with the others, so it costs no extra wall clock on a load.
+async function getScoreFor(c, env) {
+  const hit = await getScore(env, c.slug, SCORE_VERSION);
+  if (hit) return { ...hit, source: "cache" };
+  const fresh = await computeScore(c);
+  await putScore(env, c.slug, fresh);
+  return fresh;
 }
 
 // ---------------------------------------------------------------- news
@@ -345,6 +353,11 @@ async function getLetter(c, env, ctx) {
   const addressee = dist ? `Supervisor ${supervisor}` : supervisor;
   const where = dist ? ` in District ${dist}` : " in San Francisco";
   const signoff = dist ? `A resident of District ${dist}` : "A resident of San Francisco";
+  // The index only enters the letter when it actually computed. A letter that
+  // cites a score the page could not produce is a letter citing nothing.
+  const scoreLine = ctx.score
+    ? `- This intersection scores ${ctx.score.index} out of 100 on our reported-harm index, grade ${ctx.score.grade}. State that score and immediately add this caveat in your own words: ${SCORE_CAVEAT}\n`
+    : "";
 
   const prompt = `Write a respectful one-page letter from a resident to San Francisco ${addressee} about the intersection of ${c.name}${where}.
 
@@ -352,7 +365,7 @@ Use these facts and cite them plainly:
 - ${ctx.stats.crashes} injury collisions recorded by the city within 150 meters of this intersection in the last five years${ctx.stats.fatal ? `, ${ctx.stats.fatal} of them fatal` : ""}. Do not describe this figure as covering any longer period.
 - ${ctx.stats.reports311} street-condition 311 reports at this location in the last three years, counting street defects, sidewalk and curb, signs, streetlights and blocked sidewalks only.
 ${headlines ? `- Recent press coverage: ${headlines}.` : "- No press coverage was found for this corner. Do not cite or invent any news reporting."}
-- An automated visual audit of the intersection identified sub-standard, faded crosswalk markings and vehicle turning conflict zones where drivers cross the pedestrian path.
+${scoreLine}- An automated visual audit of the intersection identified sub-standard, faded crosswalk markings and vehicle turning conflict zones where drivers cross the pedestrian path.
 ${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident testimony."}
 - The request: fund ${c.fix.name}, estimated ${c.fix.cost}, through the ${c.fix.grant}.
 
@@ -619,6 +632,10 @@ export default {
         );
       }
 
+      if (p === "/api/score") {
+        return await edgeCached(ctx, `score-${c.slug}`, 3600, () => getScoreFor(c, env));
+      }
+
       if (p === "/api/voices") {
         const v = await getVoices(c, env, origin).catch(emptyVoices);
         return json(v);
@@ -641,14 +658,15 @@ export default {
       if (p === "/api/letter") {
         // The slowest lane by far, and the one worth caching hardest: a fresh
         // draft costs several seconds of Gemini time.
-        return await edgeCached(ctx, `letter-${c.slug}`, 24 * 3600, () =>
-          cached(`letter:${c.slug}`, 24 * 3600e3, async () => {
-            const [stats, news, voices] = await Promise.all([
+        return await edgeCached(ctx, `letter-${LETTER_VERSION}-${c.slug}`, 24 * 3600, () =>
+          cached(`letter:${LETTER_VERSION}:${c.slug}`, 24 * 3600e3, async () => {
+            const [stats, news, voices, score] = await Promise.all([
               getStats(c).catch(() => sampleStats(c)),
               getNews(c, env).catch(() => sampleNews(c)),
               getVoices(c, env, origin).catch(emptyVoices),
+              getScoreFor(c, env).catch(() => null),
             ]);
-            return getLetter(c, env, { stats, news, voices }).catch(() =>
+            return getLetter(c, env, { stats, news, voices, score }).catch(() =>
               sampleLetter(c, stats.district),
             );
           }),

@@ -66,6 +66,27 @@ export async function putCorner(env, corner) {
   await rawPut(env, `corner:${corner.slug}`, JSON.stringify(corner));
 }
 
+// ---------------------------------------------------------------- score
+
+// No TTL. A Danger Index is computed once per corner and then holds still,
+// because a grade that drifts between page loads is a grade nobody can cite.
+// The stored record carries the version it was computed under, so a change to
+// the weights or REFERENCE_MAX invalidates it rather than serving a stale grade.
+export async function getScore(env, slug, version) {
+  const raw = await rawGet(env, `score:${slug}`);
+  if (!raw) return null;
+  try {
+    const s = JSON.parse(raw);
+    return s.version === version ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putScore(env, slug, score) {
+  await rawPut(env, `score:${slug}`, JSON.stringify(score));
+}
+
 // ---------------------------------------------------------------- imagery
 
 const imgKey = (slug, state) => `img:${slug}:${state}`;

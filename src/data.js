@@ -44,6 +44,22 @@ export const CORNERS = {
 
 export const DEFAULT_SLUG = "16th-mission";
 
+// 311 service types that describe the physical street. An earlier substring
+// match on "Street" swept in Street and Sidewalk Cleaning, which is a sanitation
+// queue, not a street-condition signal, and inflated one corner from 354 to
+// 8,546. Explicit allow list only, shared by the stats lane and the score.
+export const SERVICE_NAMES = [
+  "Street Defects",
+  "Street Defect",
+  "Sign Repair",
+  "Streetlights",
+  "Sidewalk or Curb",
+  "Sidewalk and Curb",
+  "Blocked Street or SideWalk",
+  "Blocked Street and Sidewalk",
+  "Color Curb",
+];
+
 // The canonical slug for a typed corner is its two street names sorted
 // alphabetically, which is what makes "16th and Mission" and "Mission and 16th"
 // one cache entry rather than two. The two precomputed corners predate that rule
