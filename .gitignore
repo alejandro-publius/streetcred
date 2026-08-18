@@ -16,3 +16,4 @@ docs/hazards.jpg
 .sweep-cache/
 .scoretier-bulk.json
 .suggest-bulk.json
+.city-bulk.json
