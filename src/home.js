@@ -329,7 +329,7 @@ ${ranked
     <span class="rank">${i + 1}</span>
     <span><span class="rname">${esc(c.name)}</span><span class="rsev">${esc(severityLine(c))}${c.verdict ? ` &middot; ${esc(c.verdict)}` : ""}</span></span>
     <span class="ridx">${c.index}</span>
-    <span class="rg g${esc(c.grade)}">${esc(c.grade)}</span>
+    <span class="rg g${esc(c.grade)}" title="Worse than ${c.index}% of San Francisco intersections">${esc(c.grade)}</span>
   </a>`,
   )
   .join("\n")}

@@ -343,13 +343,20 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .phs h2{font-size:13px;font-weight:600;margin:0;letter-spacing:.01em}
 .phs .draft{margin:0}
 .pbody{padding:20px}
-.tag{font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;
-  /* Tag text is darkened until it clears AA on its wash (4.64:1); the wash and
-     the hue are unchanged, so the tag still reads as its lane's color. */
+/* One tag system. Every lane status chip is the same size and letterspacing;
+   what varies is only the color, which is the lane's own, and the border,
+   which goes dashed exactly when the content is degraded (sample, none found,
+   audit pending). Live tags are solid, degraded tags are provisional at a
+   glance, and no tag is ever the only thing carrying the information: the
+   text inside it says the same thing the style does. */
+.tag{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;
   border-radius:5px;background:rgba(106,155,204,.14);color:#3d6690;border:1px solid transparent}
+.tag.lane-voices{background:rgba(111,107,97,.12);color:var(--dim)}
+.tag.lane-audit{background:rgba(240,126,38,.10);color:#a04d0c}
+.tag.pending{background:rgba(111,107,97,.10);color:var(--dim);border:1px dashed var(--line2)}
 /* Dashed, so a sample or empty state is legible as provisional at a glance and
    never gets mistaken for a live figure. */
-.tag.sample{background:rgba(240,126,38,.10);color:#b0560e;border:1px dashed rgba(240,126,38,.55)}
+.tag.sample{background:rgba(240,126,38,.10);color:#a04d0c;border:1px dashed rgba(240,126,38,.55)}
 
 /* The year strip. One tick per year since 2014, height by how many results
    passed the same filter the panel below uses. A collision record says a corner
@@ -869,7 +876,18 @@ function setSplit(pct){
   const lEl = el("letterpanel"); if(lEl) lio.observe(lEl);
   // Fill the chip once the score lands.
   const fill = setInterval(() => {
-    if(V.score){ const g = el("stickyg"); g.textContent = V.score.grade; g.className = "sg g" + V.score.grade; clearInterval(fill); }
+    if(V.score){
+      const g = el("stickyg");
+      g.textContent = V.score.grade;
+      g.className = "sg g" + V.score.grade;
+      // The percentile sentence travels with the grade wherever it appears,
+      // here as the chip's popover.
+      g.title = "Worse than " + V.score.index + "% of San Francisco intersections";
+      g.removeAttribute("aria-hidden");
+      g.setAttribute("role", "img");
+      g.setAttribute("aria-label", "Grade " + V.score.grade + ", worse than " + V.score.index + "% of San Francisco intersections");
+      clearInterval(fill);
+    }
   }, 400);
 })();
 
@@ -926,7 +944,8 @@ function applyImagery(d){
     // Not a failure and not a wait. Say what it is, so a calm corner does not
     // read as a broken one.
     else if(d.status === "recordsonly"){ b.disabled = true; b.textContent = LABELS[s] + ", not generated"; }
-    else if(d.status === "scoredonly"){ b.disabled = true; b.textContent = LABELS[s] + ", audit pending"; }
+    else if(d.status === "scoredonly"){ b.disabled = true; b.textContent = LABELS[s] + ", audit pending";
+      const t = el("imgtag"); t.textContent = "scored, not audited"; t.classList.add("pending"); }
     else if(d.status && d.status !== "ready"){ b.disabled = true; b.textContent = LABELS[s] + ", unavailable"; }
   }
   render();
@@ -1422,6 +1441,19 @@ fetch("/api/voices" + X).then(r => r.json()).then(d => {
     tag.classList.add("sample");
     el("voices").innerHTML =
       '<p class="empty">No on-topic resident accounts found for this corner.</p>';
+    return;
+  }
+  // Display rule, same token lists the Cred Check uses server side: a strong
+  // street word stands alone, a weak one only counts beside a strong one. If
+  // no rendered quote is about the street itself, the honest empty state wins
+  // over quotes about a neighborhood, a station, or a movie.
+  const STRONG = ["crossing","cross","crosswalk","driver","drivers","traffic","cars","speeding","signal","curb","sidewalk","intersection","pedestrian"];
+  const isStreet = t => { const low = String(t||"").toLowerCase(); return STRONG.some(w => low.includes(w)); };
+  if (!items.some(v => isStreet(v.text))) {
+    tag.textContent = "none about the street";
+    tag.classList.add("pending");
+    el("voices").innerHTML =
+      '<p class="empty">Accounts were scraped here, but none of the rendered quotes describe the street itself, so none are shown as evidence.</p>';
     return;
   }
   mark("voicestag", d.source);
