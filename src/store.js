@@ -140,6 +140,48 @@ export async function getHinList(env) {
   }
 }
 
+// ---------------------------------------------------------------- timeline
+
+// Ceiling on newly built press timelines per day. Each one costs about a dozen
+// Exa searches, so this lane can burn credits far faster than the single search
+// the panel makes. Same discipline as the image budget: reject before spending,
+// globally, in KV rather than the per-colo edge cache.
+export const DAILY_TIMELINE_CAP = 40;
+
+const dayKey = () => new Date().toISOString().slice(0, 10);
+
+export async function getTimeline(env, slug, version) {
+  const raw = await rawGet(env, `timeline:${slug}`);
+  if (!raw) return null;
+  try {
+    const t = JSON.parse(raw);
+    return t.version === version ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+// No TTL. A year that had coverage will always have had coverage, so this is a
+// record rather than a cache, and rebuilding it would spend a dozen searches to
+// re-learn history that did not change.
+export async function putTimeline(env, slug, timeline) {
+  await rawPut(env, `timeline:${slug}`, JSON.stringify(timeline));
+}
+
+export async function timelineBudget(env) {
+  const key = `timelines:${dayKey()}`;
+  const used = parseInt((await rawGet(env, key)) || "0", 10) || 0;
+  return { used, cap: DAILY_TIMELINE_CAP, remaining: Math.max(0, DAILY_TIMELINE_CAP - used) };
+}
+
+export async function reserveTimeline(env) {
+  const key = `timelines:${dayKey()}`;
+  const used = parseInt((await rawGet(env, key)) || "0", 10) || 0;
+  if (used >= DAILY_TIMELINE_CAP) return false;
+  await rawPut(env, key, String(used + 1), 3 * 24 * 3600);
+  return true;
+}
+
 // ---------------------------------------------------------------- run manifest
 
 // What each tool actually did on this corner's last run. No TTL: it is a record

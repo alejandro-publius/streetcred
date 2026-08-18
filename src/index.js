@@ -7,12 +7,15 @@ import { parseQuery, locate, districtFor, soql } from "./resolve.js";
 import {
   getCorner, putCorner, getImage, rateLimit, getScore, putScore, getHazards, putHazards,
   getCredCached, putCredCached, getShareCard, getHinList, getRun, putRun, getApifyCounts, getLetterRun, putLetterRun,
+  getTimeline, putTimeline, reserveTimeline, timelineBudget,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import { imageryFor } from "./imagery.js";
 import { corroborate, HAZARD_VERSION } from "./hazards.js";
 import { credCheck, isSafetyCoverage, CRED_VERSION } from "./cred.js";
 import { buildManifest, PUBLIC_TRIGGERS } from "./manifest.js";
+import { classify, streetTokens, domainOf, searchQuery } from "./newsfilter.js";
+import { buildTimeline, TIMELINE_VERSION } from "./timeline.js";
 
 // DataSF open datasets, keyless.
 const DS_CRASHES = "ubvf-ztfx";
@@ -29,7 +32,7 @@ const CACHE_VERSION = "v10";
 // person might actually send to an official. It carries its own version on top
 // of CACHE_VERSION: bump this whenever the prompt, the facts fed into it, or the
 // score semantics change, even if nothing else does.
-const LETTER_VERSION = "v5";
+const LETTER_VERSION = "v6";
 
 // Small in-process cache. The Worker isolate holds this between requests, which
 // is all the caching this product needs: every slow artifact (imagery, scraped
@@ -200,6 +203,36 @@ async function getHazardsFor(c, env, origin) {
   return fresh;
 }
 
+// ---------------------------------------------------------------- timeline
+
+// A dozen Exa searches per corner, so this is guarded the same way image
+// generation is: reject before spending, from a global KV counter rather than
+// the per-colo edge cache, and never rebuild something already on disk.
+async function getTimelineFor(c, env) {
+  const hit = await getTimeline(env, c.slug, TIMELINE_VERSION);
+  if (hit) return { ...hit, source: "cache" };
+
+  if (!(await reserveTimeline(env))) {
+    const b = await timelineBudget(env);
+    return {
+      source: "unavailable",
+      reason: "budget",
+      note: `Daily press history limit reached (${b.used} of ${b.cap}). The press panel below is unaffected.`,
+    };
+  }
+
+  try {
+    const fresh = await buildTimeline(c, env);
+    await putTimeline(env, c.slug, fresh);
+    return fresh;
+  } catch (e) {
+    // The reservation is deliberately not refunded. A failed build still spent
+    // most of a dozen searches, and a lane that retries for free on every page
+    // load is exactly how a credit balance disappears overnight.
+    return { source: "unavailable", reason: "failed", note: String(e.message || e).slice(0, 120) };
+  }
+}
+
 // ---------------------------------------------------------------- run manifest
 
 // One unfiltered 311 count, run only when a manifest is built rather than on
@@ -274,32 +307,12 @@ async function getCred(c, env, origin) {
 
 // ---------------------------------------------------------------- news
 
-// Agency primary sources. A police bulletin or an SFMTA project page is a real,
-// citable document, but it is not press coverage of the corner: it is the
-// record that coverage would be written about. Listed explicitly rather than
-// pattern matched, so adding one is a deliberate decision.
-// ceqanet is the state CEQA filings database. A project's environmental filing
-// is the most purely record-like document on this list: it is the paperwork the
-// work generates, and treating it as coverage would let a 2017 filing satisfy
-// the press lane at a corner no journalist has written about.
-const OFFICIAL_SOURCE =
-  /^(sanfranciscopolice\.org|sfmta\.com|sfpublicworks\.org|sf\.gov|sfgov\.org|sfcta\.org|ceqanet\.lci\.ca\.gov)$/i;
-// Street names pulled from the corner itself, so the relevance filter travels to
-// any corner. "16th Street and Mission Street" gives ["16th", "mission"].
-function streetTokens(c) {
-  return c.name
-    .toLowerCase()
-    .replace(/\b(street|st|avenue|ave|boulevard|blvd|road|rd|drive|dr|and)\b/g, " ")
-    .split(/\s+/)
-    .filter((t) => t.length > 2);
-}
-
 async function getNews(c, env) {
   const r = await fetch("https://api.exa.ai/search", {
     method: "POST",
     headers: { "x-api-key": env.EXA_API_KEY, "content-type": "application/json" },
     body: JSON.stringify({
-      query: `pedestrian safety OR crash OR traffic ${c.name} ${c.city}`,
+      query: searchQuery(c),
       numResults: 8,
       type: "auto",
       contents: { text: { maxCharacters: 400 } },
@@ -309,40 +322,22 @@ async function getNews(c, env) {
   if (!r.ok) throw new Error(`exa ${r.status}`);
   const d = await r.json();
   const tokens = streetTokens(c);
-  // Law firm and lead generation sites republish crash reports to farm clients.
-  // They are not press coverage and they do not belong in an evidence lane.
-  const DENY = /(lawfirm|law-firm|attorney|lawyer|injuryl|accidentl|legal)/i;
-  const all = (d.results || []).filter((x) => x.title && !DENY.test(x.url || ""));
-
-  const scored = all.map((x) => {
-    const hay = (x.title + " " + (x.url || "") + " " + (x.text || "")).toLowerCase();
-    const hits = tokens.filter((t) => hay.includes(t)).length;
-    const titleHay = (x.title + " " + (x.url || "")).toLowerCase();
-    // Corner level means both street names, not just the neighborhood.
-    const corner = tokens.every((t) => titleHay.includes(t)) || (hits >= tokens.length && tokens.length > 1);
-    return { x, corner, loose: tokens.some((t) => titleHay.includes(t)) };
-  });
+  const scored = classify(d.results, tokens);
 
   const tight = scored.filter((s) => s.corner);
   // Only claim corner-level precision when there is enough of it to stand on.
   const precise = tight.length >= 3;
   const chosen = precise ? tight : scored.filter((s) => s.loose);
 
-  const mapped = chosen.map(({ x, corner }) => {
-    const domain = (() => {
-      try {
-        return new URL(x.url).hostname.replace(/^www\./, "");
-      } catch {
-        return "";
-      }
-    })();
+  const mapped = chosen.map(({ raw: x, corner, official }) => {
+    const domain = domainOf(x.url);
     return {
       title: x.title.trim(),
       url: x.url,
       domain,
       corner,
       date: (x.publishedDate || "").slice(0, 10),
-      official: OFFICIAL_SOURCE.test(domain),
+      official,
       // Computed here because this is the only place the Exa page text still
       // exists. The Cred Check reads the flag rather than the article.
       corroborates: isSafetyCoverage({ title: x.title, text: x.text }, tokens),
@@ -541,13 +536,22 @@ async function getLetter(c, env, ctx) {
     ? `- This intersection shows more reported harm than ${ctx.score.index} percent of San Francisco intersections, which is grade ${ctx.score.grade} on the Danger Index. State that comparison in those terms, not as a score out of 100, and immediately add this caveat in your own words: ${SCORE_CAVEAT}\n`
     : "";
 
+  // Only when the history is long enough to mean something, and only ever as
+  // coverage-we-can-find. Two years is the floor: one story last year and one
+  // this year is not a decade of neglect and must not be dressed up as one.
+  const yrs = ctx.timeline?.yearsReported;
+  const longevityLine =
+    Number.isFinite(yrs) && yrs >= 2
+      ? `- Press coverage of safety problems at this intersection goes back at least ${yrs} years, to ${ctx.timeline.firstReportedYear}. State this as the earliest coverage we can find, never as the first time the problem was reported.\n`
+      : "";
+
   const prompt = `Write a respectful one-page letter from a resident to San Francisco ${addressee} about the intersection of ${c.name}${where}.
 
 Use these facts and cite them plainly:
 - ${ctx.stats.crashes} injury collisions recorded by the city within 150 meters of this intersection in the last five years${ctx.stats.fatal ? `, ${ctx.stats.fatal} of them fatal` : ""}. Do not describe this figure as covering any longer period.
 - ${ctx.stats.reports311} street-condition 311 reports at this location in the last three years, counting street defects, sidewalk and curb, signs, streetlights and blocked sidewalks only.
 ${headlines ? `- Recent press coverage: ${headlines}.` : "- No press coverage was found for this corner. Do not cite or invent any news reporting."}
-${scoreLine}${hazardLines}
+${scoreLine}${longevityLine}${hazardLines}
 ${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident testimony."}
 - The request: fund ${c.fix.name}, estimated ${c.fix.cost}, through the ${c.fix.grant}.
 
@@ -577,6 +581,7 @@ Rules: plain civic English. Under 220 words. Address only ${addressee}. Distingu
   if (quote) inputs.push("voices");
   if (hz.length) inputs.push("audit");
   if (ctx.score) inputs.push("index");
+  if (longevityLine) inputs.push("history");
   const generatedAt = new Date().toISOString();
   await putLetterRun(env, c.slug, { generatedAt, supervisor, inputs, model: GEMINI_TEXT_MODEL });
 
@@ -944,6 +949,10 @@ export default {
         );
       }
 
+      if (p === "/api/timeline") {
+        return json(await getTimelineFor(c, env));
+      }
+
       if (p === "/api/run") {
         const asked = url.searchParams.get("trigger");
         const trigger = PUBLIC_TRIGGERS.has(asked) ? asked : "user";
@@ -977,14 +986,17 @@ export default {
         // draft costs several seconds of Gemini time.
         return await edgeCached(ctx, `letter-${LETTER_VERSION}-${c.slug}`, 24 * 3600, () =>
           cached(`letter:${LETTER_VERSION}:${c.slug}`, 24 * 3600e3, async () => {
-            const [stats, news, voices, score, hazards] = await Promise.all([
+            const [stats, news, voices, score, hazards, timeline] = await Promise.all([
               getStats(c).catch(() => sampleStats(c)),
               getNews(c, env).catch(() => sampleNews(c)),
               getVoices(c, env, origin).catch(emptyVoices),
               getScoreFor(c, env).catch(() => null),
               getHazardsFor(c, env, origin).catch(() => null),
+              // Read only, never built here. Drafting a letter must not be able
+              // to trigger a dozen Exa searches as a side effect.
+              getTimeline(env, c.slug, TIMELINE_VERSION).catch(() => null),
             ]);
-            return getLetter(c, env, { stats, news, voices, score, hazards }).catch(() =>
+            return getLetter(c, env, { stats, news, voices, score, hazards, timeline }).catch(() =>
               sampleLetter(c, stats.district),
             );
           }),

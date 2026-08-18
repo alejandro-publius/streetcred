@@ -222,6 +222,30 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
    never gets mistaken for a live figure. */
 .tag.sample{background:rgba(240,126,38,.10);color:var(--accent);border:1px dashed rgba(240,126,38,.55)}
 
+/* The year strip. One tick per year since 2014, height by how many results
+   passed the same filter the panel below uses. A collision record says a corner
+   is dangerous now; this says people have been writing about it for a decade,
+   which is a different argument and a better one. Pure flexbox, no library. */
+.tl{margin:0 0 16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.tlbars{display:flex;align-items:flex-end;gap:3px;height:36px}
+.tlb{flex:1;display:flex;align-items:flex-end;justify-content:stretch;height:100%;
+  background:none;border:0;padding:0;cursor:pointer}
+.tlb i{display:block;width:100%;background:var(--line2);border-radius:2px 2px 0 0;
+  transition:background-color 120ms ease-out}
+/* A year with nothing found still draws a floor, so the strip reads as a
+   continuous timeline rather than as gaps where the chart broke. */
+.tlb.none i{background:var(--line)}
+.tlb:hover i,.tlb:focus-visible i,.tlb.on i{background:var(--blue)}
+.tlb:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:3px}
+.tlax{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);
+  letter-spacing:.04em;margin-top:5px}
+.tlnote{font-size:12.5px;color:var(--ink);font-weight:600;line-height:1.5;margin:9px 0 0}
+/* Reserved height, so moving across the strip never reflows the panel. */
+.tlpop{font-size:11.5px;color:var(--dim);line-height:1.5;margin:5px 0 0;min-height:2.9em}
+.tlpop a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
+.tlpop a:hover{color:var(--accent);border-color:var(--accent)}
+@media(prefers-reduced-motion:reduce){.tlb i{transition:none}}
+
 .news a{display:block;text-decoration:none;color:inherit;padding:13px 0;border-top:1px solid var(--line)}
 .news a:first-of-type{border-top:0;padding-top:0}
 .news .t{font-size:14px;font-weight:500;line-height:1.45}
@@ -431,6 +455,12 @@ ${BASE_CSS}
     <div class="panel lane-press">
       <div class="phs"><h2 id="newshead">Press coverage</h2><span class="tag" id="newstag">found live, cited</span></div>
       <div class="pbody">
+        <div class="tl" id="tl" hidden>
+          <div class="tlbars" id="tlbars" role="group" aria-label="Coverage found by year"></div>
+          <div class="tlax"><span id="tlfrom"></span><span id="tlto"></span></div>
+          <p class="tlnote" id="tlnote"></p>
+          <p class="tlpop" id="tlpop"></p>
+        </div>
         <div class="news" id="news"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
       </div>
     </div>
@@ -768,6 +798,56 @@ fetch("/api/news" + X).then(r => r.json()).then(d => {
     '</div><div class="m">' + esc(x.domain) + (x.date ? " &middot; " + esc(x.date) : "") + '</div></a>').join("")
     || '<div class="m">No coverage found.</div>';
 });
+
+// The press year strip. Phrased as coverage-we-can-find everywhere, never as
+// first report: Exa recall is not ground truth, and an empty year means this
+// search found nothing that year, not that nothing happened.
+fetch("/api/timeline" + X).then(r => r.json()).then(t => {
+  const years = t && t.years;
+  if(!years || !years.length) return;
+  const counts = years.map(y => y.count || 0);
+  const max = Math.max.apply(null, counts) || 1;
+  const bars = el("tlbars");
+  bars.innerHTML = years.map(y => {
+    const n = y.count || 0;
+    // Floor of 3px so a quiet year is a tick rather than a hole.
+    const h = n ? Math.round(3 + (n / max) * 33) : 3;
+    const label = y.year + ": " + (y.failed ? "search failed" : n + (n === 1 ? " result" : " results"));
+    return '<button type="button" class="tlb' + (n ? '' : ' none') + '" data-y="' + y.year +
+      '" style="height:100%" aria-label="' + esc(label) + '">' +
+      '<i style="height:' + h + 'px"></i></button>';
+  }).join("");
+  el("tlfrom").textContent = t.from;
+  el("tlto").textContent = t.to;
+
+  const note = [];
+  if(t.firstReportedYear) note.push("First coverage we can find dates to " + t.firstReportedYear + ".");
+  if(t.totalHeadlines) note.push(t.totalHeadlines + (t.totalHeadlines === 1 ? " headline" : " headlines") + " since.");
+  el("tlnote").textContent = note.join(" ");
+
+  const pop = el("tlpop");
+  const show = (y) => {
+    [].forEach.call(bars.children, (b, i) => b.classList.toggle("on", i === years.indexOf(y)));
+    if(y.failed){ pop.textContent = y.year + ": that year's search failed, so it is not counted."; return; }
+    if(!y.count){ pop.textContent = y.year + ": no coverage found by this search."; return; }
+    const b = y.best;
+    pop.innerHTML = '<b>' + y.year + '</b> &middot; ' + y.count +
+      (y.count === 1 ? " result" : " results") + (b ? '. <a href="' + esc(b.url) +
+      '" target="_blank" rel="noopener">' + esc(b.title) + '</a> (' + esc(b.domain) +
+      (b.official ? ", official source" : "") + ')' : ".");
+  };
+  years.forEach((y, i) => {
+    const b = bars.children[i];
+    b.addEventListener("mouseenter", () => show(y));
+    b.addEventListener("focus", () => show(y));
+    b.addEventListener("click", () => show(y));
+  });
+  // Opens on the most recent year that has anything, so the strip says
+  // something before it is touched.
+  const latest = [].concat(years).reverse().find(y => y.count);
+  if(latest) show(latest);
+  el("tl").hidden = false;
+}).catch(() => {});
 
 // The scrape funnel, drawn from the run manifest. It renders only when real
 // counts exist for this corner: a corner with no backfilled scrape shows no
