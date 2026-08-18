@@ -23,8 +23,12 @@ here).
   them: census percentile phrasing, the verified Supervisor roster (Sherrill,
   Wong, Mahmood included; `hasSupervisor` gates the title), coverage longevity
   where the timeline supports it, and the both-radii sentence.
-- **Impact sentences enter letters only after the human has reviewed
-  `data/cmf.json` and `data/precedents.json`.** When approved, add to the
+- **Impact sentences are CLEARED TO RUN.** On 2026-08-18 the human reviewed
+  and approved `data/cmf.json` and `data/precedents.json` exactly as curated:
+  LPI 0.87, 5 stars, id 9918; continental crosswalks 0.63, 4 stars, id 2697
+  with the school-zone context named; the no-factor rows stay no-factor; Safer
+  Taylor stays qualitative-only. No further review is needed; the sentences
+  run the moment a funded key exists, verifier extension first. Add to the
   letter prompt, per corner where the factor applies:
   - predicted: "published CMF {id} suggests roughly {range} fewer {type}
     collisions at a location with this history"
