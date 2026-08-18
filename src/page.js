@@ -343,13 +343,20 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .phs h2{font-size:13px;font-weight:600;margin:0;letter-spacing:.01em}
 .phs .draft{margin:0}
 .pbody{padding:20px}
-.tag{font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;
-  /* Tag text is darkened until it clears AA on its wash (4.64:1); the wash and
-     the hue are unchanged, so the tag still reads as its lane's color. */
+/* One tag system. Every lane status chip is the same size and letterspacing;
+   what varies is only the color, which is the lane's own, and the border,
+   which goes dashed exactly when the content is degraded (sample, none found,
+   audit pending). Live tags are solid, degraded tags are provisional at a
+   glance, and no tag is ever the only thing carrying the information: the
+   text inside it says the same thing the style does. */
+.tag{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;
   border-radius:5px;background:rgba(106,155,204,.14);color:#3d6690;border:1px solid transparent}
+.tag.lane-voices{background:rgba(111,107,97,.12);color:var(--dim)}
+.tag.lane-audit{background:rgba(240,126,38,.10);color:#a04d0c}
+.tag.pending{background:rgba(111,107,97,.10);color:var(--dim);border:1px dashed var(--line2)}
 /* Dashed, so a sample or empty state is legible as provisional at a glance and
    never gets mistaken for a live figure. */
-.tag.sample{background:rgba(240,126,38,.10);color:#b0560e;border:1px dashed rgba(240,126,38,.55)}
+.tag.sample{background:rgba(240,126,38,.10);color:#a04d0c;border:1px dashed rgba(240,126,38,.55)}
 
 /* The year strip. One tick per year since 2014, height by how many results
    passed the same filter the panel below uses. A collision record says a corner
@@ -399,13 +406,18 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .fixrow .v{font-size:14px;font-weight:500;line-height:1.45}
 .fixrow .cost{font-size:19px;font-weight:700;color:var(--green);white-space:nowrap;text-align:right}
 .letter{font-family:Lora,Georgia,serif;font-size:14.5px;line-height:1.72;white-space:pre-wrap}
-.lfoot{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
-.lfoot button{font-family:inherit;font-size:13px;font-weight:600;background:var(--ink);color:#fff;border:0;border-radius:8px;padding:9px 18px;cursor:pointer}
+.lfoot{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);flex-wrap:wrap}
+/* Copy is the ask's primary action, so it wears the accent; download is its
+   quieter sibling. Both are real buttons, no anchors pretending. */
+.lfoot button{font-family:inherit;font-size:13px;font-weight:600;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 20px;cursor:pointer}
+.lfoot button.dl{background:none;color:var(--ink);border:1px solid var(--line2)}
+.lfoot button.dl:hover{border-color:var(--ink)}
 .lfoot span{font-size:11.5px;color:var(--dim)}
 .draft{font-size:11.5px;color:#a04d0c;font-weight:600;margin-bottom:12px;letter-spacing:.03em}
 /* The one status that belongs on the lid rather than in the body: a reader who
    only ever sees the header strip still learns this letter was never sent. */
 .phs .draft{letter-spacing:.09em}
+.phs-lg h2{font-size:15px}
 .vnote{font-size:11px;color:var(--dim);margin:9px 0 0;line-height:1.5;max-width:520px}
 
 .stack{display:grid;grid-template-columns:repeat(3,1fr);gap:18px 26px;margin-top:8px}
@@ -438,6 +450,65 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .prow .pw{color:var(--dim);font-size:11.5px}
 .prow .po{margin-top:3px}
 .prow a{color:var(--dim);font-size:11px;text-decoration:none;border-bottom:1px dashed var(--line2)}
+/* The split stage. Desktop only: at 1100px and up the imagery panel and the
+   corner map share one band under the verdict, imagery 60, map 40, equal
+   height. Below that everything stacks exactly as before; the band is created
+   by script, so no JavaScript means no band and nothing is lost. The 520px
+   imagery floor is structural: at the narrowest band viewport the left column
+   is ~630px, and if a future layout change ever squeezed it the stack rule
+   wins because the slider must never be starved. */
+.band{display:grid;grid-template-columns:60fr 40fr;gap:18px;align-items:stretch;margin-bottom:20px}
+.band > *{margin-bottom:0 !important;min-width:0}
+.band #mappanel{display:flex;flex-direction:column;height:100%}
+.band #mappanel .pbody{flex:1;display:flex;flex-direction:column}
+.band #mappanel .pbody > div:first-of-type,
+.band #mappanel .mapwrap{flex:1;min-height:420px}
+.band .mapfoot{margin-top:10px}
+
+/* The sticky letter bar. Appears on scroll, never taller than 48px, hides
+   while the letter panel is on screen because an arrow pointing at something
+   already visible is noise. Dismiss survives until the next page load. */
+.sticky{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:center;gap:10px;
+  height:48px;max-height:48px;padding:0 14px calc(env(safe-area-inset-bottom, 0px) / 2);
+  background:var(--panel);border-top:1.5px solid var(--line3);box-shadow:0 -4px 14px rgba(20,27,45,.08)}
+.sg{font-size:13px;font-weight:700;min-width:26px;height:26px;border-radius:7px;display:grid;
+  place-items:center;color:#fff;background:var(--dimline)}
+.sg.gA{background:var(--green)} .sg.gB{background:#a3b088} .sg.gC{background:var(--blue)}
+.sg.gD{background:#e89a5f} .sg.gF{background:var(--accent)}
+.sn{flex:1;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sgo{font-size:12.5px;font-weight:600;color:#fff;background:var(--ink);border-radius:999px;
+  padding:8px 16px;text-decoration:none;white-space:nowrap}
+.sx{font-size:18px;line-height:1;background:none;border:0;color:var(--dim);cursor:pointer;padding:6px}
+
+/* The verdict block. The page's conclusion, stated first: the grade, the
+   percentile sentence that must never travel without it, one thesis sentence
+   from the same payloads every panel below re-derives, and the door to the
+   letter. Everything below it remains the receipt. */
+.verdict{display:flex;align-items:center;gap:18px;background:var(--panel);
+  border:1.5px solid var(--line3);border-top:3px solid var(--ink);border-radius:12px;
+  padding:18px 22px;margin:0 0 20px;box-shadow:0 1px 3px rgba(20,27,45,.06);flex-wrap:wrap}
+.vg{font-size:30px;font-weight:700;min-width:56px;height:56px;border-radius:14px;display:grid;
+  place-items:center;color:#fff;background:var(--dimline);flex:0 0 auto}
+.vg.gA{background:var(--green)} .vg.gB{background:#a3b088} .vg.gC{background:var(--blue)}
+.vg.gD{background:#e89a5f} .vg.gF{background:var(--accent)}
+.vmain{flex:1;min-width:240px}
+.vline{font-size:15.5px;font-weight:600;margin:0;line-height:1.45}
+.vthesis{font-size:13px;color:var(--dim);margin:4px 0 0;line-height:1.55}
+.vcred{display:flex;align-items:center;gap:6px;margin:8px 0 0;font-size:11px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.vcred i{width:9px;height:9px;border-radius:50%;background:var(--line2);display:inline-block}
+.vcred i.on{background:var(--green)}
+.vgo{font-size:13.5px;font-weight:600;color:#fff;background:var(--ink);border-radius:999px;
+  padding:12px 22px;text-decoration:none;white-space:nowrap;flex:0 0 auto}
+.vgo:hover{background:#000}
+.vgo:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.panel.lit{box-shadow:0 0 0 3px rgba(240,126,38,.35), 0 6px 16px rgba(20,27,45,.10)}
+@media (prefers-reduced-motion: reduce){.panel.lit{box-shadow:0 0 0 3px rgba(240,126,38,.35)}}
+/* Preview badge. Only the preview environment renders the element at all, so
+   production carries neither the node nor the style burden of hiding it. */
+.pvw{position:fixed;right:14px;bottom:62px;z-index:80;font-size:10px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--dim);background:var(--panel);
+  border:1px dashed var(--line2);border-radius:999px;padding:5px 12px;opacity:.85;pointer-events:none}
 footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
 footer a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
 footer a:hover{color:var(--ink)}
@@ -456,7 +527,27 @@ footer a:hover{color:var(--ink)}
   .panel:hover,.stat:hover,.scorewrap:hover{transform:none;box-shadow:none}
 }
 
-@media(max-width:860px){.cols,.stack{grid-template-columns:1fr}}
+@media(max-width:860px){
+  .cols,.stack{grid-template-columns:1fr}
+  /* Mobile reading order: verdict, imagery, letter, evidence, map, stack.
+     The letter is why a person came; on a phone it must not sit under four
+     panels of receipts. display:contents releases the two columns into main's
+     flex flow so order can interleave them. */
+  main{display:flex;flex-direction:column}
+  main > *{order:20}
+  .lede{order:0}
+  #verdict{order:1}
+  #replay{order:2}
+  .panel.lane-imagery{order:3}
+  .cols{display:contents}
+  .cols > div:nth-child(2){order:4}
+  .eyebrow{order:5}
+  #scorewrap{order:6}
+  #stats{order:7}
+  #cred{order:8}
+  .cols > div:nth-child(1){order:9}
+  #maplane{order:10}
+}
 @media(max-width:600px){
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   /* Panels now carry their own padding, so on a phone the body inset has to
@@ -549,6 +640,23 @@ ${BASE_CSS}
 <main>
 
 <p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
+
+<section class="verdict" id="verdict" hidden aria-label="The verdict for this corner">
+  <span class="vg" id="vg" aria-hidden="true"></span>
+  <div class="vmain">
+    <p class="vline" id="vline"></p>
+    <p class="vthesis" id="vthesis"></p>
+    <p class="vcred" id="vcred"></p>
+  </div>
+  <a class="vgo" id="vgo" href="#letterpanel">Get the letter</a>
+</section>
+
+<div class="sticky" id="sticky" hidden>
+  <span class="sg" id="stickyg" aria-hidden="true"></span>
+  <span class="sn">${c.short || c.name}</span>
+  <a class="sgo" href="#letterpanel" id="stickygo">Get the letter</a>
+  <button class="sx" id="stickyx" type="button" aria-label="Dismiss this bar">&times;</button>
+</div>
 
 <section class="replay" id="replay" hidden aria-label="Replay of this corner's pipeline run">
   <div class="rhead">
@@ -651,8 +759,8 @@ ${BASE_CSS}
     </div>
   </div>
   <div>
-    <div class="panel lane-ask">
-      <div class="phs"><h2>The ask</h2><span class="draft">DRAFT ONLY</span></div>
+    <div class="panel lane-ask" id="letterpanel">
+      <div class="phs phs-lg"><h2>The ask</h2><span class="draft">DRAFT ONLY</span></div>
       <div class="pbody">
         <div class="fixrow">
           <div><div class="k">Proposed fix</div><div class="v" id="fixname">${c.fix.name}</div></div>
@@ -661,7 +769,7 @@ ${BASE_CSS}
         </div>
         <div class="draft">NOT SENT TO ANY OFFICIAL</div>
         <div class="letter" id="letter"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
-        <div class="lfoot"><button id="copy">Copy letter</button><span class="tag" id="lettertag">drafted</span><span>by Gemini</span></div>
+        <div class="lfoot"><button id="copy">Copy letter</button><button id="download" class="dl" type="button">Download as text</button><span class="tag" id="lettertag">drafted</span><span>by Gemini</span></div>
         <p class="vnote">Every figure in this letter is checked against the source records before it is shown. A draft that states something the records do not support is rejected and rewritten.</p>
       </div>
     </div>
@@ -691,6 +799,7 @@ ${BASE_CSS}
 
 </main>
 </main>
+${og.preview ? '<div class="pvw">Preview</div>' : ''}
 <footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
 Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
 </div>
@@ -701,9 +810,12 @@ const CAPS = {
   hazards:["Hazards","Gemini read the real photograph and marked the zones it flags as high risk: faded crosswalk markings in red, vehicle conflict zones in amber. Drag to compare."],
   fix:["Proposed fix","An AI visualization of continental crosswalks, a protected bike lane, and a corner curb extension. Not a photograph of anything that exists. Drag to compare."]
 };
-const X = "?x=${c.slug}";
-const CORNER_SLUG = "${c.slug}";
-const CORNER_GEO = {lat: ${c.lat}, lon: ${c.lon}, name: ${JSON.stringify(c.short || c.name)}};
+// Mutable on purpose: the split stage swaps corners in place via pushState,
+// and every lane below reads these at fetch time rather than baking the slug
+// into a closure. A full page load still initializes them from the server.
+let X = "?x=${c.slug}";
+let CORNER_SLUG = "${c.slug}";
+let CORNER_GEO = {lat: ${c.lat}, lon: ${c.lon}, name: ${JSON.stringify(c.short || c.name)}};
 let IMG = null, state = "today";
 
 const el = id => document.getElementById(id);
@@ -798,6 +910,53 @@ function setSplit(pct){
   h.style.left = split + "%";
   h.setAttribute("aria-valuenow", String(Math.round(split)));
 }
+// Sticky bar lifecycle.
+(function(){
+  const bar = el("sticky");
+  if(!bar || !("IntersectionObserver" in window)) return;
+  let dismissed = false, letterVisible = false, pastVerdict = false;
+  const sync = () => { bar.hidden = dismissed || letterVisible || !pastVerdict; };
+  el("stickyx").addEventListener("click", () => { dismissed = true; sync(); });
+  el("stickygo").addEventListener("click", (e) => {
+    const t = el("letterpanel");
+    if(!t) return;
+    e.preventDefault();
+    t.scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"});
+  });
+  const vio = new IntersectionObserver((en) => {
+    pastVerdict = !en[0].isIntersecting && en[0].boundingClientRect.top < 0;
+    sync();
+  });
+  const vEl = el("verdict"); if(vEl) vio.observe(vEl);
+  const lio = new IntersectionObserver((en) => { letterVisible = en[0].isIntersecting; sync(); });
+  const lEl = el("letterpanel"); if(lEl) lio.observe(lEl);
+  // Fill the chip once the score lands.
+  const fill = setInterval(() => {
+    if(V.score){
+      const g = el("stickyg");
+      g.textContent = V.score.grade;
+      g.className = "sg g" + V.score.grade;
+      // The percentile sentence travels with the grade wherever it appears,
+      // here as the chip's popover.
+      g.title = "Worse than " + V.score.index + "% of San Francisco intersections";
+      g.removeAttribute("aria-hidden");
+      g.setAttribute("role", "img");
+      g.setAttribute("aria-label", "Grade " + V.score.grade + ", worse than " + V.score.index + "% of San Francisco intersections");
+      clearInterval(fill);
+    }
+  }, 400);
+})();
+
+el("vgo") && el("vgo").addEventListener("click", (e) => {
+  const t = el("letterpanel");
+  if(!t) return;
+  e.preventDefault();
+  t.scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"});
+  t.classList.add("lit");
+  setTimeout(() => t.classList.remove("lit"), 1600);
+  history.replaceState(null, "", "#letterpanel");
+});
+
 document.querySelectorAll(".toggle button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll(".toggle button").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
   state = b.dataset.state; split = 50; render();
@@ -841,7 +1000,8 @@ function applyImagery(d){
     // Not a failure and not a wait. Say what it is, so a calm corner does not
     // read as a broken one.
     else if(d.status === "recordsonly"){ b.disabled = true; b.textContent = LABELS[s] + ", not generated"; }
-    else if(d.status === "scoredonly"){ b.disabled = true; b.textContent = LABELS[s] + ", audit pending"; }
+    else if(d.status === "scoredonly"){ b.disabled = true; b.textContent = LABELS[s] + ", audit pending";
+      const t = el("imgtag"); t.textContent = "scored, not audited"; t.classList.add("pending"); }
     else if(d.status && d.status !== "ready"){ b.disabled = true; b.textContent = LABELS[s] + ", unavailable"; }
   }
   render();
@@ -931,10 +1091,13 @@ function upgradeMap(){
   if(!window.fetch) return;
   const img = el("mapimg");
   const wrap = document.createElement("div");
+  wrap.className = "mapwrap";
   wrap.style.position = "relative";
   img.parentNode.insertBefore(wrap, img);
   wrap.appendChild(img);
-  wrap.style.height = img.clientHeight ? img.clientHeight + "px" : "300px";
+  // Inside the band the wrap flexes to fill the column; standalone it keeps
+  // the thumbnail's height as before.
+  if(!document.querySelector(".band")) wrap.style.height = img.clientHeight ? img.clientHeight + "px" : "300px";
   img.style.position = "absolute"; img.style.inset = "0";
   img.style.width = "100%"; img.style.height = "100%"; img.style.objectFit = "cover";
   const s = document.createElement("script");
@@ -958,14 +1121,20 @@ function upgradeMap(){
             const p = el("mapprov");
             if(p) p.textContent = "Map data (c) OpenStreetMap contributors (c) CARTO.";
           }
-        });
+        }).then(map => { if(map) CORNER_MAP = map; });
       });
     });
   };
   document.head.appendChild(s);
 }
 
-fetch("/api/stats" + X).then(r => r.json()).then(d => {
+// The lane registry. Each loader is a function of the CURRENT corner (it
+// reads X when called), so calling them again after a swap repaints every
+// panel in place through the exact same code a full load runs.
+const LANE_LOADERS = {};
+
+LANE_LOADERS.stats = () => fetch("/api/stats" + X).then(r => r.json()).then(d => {
+  V.stats = d; paintVerdict();
   // A null district means no clear majority, which prints as "n/a" rather than
   // as the 0 that Number(null) would quietly produce.
   const vals = [d.crashes, d.reports311, d.district];
@@ -996,7 +1165,8 @@ fetch("/api/stats" + X).then(r => r.json()).then(d => {
 // Cred Check. Four lanes, lit when they agree, with the verdict beside them.
 // Detail sits in the title attribute, which is hover on a pointer and long
 // press on touch, and keeps the strip to one line.
-fetch("/api/cred" + X).then(r => r.json()).then(d => {
+LANE_LOADERS.cred = () => fetch("/api/cred" + X).then(r => r.json()).then(d => {
+  V.cred = d; paintVerdict();
   if(!d || !d.lanes) return;
   el("cred").hidden = false;
   el("cred").innerHTML = d.lanes.map(l =>
@@ -1009,7 +1179,7 @@ fetch("/api/cred" + X).then(r => r.json()).then(d => {
 // Corroboration. Which audit findings the public record backs, which it does
 // not, and which the record raised on its own. Deterministic server side, so
 // this is display only.
-fetch("/api/hazards" + X).then(r => r.json()).then(d => {
+LANE_LOADERS.hazards = () => fetch("/api/hazards" + X).then(r => r.json()).then(d => {
   const items = d.items || [];
   // Feed the hero's alt text: the audit image's description names what the
   // audit actually flagged at this corner, not a generic phrase.
@@ -1028,8 +1198,44 @@ fetch("/api/hazards" + X).then(r => r.json()).then(d => {
 
 // The Danger Index. Every number here came out of DataSF arithmetic, so the
 // caveat travels with it on the page rather than being buried in the README.
-fetch("/api/score" + X).then(r => r.json()).then(d => {
+// The verdict block assembles from the same three payloads the panels below
+// render, so it can never disagree with its own receipts. Each fetch feeds it
+// as it lands; the block shows once the grade is in.
+const V = { score: null, stats: null, cred: null };
+function paintVerdict(){
+  if(!V.score) return;
+  const v = el("verdict");
+  const g = el("vg");
+  g.textContent = V.score.grade;
+  g.className = "vg g" + V.score.grade;
+  el("vline").textContent = V.score.grade + " \u00b7 worse than " + V.score.index + "% of San Francisco intersections";
+  if(V.stats){
+    const f = V.stats.fatal ? ", " + V.stats.fatal + " fatal" : "";
+    // The corroboration clause only when the Cred Check actually corroborates:
+    // a score-tier corner with no audit yet gets the numbers and no chorus.
+    const agree = V.cred && V.cred.score >= 3 ? ", and the evidence agrees" : "";
+    el("vthesis").textContent = V.stats.crashes + " injury collisions in 5 years" + f + agree + ".";
+  }
+  if(V.cred && V.cred.lanes){
+    el("vcred").innerHTML = V.cred.lanes.map(l =>
+      '<i class="' + (l.hit ? "on" : "") + '" title="' + esc(l.label) + '"></i>').join("") +
+      '<span>' + esc(V.cred.verdict) + '</span>';
+  }
+  v.hidden = false;
+}
+
+LANE_LOADERS.score = () => fetch("/api/score" + X).then(r => r.json()).then(d => {
   if(!d || typeof d.index !== "number") return;
+  V.score = d; paintVerdict();
+  // Remember this visit on this device and nowhere else: slug, name, the grade
+  // seen, when. The homepage strip renders it and a later grade change earns a
+  // dot. Capped, deduped, most recent first.
+  try {
+    const visits = JSON.parse(localStorage.getItem("sc:visits") || "[]")
+      .filter(v => v && v.slug !== CORNER_SLUG);
+    visits.unshift({ slug: CORNER_SLUG, name: CORNER_GEO.name, gradeSeen: d.grade, at: Date.now() });
+    localStorage.setItem("sc:visits", JSON.stringify(visits.slice(0, 12)));
+  } catch(e) {}
   el("scorewrap").hidden = false;
   el("scoren").innerHTML = d.index + '<small>/100</small>';
   const g = el("scoreg");
@@ -1077,7 +1283,7 @@ fetch("/api/changes").then(r => r.json()).then(d => {
   el("ghist").hidden = false;
 }).catch(() => {});
 
-fetch("/api/news" + X).then(r => r.json()).then(d => {
+LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
   mark("newstag", d.source);
   // Do not claim corner-level precision the result set does not support.
   if (d.heading) el("newshead").textContent = d.heading;
@@ -1190,7 +1396,7 @@ fetch("/api/news" + X).then(r => r.json()).then(d => {
     panel.hidden = false;
     if(manifest){ render(manifest, REDUCED); return; }
     log.innerHTML = '<div class="rline in off"><b></b><span>Reading the run manifest...</span></div>';
-    fetch("/api/run" + X).then(r => r.json()).then(m => {
+    LANE_LOADERS.run = () => fetch("/api/run" + X).then(r => r.json()).then(m => {
       manifest = m;
       render(m, REDUCED);
     }).catch(() => {
@@ -1223,7 +1429,7 @@ fetch("/api/news" + X).then(r => r.json()).then(d => {
 // The press year strip. Phrased as coverage-we-can-find everywhere, never as
 // first report: Exa recall is not ground truth, and an empty year means this
 // search found nothing that year, not that nothing happened.
-fetch("/api/timeline" + X).then(r => r.json()).then(t => {
+LANE_LOADERS.timeline = () => fetch("/api/timeline" + X).then(r => r.json()).then(t => {
   const years = t && t.years;
   if(!years || !years.length) return;
   const counts = years.map(y => y.count || 0);
@@ -1290,7 +1496,7 @@ fetch("/api/run" + X).then(r => r.json()).then(m => {
   n.hidden = false;
 }).catch(() => {});
 
-fetch("/api/voices" + X).then(r => r.json()).then(d => {
+LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d => {
   const items = d.items || [];
   const tag = el("voicestag");
   if (!items.length) {
@@ -1301,6 +1507,19 @@ fetch("/api/voices" + X).then(r => r.json()).then(d => {
       '<p class="empty">No on-topic resident accounts found for this corner.</p>';
     return;
   }
+  // Display rule, same token lists the Cred Check uses server side: a strong
+  // street word stands alone, a weak one only counts beside a strong one. If
+  // no rendered quote is about the street itself, the honest empty state wins
+  // over quotes about a neighborhood, a station, or a movie.
+  const STRONG = ["crossing","cross","crosswalk","driver","drivers","traffic","cars","speeding","signal","curb","sidewalk","intersection","pedestrian"];
+  const isStreet = t => { const low = String(t||"").toLowerCase(); return STRONG.some(w => low.includes(w)); };
+  if (!items.some(v => isStreet(v.text))) {
+    tag.textContent = "none about the street";
+    tag.classList.add("pending");
+    el("voices").innerHTML =
+      '<p class="empty">Accounts were scraped here, but none of the rendered quotes describe the street itself, so none are shown as evidence.</p>';
+    return;
+  }
   mark("voicestag", d.source);
   el("voices").innerHTML = items.map(v =>
     '<div class="voice"><p>&ldquo;' + esc(v.text) + '&rdquo;</p><div class="m">' +
@@ -1308,7 +1527,7 @@ fetch("/api/voices" + X).then(r => r.json()).then(d => {
     (v.when ? " &middot; " + esc(v.when) : "") + '</div></div>').join("");
 });
 
-fetch("/api/impact" + X).then(r => r.json()).then(d => {
+LANE_LOADERS.impact = () => fetch("/api/impact" + X).then(r => r.json()).then(d => {
   const box = el("impact");
   if(!d || d.source === "empty" || !d.rows){ window.__impactReady = false; return; }
   el("impactrows").innerHTML = d.rows.map(r => {
@@ -1327,7 +1546,7 @@ fetch("/api/impact" + X).then(r => r.json()).then(d => {
   if(state === "fix") box.hidden = false;
 }).catch(() => {});
 
-fetch("/data/precedents.json").then(r => r.json()).then(d => {
+LANE_LOADERS.precedents = () => fetch("/data/precedents.json").then(r => r.json()).then(d => {
   const rows = (d.projects || []);
   if(!rows.length) return;
   el("precrows").innerHTML = rows.slice(0, 3).map(p =>
@@ -1339,15 +1558,121 @@ fetch("/data/precedents.json").then(r => r.json()).then(d => {
   el("precedents").hidden = false;
 }).catch(() => {});
 
-fetch("/api/letter" + X).then(r => r.json()).then(d => {
+LANE_LOADERS.letter = () => fetch("/api/letter" + X).then(r => r.json()).then(d => {
   mark("lettertag", d.source);
   el("letter").textContent = d.text || "";
-  el("copy").addEventListener("click", () => {
+
+// Download as text: a client-side blob of exactly what is on screen, named
+// for the corner. Nothing fetched, nothing regenerated.
+el("download") && (el("download").onclick = () => {
+  const text = el("letter") ? el("letter").textContent : "";
+  if(!text.trim()) return;
+  const blob = new Blob([text], {type: "text/plain;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "streetcred-letter-" + CORNER_SLUG + ".txt";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+});
+  // onclick, not addEventListener: this handler rebinds on every letter load,
+  // and after an in-place corner swap a second listener would copy the letter
+  // twice. Assignment replaces; listeners accumulate.
+  el("copy").onclick = () => {
     navigator.clipboard.writeText(d.text || "");
     el("copy").textContent = "Copied";
     setTimeout(() => el("copy").textContent = "Copy letter", 1400);
-  });
+  };
 });
+
+// ---------------- in-place corner swap (split stage) ----------------
+// pushState navigation between corners without a reload: identity flips,
+// transient DOM resets to skeletons, and the exact same lane loaders repaint
+// every panel. Deep links and the back button stay truthful because every
+// swap is a history entry and popstate swaps back through the same path.
+let CORNER_MAP = null; // the Leaflet map instance, once the band upgrade runs
+
+function runLanes(){ Object.values(LANE_LOADERS).forEach(fn => { try { fn(); } catch(e) {} }); }
+
+function resetTransient(){
+  V.score = null; V.stats = null; V.cred = null;
+  IMG = null; state = "today"; polls = 0;
+  window.HZLABELS = [];
+  el("verdict").hidden = true;
+  el("scorewrap").hidden = true;
+  el("cred").hidden = true;
+  if(el("ghist")) el("ghist").hidden = true;
+  if(el("tl")) el("tl").hidden = true;
+  if(el("hz")){ el("hz").hidden = true; el("hz").innerHTML = ""; }
+  if(el("replay")) el("replay").hidden = true;
+  const sk = '<div class="sk"></div><div class="sk"></div><div class="sk"></div>';
+  el("letter").innerHTML = sk + sk;
+  el("news").innerHTML = sk;
+  if(el("voices")) el("voices").innerHTML = sk;
+  el("stats").innerHTML = '<div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Injury collisions, last 5 years</div></div>' +
+    '<div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-condition 311 reports, 3 years</div></div>' +
+    '<div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>';
+  document.querySelectorAll(".toggle button").forEach((b,i) => {
+    b.setAttribute("aria-pressed", String(i === 0));
+    if(b.dataset.state !== "today"){ b.disabled = true; b.textContent = b.dataset.state === "hazards" ? "Hazards" : "Proposed fix"; }
+  });
+}
+
+function swapCorner(info, push){
+  CORNER_SLUG = info.slug;
+  CORNER_GEO = { lat: Number(info.lat), lon: Number(info.lon), name: info.name };
+  X = "?x=" + info.slug;
+  if(push !== false) history.pushState({ corner: info }, "", "/c/" + info.slug);
+  document.title = info.name + ", graded - StreetCred";
+  const h = document.querySelector(".cname b"); if(h) h.textContent = info.name;
+  const sn = document.querySelector(".sn"); if(sn) sn.textContent = info.name;
+  resetTransient();
+  runLanes();
+  loadImagery();
+  if(CORNER_MAP && window.L){
+    // Recenter, never flyTo under reduced motion; the map itself stays live
+    // while the left column shows skeletons.
+    if(REDUCED) CORNER_MAP.setView([CORNER_GEO.lat, CORNER_GEO.lon], 16);
+    else CORNER_MAP.flyTo([CORNER_GEO.lat, CORNER_GEO.lon], 16, { duration: 0.8 });
+    CORNER_MAP.closePopup();
+  }
+}
+
+window.addEventListener("popstate", (e) => {
+  const m = location.pathname.match(/^[/]c[/]([A-Za-z0-9-]+)/);
+  if(!m) return;
+  if(e.state && e.state.corner){ swapCorner(e.state.corner, false); return; }
+  // A history entry from before the first swap: reload is the honest fallback,
+  // because we no longer know that corner's geometry without asking.
+  location.reload();
+});
+
+// Intercept popup navigation inside the band only. Everywhere else the link
+// behaves as a link.
+document.addEventListener("click", (e) => {
+  const a = e.target.closest && e.target.closest(".lpop-view");
+  if(!a || !document.querySelector(".band")) return;
+  e.preventDefault();
+  swapCorner({ slug: a.dataset.slug, name: a.dataset.name, lat: a.dataset.lat, lon: a.dataset.lon });
+});
+
+// ---------------- band assembly, desktop only ----------------
+(function(){
+  if(!matchMedia("(min-width: 1100px)").matches) return;
+  if(document.querySelector(".band")) return;
+  const imagery = document.querySelector(".panel.lane-imagery");
+  const maplane = el("maplane");
+  if(!imagery || !maplane) return;
+  const band = document.createElement("div");
+  band.className = "band";
+  imagery.parentNode.insertBefore(band, imagery);
+  band.appendChild(imagery);
+  band.appendChild(maplane);
+  maplane.hidden = false;
+})();
+
+// First load: every lane once. Swaps call runLanes() again.
+runLanes();
 </script>
 <script src="/typeahead.js" defer></script>
 </body>
