@@ -292,7 +292,7 @@ ${entries.map(entryHtml).join("\n")}`
       : "No journal entries yet."
   }
   ${rejects ? `${rejects} unauthenticated write${rejects === 1 ? "" : "s"} rejected.` : ""}
-  Counted from the journal, which is public at <a href="/api/agent/journal">/api/agent/journal</a>.
+  Counted from the journal, which is public at <a href="/api/agent/journal">/api/agent/journal</a>. <a href="/methodology">Methodology</a>.
   Threshold calibration from logged outcomes is not model retraining, and this page never calls it that.
 </p>
 

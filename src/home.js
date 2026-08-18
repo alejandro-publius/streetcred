@@ -318,7 +318,7 @@ ${ranked
 </div>
 
 <footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
-Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.</footer>
+Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
 </div>
 
 <script>

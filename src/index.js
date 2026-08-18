@@ -14,6 +14,7 @@ import {
   getJournal, appendJournal, putAgentRescore, putAgentLetter, putAgentFlag,
   countAgentReject, getAgentRejects,
   getVerifiedLetter, putVerifiedLetter, appendTrustIncident, getTrustIncidents,
+  getScoreRaw, appendChange, getChanges,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import { imageryFor } from "./imagery.js";
@@ -26,6 +27,8 @@ import { buildSuggestion, SUGGEST_VERSION } from "./suggest.js";
 import { buildInputSet, verifyLetter, retryInstruction, VERIFY_VERSION } from "./verify.js";
 import { handleAgentReport, journalStats, JOURNAL_CAP } from "./agent.js";
 import { WATCHDOG } from "./watchdog.js";
+import { METHODOLOGY } from "./methodology.js";
+import { CHANGES } from "./changes.js";
 
 // DataSF open datasets, keyless.
 const DS_CRASHES = "ubvf-ztfx";
@@ -209,8 +212,25 @@ async function getStats(c) {
 async function getScoreFor(c, env) {
   const hit = await getScore(env, c.slug, SCORE_VERSION);
   if (hit) return { ...hit, source: "cache" };
+  // The versioned reader returns null both for "never scored" and "scored
+  // under old rules". The raw read tells them apart, because replacing an old
+  // grade is a public event and creating a first one is not.
+  const prior = await getScoreRaw(env, c.slug);
   const fresh = await computeScore(c);
   await putScore(env, c.slug, fresh);
+  if (prior && (prior.grade !== fresh.grade || prior.index !== fresh.index)) {
+    await appendChange(env, {
+      slug: c.slug,
+      name: c.short || c.name,
+      old: { grade: prior.grade, index: prior.index, version: prior.version },
+      new: { grade: fresh.grade, index: fresh.index, version: fresh.version },
+      reason: prior.version !== fresh.version
+        ? `score model ${prior.version} replaced by ${fresh.version}`
+        : "inputs changed in the city record",
+      source: "pipeline",
+      date: new Date().toISOString(),
+    }).catch(() => {});
+  }
   return fresh;
 }
 
@@ -1207,7 +1227,23 @@ export default {
         const out = await handleAgentReport(request, env, {
           countReject: countAgentReject,
           appendJournal: (envRef, record) => appendJournal(envRef, record, JOURNAL_CAP),
-          putAgentRescore,
+          // An accepted agent rescore that disagrees with the published grade
+          // is a grade-change event, and it goes in the same public changelog
+          // as the pipeline's own, labeled by who claimed it.
+          putAgentRescore: async (envRef, rec) => {
+            await putAgentRescore(envRef, rec);
+            const current = await getScoreRaw(envRef, rec.slug).catch(() => null);
+            if (current && (current.grade !== rec.grade || current.index !== rec.index)) {
+              await appendChange(envRef, {
+                slug: rec.slug,
+                old: { grade: current.grade, index: current.index },
+                new: { grade: rec.grade, index: rec.index },
+                reason: "watchdog agent rescore claim, published grade unchanged",
+                source: "agent",
+                date: rec.at,
+              }).catch(() => {});
+            }
+          },
           putAgentLetter,
           putAgentFlag,
           cornerFor: (slug) => cornerBySlug(env, slug),
@@ -1307,6 +1343,21 @@ export default {
           stats: journalStats(journal),
           rejected: await getAgentRejects(env).catch(() => 0),
           entries: journal,
+        });
+      }
+
+      if (p === "/methodology" || p === "/methodology/") {
+        return new Response(METHODOLOGY(origin), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+
+      // The public record of every stored grade or index change, newest first.
+      if (p === "/changes" || p === "/api/changes") {
+        const changes = (await getChanges(env).catch(() => [])).slice(0, 50);
+        if (p === "/api/changes") return json({ source: "live", changes });
+        return new Response(CHANGES(changes, origin), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
 

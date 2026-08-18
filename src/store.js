@@ -88,6 +88,47 @@ export async function putScore(env, slug, score) {
   await rawPut(env, `score:${slug}`, JSON.stringify(score));
 }
 
+// The stored record regardless of version. The changelog needs the outgoing
+// grade at the moment a recompute replaces it, and the versioned reader above
+// hides exactly that record.
+export async function getScoreRaw(env, slug) {
+  const raw = await rawGet(env, `score:${slug}`);
+  try {
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------- changelog
+
+// Every stored grade or index change, append only, newest first. A grade that
+// can move with no public record of having moved is a grade nobody can cite:
+// the screenshot from last week and the page today would simply disagree, and
+// the reader has no way to learn which one to trust.
+export async function appendChange(env, entry) {
+  const raw = await rawGet(env, "changes:log");
+  let log = [];
+  try {
+    const parsed = raw ? JSON.parse(raw) : [];
+    log = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    log = [];
+  }
+  log.unshift(entry);
+  await rawPut(env, "changes:log", JSON.stringify(log.slice(0, 500)));
+}
+
+export async function getChanges(env) {
+  const raw = await rawGet(env, "changes:log");
+  try {
+    const l = raw ? JSON.parse(raw) : [];
+    return Array.isArray(l) ? l : [];
+  } catch {
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------- hazards
 
 // Corroboration is expensive once (one model call plus five DataSF queries) and

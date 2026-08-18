@@ -226,6 +226,13 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .sevkey{display:flex;gap:13px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin-bottom:7px}
 .sevkey b{font-weight:600;color:var(--ink)}
 .scorecav{font-size:11.5px;color:var(--dim);line-height:1.5}
+.ghist{margin-top:8px}
+.ghist summary{font-size:11.5px;font-weight:600;color:var(--dim);cursor:pointer;list-style:none;
+  display:inline-block;border-bottom:1px dashed var(--line2)}
+.ghist summary::-webkit-details-marker{display:none}
+.ghist summary:hover{color:var(--ink)}
+.ghist div{font-size:12px;color:var(--dim);line-height:1.7;margin-top:6px}
+.ghist b{color:var(--ink);font-variant-numeric:tabular-nums}
 
 .toggle{display:flex;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;width:max-content;margin-bottom:16px}
 .toggle button{font-family:inherit;font-size:14px;font-weight:600;color:var(--dim);background:none;border:0;padding:10px 20px;border-radius:8px;cursor:pointer}
@@ -403,6 +410,8 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .stack .lg b{font-size:14px;color:var(--ink);font-weight:600;white-space:nowrap;letter-spacing:-.01em}
 @media(max-width:860px){.stack .lg{width:auto}}
 footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
+footer a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
+footer a:hover{color:var(--ink)}
 
 .sk{background:linear-gradient(90deg,var(--card) 25%,#eeece4 50%,var(--card) 75%);background-size:200% 100%;animation:sh 1.3s infinite;border-radius:6px;height:13px;margin:9px 0}
 @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
@@ -559,6 +568,10 @@ ${BASE_CSS}
     <div class="sevbar" id="sevbar"></div>
     <div class="sevkey" id="sevkey"></div>
     <div class="scorecav" id="scorecav"></div>
+    <details class="ghist" id="ghist" hidden>
+      <summary>Grade history</summary>
+      <div id="ghistbody"></div>
+    </details>
   </div>
 </div>
 <div class="stats" id="stats">
@@ -633,7 +646,7 @@ ${BASE_CSS}
 </div>
 
 <footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
-Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.</footer>
+Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
 </div>
 
 <script>
@@ -975,6 +988,19 @@ fetch("/api/score" + X).then(r => r.json()).then(d => {
   cav.innerHTML = esc(d.caveat || "") +
     ' <a class="srcq" href="/methodology" aria-label="How the index and its frozen census distribution are computed">How this is computed</a>';
 });
+
+// Grade history: this corner's rows from the public changelog. Hidden when
+// there are none, because "no changes" is the normal state and an empty
+// expando reads as something broken.
+fetch("/api/changes").then(r => r.json()).then(d => {
+  const mine = (d.changes || []).filter(c => c.slug === CORNER_SLUG);
+  if (!mine.length) return;
+  el("ghistbody").innerHTML = mine.map(c =>
+    '<div>' + esc(String(c.date||"").slice(0,10)) + ': <b>' + esc(c.old?.grade ?? "?") + " " + (c.old?.index ?? "?") +
+    '</b> to <b>' + esc(c.new?.grade ?? "?") + " " + (c.new?.index ?? "?") + '</b>, ' + esc(c.reason || "") +
+    ' <span style="text-transform:uppercase;font-size:9.5px;letter-spacing:.07em">' + esc(c.source || "") + '</span></div>').join("");
+  el("ghist").hidden = false;
+}).catch(() => {});
 
 fetch("/api/news" + X).then(r => r.json()).then(d => {
   mark("newstag", d.source);
