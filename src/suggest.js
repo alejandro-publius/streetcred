@@ -12,38 +12,15 @@
 
 import { locate, parseQuery, inSF } from "./resolve.js";
 import { DENY, domainOf } from "./newsfilter.js";
+import { candidatesFrom } from "./press.js";
 
 export const SUGGEST_VERSION = "v1";
 
-// Two street-ish names joined by and, at, or an ampersand. Deliberately narrow:
-// it only proposes a candidate, and every candidate then has to survive being
-// looked up in the city's own intersection table, which is what stops
-// "Vision Zero" or "Walk and Bike" from being offered as a corner.
-const PAIR =
-  /\b((?:\d{1,3}(?:st|nd|rd|th))|(?:[A-Z][a-z]{2,})(?:\s[A-Z][a-z]{2,})?)\s+(?:and|at|&)\s+((?:\d{1,3}(?:st|nd|rd|th))|(?:[A-Z][a-z]{2,})(?:\s[A-Z][a-z]{2,})?)\b/g;
-
-// Words that pass the shape test but are never street names, so a headline
-// about "Safety and Enforcement" does not become a corner.
-const NOT_A_STREET = new Set([
-  "safety", "vision", "zero", "traffic", "pedestrian", "bike", "walk", "transit",
-  "police", "city", "san", "francisco", "muni", "bart", "street", "streets",
-  "avenue", "district", "supervisor", "mayor", "plan", "project", "program",
-  "improvement", "improvements", "crash", "crashes", "collision", "collisions",
-  "death", "deaths", "injury", "injuries", "news", "report", "reports", "study",
-  "public", "works", "board", "county", "state", "california", "bay", "area",
-]);
-
-function candidatesFrom(text) {
-  const out = [];
-  for (const m of String(text || "").matchAll(PAIR)) {
-    const a = m[1].trim();
-    const b = m[2].trim();
-    if (a.toLowerCase() === b.toLowerCase()) continue;
-    if (NOT_A_STREET.has(a.toLowerCase()) || NOT_A_STREET.has(b.toLowerCase())) continue;
-    out.push(`${a} and ${b}`);
-  }
-  return out;
-}
+// The candidate extractor used to live here. It now lives in src/press.js and
+// is shared with the citywide watchlist and the connections pass, because
+// three regexes proposing corners would eventually disagree about what a
+// street is, and the disagreement would show up as one surface offering a
+// corner another surface had already rejected.
 
 export async function buildSuggestion(seed, env, warmedSlugs) {
   if (!seed?.url) throw new Error("no seed article");

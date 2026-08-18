@@ -134,6 +134,20 @@ export async function cityCornerFor(env, slug) {
 // is republished rather than between requests.
 let META_CACHE = null;
 
+// The city's street names, held in the isolate. 2,219 names and 23 KB, read
+// once and reused: the press lanes check every candidate side against it.
+let STREETS_CACHE = null;
+
+export async function getCityStreets(env) {
+  if (STREETS_CACHE && Date.now() - STREETS_CACHE.at < SHARD_TTL_MS) return STREETS_CACHE.value;
+  if (!env?.STORE) return null;
+  const list = await env.STORE.get("city:streets", "json").catch(() => null);
+  if (!Array.isArray(list)) return null;
+  const value = new Set(list);
+  STREETS_CACHE = { at: Date.now(), value };
+  return value;
+}
+
 export async function getCityMeta(env) {
   if (META_CACHE && Date.now() - META_CACHE.at < SHARD_TTL_MS) return META_CACHE.value;
   if (!env?.STORE) return null;

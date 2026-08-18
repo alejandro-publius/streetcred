@@ -225,7 +225,21 @@ if (DRY) {
 
 // ---------------------------------------------------------------- KV
 
+// Every distinct street name in the graded city, normalized by parseQuery the
+// same way a typed query is. The press lanes use it to tell a phrase that
+// contains no San Francisco street ("Traffic Calming", "Real Estate") from a
+// real pair of SF streets that simply do not meet at a graded crossing. Both
+// are rejects; only one of them is worth showing a reader.
+const streetNames = new Set();
+for (const r of rows) {
+  const parsed = parseQuery(r.name);
+  if (parsed.ok) for (const st of parsed.streets) streetNames.add(st);
+}
+const streetsBody = JSON.stringify([...streetNames].sort());
+log(`${streetNames.size} distinct street names (${(Buffer.byteLength(streetsBody) / 1024).toFixed(0)} KB)`);
+
 const bulk = [];
+bulk.push({ key: "city:streets", value: streetsBody });
 for (const [k, body] of shardPayloads) bulk.push({ key: `city:shard:${k}`, value: body });
 rankPages.forEach((page, i) => {
   bulk.push({ key: `city:rank:${i}`, value: JSON.stringify({ version: CITY_VERSION, page: i, rows: page }) });

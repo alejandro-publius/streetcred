@@ -155,6 +155,42 @@ who clicks through and finds a slightly different count should already know why.
 <b>80 meters over twelve months of 311</b>, matching the grade's own footprint, where a live corner's
 tiles count within 150 meters over three years. Each tile says which it is.</p>
 
+<h2>The Press Watchlist, and how a corner gets on it</h2>
+<p>Every other lane on this site starts from a corner and asks what is written about it. The watchlist
+runs the other way: it starts from the city's coverage and asks which corners are in it. That is an
+entity-discovery problem, and it is only worth anything if the entities are verified.</p>
+<p>Seven citywide semantic searches run each morning through Exa, with the news category, a published
+date window, lead-generation domains excluded at the API, and one pass restricted to San Francisco
+outlets that write at corner resolution. Every crossing name in every result is pulled out by the same
+extractor the related-corner lead and the connections pass use, and then each candidate has to clear
+three bars before it can appear:</p>
+<ul>
+  <li><b>Both names are San Francisco streets.</b> Checked against the 2,219 street names in the graded
+  city index. Page text is full of capitalized pairs joined by "and", and "Metro Areas and Our Cities"
+  looks exactly like an intersection to a pattern match. Phrases that name no street are counted and
+  discarded rather than listed, because a page of them teaches a reader nothing.</li>
+  <li><b>The pair is an exact match in the intersections index.</b> One KV read against the same 7,353
+  corner index the site grades from. A real pair of San Francisco streets that do not meet at a graded
+  crossing is a reject worth reading, and it is published with that reason.</li>
+  <li><b>The coverage is confirmed.</b> The article has to be about safety at that crossing, not merely
+  mention it. A redesign announcement listing six intersections in passing does not put six corners on
+  a safety watchlist.</li>
+</ul>
+<p><b>Rejects are logged and published</b> at <a href="/watchlist">/watchlist</a> with the reason each
+one failed. A discovery pipeline that shows only its hits is indistinguishable from a search box that
+got lucky.</p>
+<p>This is an entity-discovery workflow of the shape Exa's Websets product is built for: find candidate
+entities, verify each against hard criteria, keep the ones that survive. It is implemented directly on
+Exa's search API, which is what the event credits cover.</p>
+<p><b>Press connections</b> use the same extractor and the same index. For an audited corner with a
+best article, <code>findSimilar</code> asks what else is being written in the same breath; every
+crossing named in the related coverage is verified the same way, and a surviving link is written to
+both corners so the claim reads the same from either page. Two extra bars apply here, because
+connecting two corners is a stronger claim than naming one: the connecting article must be dated (a
+site homepage is not an article) and must be recent, since a blog post from 2007 is not the same breath
+as anything. Empty stays empty, and nothing fuzzy is shown: of 23 audited corners, four have a
+connection.</p>
+
 <h2>The exposure caveat, in full</h2>
 <p>The index ranks <b>reported harm, not risk per crossing</b>. A corner ten thousand people cross daily
 and a corner a hundred people cross daily are ranked on their raw counts. There is no reliable public

@@ -426,6 +426,184 @@ export async function reserveGeneration(env) {
   return true;
 }
 
+// ---------------------------------------------------------------- exa budget
+
+// Total Exa searches the batch lanes may ever spend, against the event
+// credits. The per-page press lane is bounded by traffic and the edge cache and
+// is deliberately NOT metered here: it costs one search per corner per ten
+// minutes and it is the lane a visitor is waiting on. What is metered is the
+// two lanes that fan out on their own, the citywide watchlist and the press
+// connections pass, because those are the ones that can spend a thousand
+// searches without anybody asking them to.
+//
+// Cumulative, not daily, and it counts from the moment this counter was
+// introduced rather than pretending to know what earlier runs spent.
+export const EXA_CALL_BUDGET = 1500;
+
+export async function exaBudget(env) {
+  const calls = parseInt((await rawGet(env, "exa:calls")) || "0", 10) || 0;
+  const spend = parseFloat((await rawGet(env, "exa:spend")) || "0") || 0;
+  return {
+    calls,
+    cap: EXA_CALL_BUDGET,
+    remaining: Math.max(0, EXA_CALL_BUDGET - calls),
+    spendUsd: Math.round(spend * 10000) / 10000,
+  };
+}
+
+// Reserved in bulk, before the batch runs, because a fan-out that checks its
+// budget one call at a time has already overspent by the time it notices.
+export async function reserveExa(env, n) {
+  const used = parseInt((await rawGet(env, "exa:calls")) || "0", 10) || 0;
+  if (used + n > EXA_CALL_BUDGET) return false;
+  await rawPut(env, "exa:calls", String(used + n));
+  return true;
+}
+
+// Exa returns costDollars on every response, so the spend on this feature is a
+// measured number rather than an estimate.
+export async function recordExaSpend(env, usd) {
+  if (!Number.isFinite(usd) || usd <= 0) return;
+  const spend = parseFloat((await rawGet(env, "exa:spend")) || "0") || 0;
+  await rawPut(env, "exa:spend", String(Math.round((spend + usd) * 1e6) / 1e6));
+}
+
+// ---------------------------------------------------------------- press watchlist
+
+export async function getWatchlist(env, version) {
+  const raw = await rawGet(env, "press:watchlist");
+  if (!raw) return null;
+  try {
+    const w = JSON.parse(raw);
+    return !version || w.version === version ? w : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putWatchlist(env, w) {
+  await rawPut(env, "press:watchlist", JSON.stringify(w));
+}
+
+// One record per corner that the press connects to another corner. Written for
+// BOTH ends of every connection, so the claim reads the same from either page.
+export async function getConnections(env, slug) {
+  const raw = await rawGet(env, `press:conn:${slug}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function putConnections(env, slug, rec) {
+  await rawPut(env, `press:conn:${slug}`, JSON.stringify(rec));
+}
+
+// ---------------------------------------------------------------- apify runs
+
+// Actor runs the site may commission in a calendar month. Two per corner and
+// one corner a morning is 62 in a long month; the ceiling sits just above that
+// so a bug that commissions in a loop stops at a knowable number instead of at
+// the credit balance.
+export const MONTHLY_ACTOR_RUN_CAP = 70;
+
+const monthKey = () => new Date().toISOString().slice(0, 7);
+
+export async function actorRunBudget(env) {
+  const used = parseInt((await rawGet(env, `apifyruns:${monthKey()}`)) || "0", 10) || 0;
+  return { used, cap: MONTHLY_ACTOR_RUN_CAP, remaining: Math.max(0, MONTHLY_ACTOR_RUN_CAP - used), month: monthKey() };
+}
+
+export async function reserveActorRun(env) {
+  const key = `apifyruns:${monthKey()}`;
+  const used = parseInt((await rawGet(env, key)) || "0", 10) || 0;
+  if (used >= MONTHLY_ACTOR_RUN_CAP) return false;
+  // Two months, so a counter written on the last day cannot linger a year.
+  await rawPut(env, key, String(used + 1), 62 * 24 * 3600);
+  return true;
+}
+
+// What the site commissioned for a corner, and where the results will land.
+// Written the moment the runs start, read by the NEXT cron cycle, because an
+// actor takes minutes and a cron handler must not sit waiting on one.
+export async function getVoiceRun(env, slug) {
+  const raw = await rawGet(env, `voicerun:${slug}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function putVoiceRun(env, slug, rec) {
+  await rawPut(env, `voicerun:${slug}`, JSON.stringify(rec));
+}
+
+// The queue of corners whose runs have not been ingested yet. A list rather
+// than a scan, because listing KV by prefix from inside a Worker is not a
+// thing and a cron must not guess which corners are outstanding.
+export async function getVoicePending(env) {
+  const raw = await rawGet(env, "voicerun:pending");
+  try {
+    const l = raw ? JSON.parse(raw) : [];
+    return Array.isArray(l) ? l : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function putVoicePending(env, list) {
+  await rawPut(env, "voicerun:pending", JSON.stringify(list.slice(0, 40)));
+}
+
+// Scraped resident voices for a corner, ingested from a commissioned run.
+// Distinct from the baked assets, which were collected by hand before the
+// demo: this key is only ever written by the autonomous path.
+export async function getVoicesStored(env, slug) {
+  const raw = await rawGet(env, `voices:${slug}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function putVoicesStored(env, slug, rec) {
+  await rawPut(env, `voices:${slug}`, JSON.stringify(rec));
+}
+
+// Every commissioned run and what it actually cost, newest first. The credit
+// is real money and an autonomous system spending it without a ledger is the
+// thing nobody should ship.
+export async function appendActorCost(env, entry) {
+  const raw = await rawGet(env, "apify:costs");
+  let log = [];
+  try {
+    const parsed = raw ? JSON.parse(raw) : [];
+    log = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    log = [];
+  }
+  log.unshift(entry);
+  const trimmed = log.slice(0, 300);
+  await rawPut(env, "apify:costs", JSON.stringify(trimmed));
+  return trimmed;
+}
+
+export async function getActorCosts(env) {
+  const raw = await rawGet(env, "apify:costs");
+  try {
+    const l = raw ? JSON.parse(raw) : [];
+    return Array.isArray(l) ? l : [];
+  } catch {
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------- photo budget
 
 export async function photoBudget(env) {
