@@ -32,39 +32,53 @@ Four independent sources cross-check each other on one specific claim, and that 
 
 Exa is the press-coverage lane. It answers "has anyone reported on this corner," which no government dataset can.
 
-The query is constructed from the corner itself:
+**The call.** `POST https://api.exa.ai/search`, with the query built from the corner name plus safety terms:
 
 ```
 pedestrian safety OR crash OR traffic 16th Street and Mission Street San Francisco
 ```
 
-sent to `POST https://api.exa.ai/search` with `type: "auto"`, `numResults: 8`, and 400 characters of page text. Results are then filtered to those whose title or URL actually names the intersection, sorted newest first, and capped at five.
+sent with `type: "auto"`, `numResults: 8`, and page text requested as a **nested** `contents: { text: { maxCharacters: 400 } }`. The nesting matters: a flat `text` field is rejected, so the shape of that object is not cosmetic.
 
-What makes this an evidence lane rather than a search box: the panel renders the outlet domain and publication date next to every headline, and each headline links out. A judge, or a Supervisor's aide, can check any claim in one click. Tonight it surfaced Mission Local's report of a pedestrian struck and killed near 16th and Mission, which is the single most load-bearing fact on the page.
+**The filter.** Results are kept only when the title or URL carries a street token (`16th`, `mission`, `sixteenth`), then sorted newest first and capped at five. Without that filter the query pulls in citywide Vision Zero coverage that is real but not about this corner.
 
-Exa is also load bearing on the final output. The top two headlines, with outlet and date, are passed into the letter prompt, so the drafted letter cites press coverage by name rather than gesturing at it.
+**The render.** Every headline shows its outlet domain and publish date and links out, so any claim on the page can be checked in one click. That is what makes this an evidence lane rather than a search box.
+
+**Load bearing on the output, not just the panel.** The top two headlines, with outlet and date, are passed into the Gemini letter prompt. Exa results therefore appear in the drafted letter by outlet name, cited as sources in the ask itself, rather than sitting in a side panel the Supervisor never sees.
+
+**Live example.** The current result set for this corner includes Walk SF (`walksf.org`, 2026-05-27), Mission Local (`missionlocal.org`, 2026-05-28), and KRON4 (`kron4.com`, 2026-05-28), all covering the May 2026 fatality at 16th and Mission. An advocacy organization and a neighborhood newsroom independently reporting the same death is the single most load-bearing fact on the page, and neither one is in any city dataset.
 
 ## How we used Apify
 
 Apify is the resident-voices lane: what people say about a corner in the places they actually say it, which is the one thing no government database records.
 
-Two actors run against the corner:
+Two actors run against the corner, and getting each one to return anything useful took a different trick.
 
-- `compass/crawler-google-places` for reviews of the businesses and transit plaza at the intersection
-- `trudax/reddit-scraper-lite` for posts and comments naming the intersection
+**`compass/crawler-google-places`, for Google Maps reviews.** An intersection is not a place. Geocoding "16th and Mission" resolves to a road junction, which has no reviews attached to it, so the obvious query returns nothing. The working approach is to treat the corner as a **geographic circle, roughly 350m**, and collect reviews from the real businesses and the transit station standing inside it. The corner gets a voice by borrowing the voices of everything on it.
 
-Their output shapes are completely different, so `tools/collect_voices.py` flattens both into one contract, `{source, stars, text, when}`, and writes `public/data/voices-16th-mission.json`, which the Worker serves. The normalizer keeps only text that mentions the street environment (crosswalk, driver, crossing, signal, curb, and similar), so the panel shows what people say about the corner rather than what they say about the food. Reviewer names are dropped on purpose, quotes are truncated, and both sources are guaranteed representation.
+**`trudax/reddit-scraper-lite`, for Reddit.** Driven by **explicit `startUrls`** rather than the actor's search builder, which in the configuration used here enqueued zero requests and returned an empty dataset. Pointing it at specific threads is less elegant and completely reliable.
 
-Scraping happens ahead of the demo, never during one: actor runs take minutes and a page load cannot wait on one. The selected quotes are parked in Upstash Redis under `voices:16th-and-mission`, and `/api/voices` reads that key on request, so refreshing the panel is a Redis write rather than a redeploy. If Upstash is unreachable the endpoint degrades to the normalized file baked into `public/data/`, and `/api/health` reports the Upstash leg separately so a missing key is visible rather than silently papered over. This matches the Apify category criteria almost word for word, collecting and structuring data from the web and applying external information the product could not otherwise reach.
+**Normalization.** The two output shapes have nothing in common: Google Maps nests `reviews[]` with `text`, `stars`, and `publishedAtDate`, while Reddit returns flat records with `title`, `body`, and `createdAt` and no rating at all. `tools/collect_voices.py` flattens both into one contract, `{source, stars, text, when}`, scoring each candidate on how directly it speaks to street safety and keeping both sources represented. Reviewer names are dropped on purpose, quotes are truncated, and HTML entities and Reddit's "submitted by" boilerplate are stripped.
+
+**Serving.** Scraping happens ahead of the demo, never during one: actor runs take minutes and a page load cannot wait on one. `/api/voices` reads the selected quotes from Upstash Redis under `voices:16th-and-mission`, so refreshing the panel is a Redis write rather than a redeploy, and falls back to the normalized file baked into `public/data/` when Upstash is unreachable. `/api/health` reports the Upstash leg separately, so a missing key is visible rather than silently papered over.
+
+**Honest limit.** Reviews at this corner skew heavily toward the BART station: escalators, cleanliness, policing, rather than crossing conditions. The quotes shown are real scrape output and thinner on traffic safety than the other four lanes. The letter therefore only quotes a resident when the quote is actually about the street, and otherwise quotes no one rather than inventing testimony. The fix is better targeting, not more code.
+
+This is the Apify category criteria almost word for word: collecting and structuring data from the web, and applying external information the product could not otherwise reach.
 
 ## How we used Gemini
 
-Gemini does two different jobs here, and the first one is the reason this product exists.
+Gemini does two distinct jobs here, on two different models, and the first one is the reason this product exists.
+
+| Role | Model | Job |
+| --- | --- | --- |
+| Vision | `gemini-3.1-flash-image` | Reads the real Street View frame, returns it annotated with hazard zones and a legend. Also renders the proposed-fix visualization. |
+| Text | `gemini-3.7-flash` | Turns collisions, 311 counts, press headlines, resident quotes, and the audit findings into a letter to the correct District Supervisor, citing each source. |
 
 **Vision: the corner seen three ways.** Not a before and after pair. A three state narrative, observation to diagnosis to prescription:
 
 1. **Today.** The real Street View frame for the corner, fetched server side after the free metadata endpoint confirms coverage. Google attribution stays visible in the image.
-2. **Hazards.** The Today frame goes to `gemini-3.1-flash-image`, which reads the actual photograph and returns it annotated: red hatching over sub-standard or faded crosswalk markings, amber over vehicle turning conflict zones, plus a legend naming the intersection. This is a reading of a real photo, not a fabrication. The overlay marks the zones the model flags as high risk. It is zonal, not surveyed.
+2. **Hazards.** The Today frame goes to `gemini-3.1-flash-image`, which reads the actual photograph and returns it annotated: red hatching over sub-standard or faded crosswalk markings, amber over vehicle turning conflict zones, plus a legend naming the intersection. The distinction that matters is that this is an **audit of a real photograph**, not an invented scene: the model is finding the hazards in a specific corner that exists, and the annotation is rendered onto that frame. The overlay marks the zones the model flags as high risk. It is zonal, not surveyed, and it does not measure anything.
 3. **Proposed fix.** The same Today frame, edited to hold everything constant (buildings, vehicles, people, sky, poles, signals, camera angle, lighting) while changing only the safety infrastructure: fresh asphalt, high visibility continental crosswalks, a green painted bike lane with white flex posts, and a concrete curb extension with plantings. Labeled on the page as an AI visualization of a proposed fix, never as a photograph of something that exists.
 
 Both derived states are generated in parallel at build time by `tools/generate_imagery.py` and served as static assets, so nothing is generated during a demo.
