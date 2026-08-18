@@ -1386,6 +1386,36 @@ export default {
       }
 
       if (p === "/api/suggest") {
+        // Two callers share this path. With ?q= it is the typeahead: one KV
+        // shard read, zero DataSF calls, ranked prefix-beats-contains. Without
+        // it, the original related-corner suggestion for the homepage.
+        const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+        if (q) {
+          const words = q.replace(/[&+/]/g, " and ").split(/\s+/).filter((w) => w && w !== "and" && w !== "at" && w !== "x");
+          const first = words.find((w) => w.replace(/[^a-z0-9]/g, "").length >= 2);
+          if (!first || q.length < 2) return json({ ok: true, items: [] });
+          const shard = first.replace(/[^a-z0-9]/g, "").slice(0, 2);
+          const raw = await env.STORE?.get(`suggest:idx:${shard}`);
+          if (!raw) return json({ ok: true, items: [] });
+          let list = [];
+          try { list = JSON.parse(raw); } catch { list = []; }
+          const scored = [];
+          for (const [name, slug, grade, tier] of list) {
+            const hay = name.toLowerCase();
+            const parts = hay.split(/[^a-z0-9]+/).filter(Boolean);
+            // Every typed word must match somewhere; a word that starts a
+            // street name outranks one buried inside it.
+            let ok = true, prefixHits = 0;
+            for (const w of words) {
+              if (parts.some((pw) => pw.startsWith(w))) prefixHits++;
+              else if (!hay.includes(w)) { ok = false; break; }
+            }
+            if (!ok) continue;
+            scored.push({ name, slug, grade, tier, rank: tier * 100 + prefixHits * 10 - name.length / 100 });
+          }
+          scored.sort((a, b) => b.rank - a.rank);
+          return json({ ok: true, items: scored.slice(0, 8).map(({ rank, ...it }) => it) });
+        }
         return json(await boardSuggestion(env).catch((e) => ({
           source: "empty",
           reason: String(e.message || e).slice(0, 120),

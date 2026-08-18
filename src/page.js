@@ -103,6 +103,22 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
   border:1px solid var(--line);border-radius:999px;padding:8px 15px;width:200px;outline:none}
 .find input:focus{border-color:var(--accent)}
 .find input::placeholder{color:var(--dim)}
+/* Typeahead. A listbox under the find input, same vocabulary as the board:
+   solid chip = audited grade, hollow dot = scored and waiting for its audit. */
+.ta{position:absolute;top:44px;left:0;right:0;margin:0;padding:5px;list-style:none;z-index:7;
+  background:var(--panel);border:1px solid var(--line2);border-radius:10px;
+  box-shadow:0 6px 18px rgba(20,27,45,.09);min-width:260px}
+.ta li{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:7px;
+  font-size:13px;cursor:pointer}
+.ta li.on,.ta li:hover{background:var(--card)}
+.ta li[aria-disabled]{color:var(--dim);cursor:default}
+.ta li[aria-disabled]:hover{background:none}
+.ta-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ta-n b{font-weight:700}
+.ta-g{display:inline-grid;place-items:center;min-width:19px;height:19px;border-radius:6px;
+  color:#fff;font-weight:700;font-size:10.5px;padding:0 4px}
+.ta-dot{display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid var(--dim);
+  background:none}
 .find button{font-family:inherit;font-size:12.5px;font-weight:600;color:#fff;background:var(--ink);
   border:0;border-radius:999px;padding:9px 16px;cursor:pointer;white-space:nowrap}
 .find button[disabled]{opacity:.5;cursor:default}
@@ -1171,6 +1187,7 @@ fetch("/api/letter" + X).then(r => r.json()).then(d => {
   });
 });
 </script>
+<script src="/typeahead.js" defer></script>
 </body>
 </html>`;
 };

@@ -379,6 +379,7 @@ var AUDITED = ${JSON.stringify(
   document.head.appendChild(s);
 })();
 </script>
+<script src="/typeahead.js" defer></script>
 </body>
 </html>`;
 };
