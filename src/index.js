@@ -175,6 +175,23 @@ async function todayFrame(c, env) {
 async function getHazardsFor(c, env, origin) {
   const hit = await getHazards(env, c.slug, HAZARD_VERSION);
   if (hit) return { ...hit, source: "cache" };
+  // Records-only corners never get audited, so they must not claim an audit
+  // result of any kind. Returning zero items rather than the record-derived
+  // REPORTED rows is deliberate: every REPORTED line is phrased as "the audit
+  // did not find it in the photograph", which would be a statement about an
+  // audit that never ran. The letter reads this and says nothing about a
+  // visual audit at all, which is the truth for these corners.
+  if (c.derived === false) {
+    return {
+      source: "live",
+      version: HAZARD_VERSION,
+      audited: false,
+      items: [],
+      confirmed: 0,
+      candidates: 0,
+      reported: 0,
+    };
+  }
   const today = await todayFrame(c, env);
   const fresh = await corroborate(c, today, env);
   await putHazards(env, c.slug, fresh);
@@ -680,11 +697,19 @@ async function handleResolve(url, request, env) {
 // reach a browser. Cached hard, because the bytes are identical for everyone
 // until the corner set changes.
 async function cityMap(env, ctx) {
-  const key = new Request("https://streetcred.internal/citymap.jpg");
+  // Versioned, and it has to be. The transparent tap anchors are laid out from
+  // the live corner list on every page render, but the pins underneath them are
+  // burned into this image. An unversioned key means adding a corner moves every
+  // anchor while the drawn pins stay put, and every tap lands on the wrong
+  // corner. The count is in the key too, so warming a corner refreshes the map
+  // without waiting on a deploy.
+  const corners = await getHinList(env);
+  const key = new Request(
+    `https://streetcred.internal/citymap-${CACHE_VERSION}-${corners.length}.jpg`,
+  );
   const hit = await caches.default.match(key);
   if (hit) return hit;
 
-  const corners = await getHinList(env);
   if (!corners.length) return new Response("no corners", { status: 404 });
 
   const view = fitView(corners);

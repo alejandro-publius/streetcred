@@ -587,6 +587,9 @@ function applyImagery(d){
     if(d[s]){ b.disabled = false; b.textContent = LABELS[s]; }
     else if(d.status === "pending"){ b.disabled = true; b.textContent = LABELS[s] + ", generating"; }
     else if(d.status === "atcapacity"){ b.disabled = true; b.textContent = LABELS[s] + ", at capacity"; }
+    // Not a failure and not a wait. Say what it is, so a calm corner does not
+    // read as a broken one.
+    else if(d.status === "recordsonly"){ b.disabled = true; b.textContent = LABELS[s] + ", not generated"; }
     else if(d.status && d.status !== "ready"){ b.disabled = true; b.textContent = LABELS[s] + ", unavailable"; }
   }
   render();

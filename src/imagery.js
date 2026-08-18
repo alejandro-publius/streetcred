@@ -135,6 +135,9 @@ export async function generateStates(c, env) {
 
 // Decides what /api/imagery should say right now, and starts generation if this
 // is the first ask. Never awaits generation itself.
+const RECORDS_ONLY_NOTE =
+  "This corner was warmed for its records only, so the visual audit was not generated. The Street View photograph is real.";
+
 export async function imageryFor(c, env, ctx, opts = {}) {
   const base = `/gen/${c.slug}`;
   const existing = await getImageryStatus(env, c.slug);
@@ -161,6 +164,16 @@ export async function imageryFor(c, env, ctx, opts = {}) {
   if (existing?.status === "pending") {
     return { source: "live", status: "pending", today: `${base}/today.jpg`, hazards: null, fix: null };
   }
+  if (existing?.status === "recordsonly") {
+    return {
+      source: "cache",
+      status: "recordsonly",
+      note: RECORDS_ONLY_NOTE,
+      today: `${base}/today.jpg`,
+      hazards: null,
+      fix: null,
+    };
+  }
 
   // First ask for this corner. Confirm free things before spending anything.
   if (!(await hasCoverage(c, env))) {
@@ -186,6 +199,23 @@ export async function imageryFor(c, env, ctx, opts = {}) {
       status: "nocoverage",
       note: "Street View has no imagery for this corner.",
       today: null,
+      hazards: null,
+      fix: null,
+    };
+  }
+
+  // A corner deliberately warmed for records only. The whole point of these is
+  // to prove the grading scale has a bottom as well as a top, and that argument
+  // is made entirely by the index and the collision record. Two billed image
+  // generations per corner would buy nothing it needs, so they are not spent,
+  // and the panel says so rather than showing an empty state that looks broken.
+  if (c.derived === false) {
+    await putImageryStatus(env, c.slug, { status: "recordsonly", states: [], at: Date.now() });
+    return {
+      source: "live",
+      status: "recordsonly",
+      note: RECORDS_ONLY_NOTE,
+      today: `${base}/today.jpg`,
       hazards: null,
       fix: null,
     };

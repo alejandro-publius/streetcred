@@ -60,7 +60,9 @@ export function pinPosition(corner, view) {
   };
 }
 
-const GRADE_HEX = { A: "0x788c5d", B: "0x788c5d", C: "0x6a9bcc", D: "0xc8762a", F: "0xF07E26" };
+// Matches the grade chips on the corner page exactly. B is a muted green so
+// that A and B stop reading as the same grade on the map and the board.
+const GRADE_HEX = { A: "0x788c5d", B: "0xa3b088", C: "0x6a9bcc", D: "0xe89a5f", F: "0xF07E26" };
 
 // One image request for the whole city: markers batched by color, since Static
 // Maps takes repeated `markers` params each carrying many points.
@@ -141,14 +143,18 @@ ${BASE_CSS}
   transition:background-color 150ms ease-out}
 .row:hover{background:var(--card)}
 .rank{font-size:12.5px;font-weight:600;color:var(--dim);font-variant-numeric:tabular-nums}
-.rname{font-size:14.5px;font-weight:600;line-height:1.35}
-.rsev{font-size:11.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+/* Both are spans, so they need to be told to stack. Left inline they run
+   together and the margin does nothing, which put every corner's name and its
+   severity mix on one unbroken line. */
+.rname{display:block;font-size:14.5px;font-weight:600;line-height:1.35}
+.rsev{display:block;font-size:11.5px;color:var(--dim);margin-top:2px;line-height:1.4}
 .ridx{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .rg{font-size:13px;font-weight:700;min-width:28px;height:28px;border-radius:8px;display:grid;
   place-items:center;color:#fff;background:var(--dim)}
-.rg.gA,.rg.gB{background:var(--green)}
+.rg.gA{background:var(--green)}
+.rg.gB{background:rgba(120,140,93,.62)}
 .rg.gC{background:var(--blue)}
-.rg.gD{background:rgba(240,126,38,.72)}
+.rg.gD{background:rgba(240,126,38,.7)}
 .rg.gF{background:var(--accent)}
 .emptyboard{font-size:13.5px;color:var(--dim);line-height:1.6;padding:22px 0}
 @media(max-width:600px){
@@ -186,9 +192,10 @@ ${
     .join("\n  ")}
 </div>
 <p class="mapfoot">
-  <span class="key"><i style="background:var(--green)"></i>A and B</span>
+  <span class="key"><i style="background:var(--green)"></i>A</span>
+  <span class="key"><i style="background:rgba(120,140,93,.62)"></i>B</span>
   <span class="key"><i style="background:var(--blue)"></i>C</span>
-  <span class="key"><i style="background:rgba(240,126,38,.72)"></i>D</span>
+  <span class="key"><i style="background:rgba(240,126,38,.7)"></i>D</span>
   <span class="key"><i style="background:var(--accent)"></i>F</span>
   <span>Map data: Google. Danger Index ranks reported harm, not risk per crossing.</span>
 </p>`
@@ -214,15 +221,16 @@ ${ranked
 }
 
 <div class="panel">
-  <div class="ph"><h2>The stack</h2></div>
+  <div class="phs"><h2>Powered by</h2></div>
+  <div class="pbody">
   <div class="stack">
-    <div><b>DataSF</b>Collisions and 311, queried by radius around the corner</div>
-    <div><span class="lg"><img src="/logos/exa.svg" alt="Exa" width="64" height="20" loading="lazy"></span>Finds current press coverage of this intersection, cited</div>
-    <div><span class="lg"><img src="/logos/apify.svg" alt="Apify" width="73" height="20" loading="lazy"></span>Scrapes what residents say on Reddit and Google Maps</div>
-    <div><b>Gemini vision</b>Audits the real photo for hazards, renders the fix</div>
-    <div><b>Gemini text</b>Turns four sources into one addressed letter</div>
-    <div><span class="lg"><img src="/logos/cloudflare.svg" alt="Cloudflare" width="44" height="20" loading="lazy"></span>Workers serve the page, KV holds corners and imagery</div>
-    <div><b>Google Maps</b>Street View frames and the corner thumbnail</div>
+    <div><span class="lg"><img src="/logos/gemini.svg" alt="Google Gemini" width="24" height="24" loading="lazy"><b>Gemini</b></span>Audits the real Street View frame for hazards, renders the fix, writes the letter</div>
+    <div><span class="lg"><img src="/logos/exa.svg" alt="Exa" width="77" height="24" loading="lazy"></span>Finds current press coverage of this intersection, cited</div>
+    <div><span class="lg"><img src="/logos/apify.svg" alt="Apify" width="87" height="24" loading="lazy"></span>Scrapes what residents say on Reddit and Google Maps</div>
+    <div><span class="lg"><img src="/logos/googlemaps.svg" alt="Google Maps" width="24" height="24" loading="lazy"><b>Google Maps</b></span>Street View frames, the corner thumbnail, and the city map</div>
+    <div><span class="lg"><img src="/logos/cloudflare.svg" alt="Cloudflare" width="52" height="24" loading="lazy"><b>Cloudflare</b></span>Workers serve the page, KV holds corners, imagery and grades</div>
+    <div><span class="lg"><b>DataSF</b></span>Collisions and 311, queried by radius around the corner</div>
+  </div>
   </div>
 </div>
 
