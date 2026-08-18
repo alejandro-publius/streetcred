@@ -21,7 +21,7 @@ export const PUBLIC_TRIGGERS = new Set(["user", "precompute"]);
 
 const int = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
-export function buildManifest({ slug, trigger, stats, news, voices, apify, hazards, score, letterRun, supervisor }) {
+export function buildManifest({ slug, trigger, stats, news, timeline, voices, apify, hazards, score, letterRun, supervisor }) {
   const stages = {};
 
   stages.stats = stats
@@ -61,6 +61,23 @@ export function buildManifest({ slug, trigger, stats, news, voices, apify, hazar
   } else {
     stages.exa = { ran: false, reason: news?.failed || "press lane unavailable" };
   }
+
+  // The year strip, read from storage. Phrased as coverage-we-can-find at every
+  // layer including this one, because Exa recall is not ground truth and a
+  // manifest that hardened it into "first reported" would be the place the
+  // overclaim entered the product.
+  stages.timeline = timeline?.years
+    ? {
+        ran: true,
+        searches: timeline.calls ?? timeline.years.length,
+        from: timeline.from,
+        to: timeline.to,
+        firstFoundYear: timeline.firstReportedYear ?? null,
+        yearsCovered: timeline.yearsReported ?? null,
+        totalHeadlines: int(timeline.totalHeadlines),
+        failedYears: timeline.failedYears || [],
+      }
+    : { ran: false, reason: "no press history has been built for this corner" };
 
   // Apify is the one stage that cannot be recomputed cheaply, so an absent
   // backfill is reported as absent. Guessing here would be the exact failure

@@ -258,7 +258,7 @@ async function runManifest(c, env, origin, trigger, refresh) {
     if (hit) return hit;
   }
 
-  const [stats, news, voices, hazards, score, letterRun, apify, rawReports] = await Promise.all([
+  const [stats, news, voices, hazards, score, letterRun, apify, timeline, rawReports] = await Promise.all([
     getStats(c).catch(() => null),
     // The failure text is kept, not swallowed. "exa no on-topic results" is a
     // real finding about a quiet corner and it belongs in the record.
@@ -270,6 +270,8 @@ async function runManifest(c, env, origin, trigger, refresh) {
     getScoreFor(c, env).catch(() => null),
     getLetterRun(env, c.slug).catch(() => null),
     getApifyCounts(env, c.slug).catch(() => null),
+    // Read only. Building a manifest must never trigger a dozen Exa searches.
+    getTimeline(env, c.slug, TIMELINE_VERSION).catch(() => null),
     raw311(c).catch(() => null),
   ]);
 
@@ -278,6 +280,7 @@ async function runManifest(c, env, origin, trigger, refresh) {
     trigger,
     stats: stats ? { ...stats, reports311Raw: rawReports } : null,
     news,
+    timeline,
     voices,
     apify,
     hazards,
@@ -370,7 +373,7 @@ async function getNews(c, env) {
       : [...press].sort(byRank);
 
   const items = [...orderedPress, ...official.sort(byDate)].slice(0, 5);
-  if (!items.length) throw new Error("exa no on-topic results");
+  if (!items.length) throw new Error("no on-topic results found");
   return {
     source: "live",
     precise,

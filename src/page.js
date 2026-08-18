@@ -73,6 +73,43 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
   border:1px solid var(--line);border-radius:999px;padding:8px 15px;cursor:pointer;white-space:nowrap;
   transition:color 150ms ease-out,border-color 150ms ease-out}
 .share:hover{color:var(--ink);border-color:var(--ink)}
+.share.ghost{background:none;border-color:var(--line2)}
+
+/* The replay. A terminal log of what the tools actually did on this corner,
+   read from the stored run manifest and never recomputed. It is theatre, and it
+   says so twice: it names the date of the run it is replaying and it states
+   that the timings are for display. An animation that implied these tools ran
+   in five seconds would be a lie told with CSS. */
+.replay{background:var(--ink);border:1.5px solid var(--ink);border-radius:12px;
+  padding:0;margin:0 0 20px;overflow:hidden;box-shadow:0 1px 3px rgba(20,27,45,.06)}
+.rhead{display:flex;align-items:center;gap:10px;padding:11px 16px;
+  background:rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.12)}
+.rttl{font-size:11.5px;color:rgba(255,255,255,.72);letter-spacing:.02em}
+.rttl b{color:#fff;font-weight:600}
+.rtrig{font-size:9.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);border:1px solid rgba(240,126,38,.5);border-radius:4px;padding:2px 7px;white-space:nowrap}
+.rgrow{flex:1}
+.rbtn{font-family:inherit;font-size:11.5px;font-weight:600;color:rgba(255,255,255,.72);
+  background:none;border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:5px 13px;cursor:pointer}
+.rbtn:hover{color:#fff;border-color:#fff}
+.rlog{padding:14px 16px;min-height:150px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:12px;line-height:1.5}
+.rline{display:flex;gap:10px;padding:4px 0;color:rgba(255,255,255,.86);
+  opacity:0;transform:translateY(4px);transition:opacity 150ms ease-out,transform 150ms ease-out}
+.rline.in{opacity:1;transform:none}
+.rline b{display:block;width:3px;flex:0 0 3px;border-radius:2px;background:var(--dim);margin-top:3px;align-self:stretch}
+.rline.record b{background:#fff}
+.rline.press b{background:var(--blue)}
+.rline.voices b{background:var(--dim)}
+.rline.vision b{background:var(--accent)}
+.rline.index b{background:var(--accent)}
+.rline.ask b{background:var(--green)}
+.rline.off{color:rgba(255,255,255,.5)}
+.rline a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(240,126,38,.5)}
+.rfoot{font-size:10.5px;color:rgba(255,255,255,.5);margin:0;padding:0 16px 13px;line-height:1.5}
+@media(prefers-reduced-motion:reduce){
+  .rline{opacity:1;transform:none;transition:none}
+}
 .corner{margin-left:auto;text-align:right;font-size:13px;color:var(--dim);line-height:1.5}
 .corner b{display:block;font-size:15px;color:var(--ink);font-weight:600}
 .lede{font-size:15px;color:var(--dim);max-width:660px;margin:0 0 26px;line-height:1.6}
@@ -387,6 +424,7 @@ ${BASE_CSS}
     <button type="submit" id="findgo">Check</button>
     <div class="findmsg" id="findmsg" role="status" hidden></div>
   </form>
+  <button class="share ghost" id="watch" type="button">Watch the run</button>
   <button class="share" id="share" type="button">Share corner</button>
   <div class="corner"><b>${c.name}</b>${c.city}${
     c.district ? `, District ${c.district}` : ", district unresolved"
@@ -394,6 +432,18 @@ ${BASE_CSS}
 </header>
 
 <p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
+
+<section class="replay" id="replay" hidden aria-label="Replay of this corner's pipeline run">
+  <div class="rhead">
+    <span class="rttl">Replay of the actual run from <b id="rdate">this corner</b></span>
+    <span class="rtrig" id="rtrig"></span>
+    <span class="rgrow"></span>
+    <button class="rbtn" id="rskip" type="button">Skip</button>
+    <button class="rbtn" id="rclose" type="button">Close</button>
+  </div>
+  <div class="rlog" id="rlog" role="log"></div>
+  <p class="rfoot">Timings compressed for display. Nothing is re-run: this replays what was recorded.</p>
+</section>
 
 <div class="panel lane-imagery">
   <div class="phs"><h2>The corner, three ways</h2><span class="tag" id="imgtag">Street View plus Gemini</span></div>
@@ -798,6 +848,130 @@ fetch("/api/news" + X).then(r => r.json()).then(d => {
     '</div><div class="m">' + esc(x.domain) + (x.date ? " &middot; " + esc(x.date) : "") + '</div></a>').join("")
     || '<div class="m">No coverage found.</div>';
 });
+
+// The replay. Every line is rendered from the stored run manifest, so the log
+// cannot say anything the pipeline did not actually record. A stage that did
+// not run prints why, dimmed, rather than being quietly dropped: a log that
+// shows only successes is an advertisement.
+(function(){
+  const btn = el("watch"), panel = el("replay"), log = el("rlog");
+  if(!btn || !panel) return;
+  let manifest = null, timers = [], playing = false;
+
+  const n = v => (typeof v === "number" ? v.toLocaleString() : v);
+  const plural = (v, one, many) => n(v) + " " + (v === 1 ? one : (many || one + "s"));
+
+  function lines(m){
+    const s = m.stages || {}, out = [];
+    const push = (lane, text, off) => out.push({ lane, text, off: !!off });
+
+    const st = s.stats;
+    push("record", st && st.ran
+      ? "Official records: " + plural(st.collisions5y, "collision") + " in 5 years, " +
+        st.fatal + " fatal, " + plural(st.reports311Filtered, "street-condition 311 report") +
+        (st.reports311Raw ? " kept from " + n(st.reports311Raw) + " raw" : "") +
+        ". District " + (st.district == null ? "unresolved" : st.district) + "."
+      : "Official records: " + ((st && st.reason) || "did not run") + ".", !(st && st.ran));
+
+    const ex = s.exa;
+    push("press", ex && ex.ran
+      ? "Exa: " + (ex.found == null ? "search ran" : n(ex.found) + " results found") +
+        (ex.afterFilters == null ? "" : ", " + n(ex.afterFilters) + " pass filters") +
+        ", " + n(ex.kept) + " cited" + (ex.officialSources ? ", " + ex.officialSources + " tagged official source" : "") + "."
+      : "Exa: " + ((ex && ex.reason) || "did not run") + ".", !(ex && ex.ran));
+
+    const tl = s.timeline;
+    if(tl && tl.ran) push("press", "Exa time machine: " + tl.searches + " year searches, " +
+      (tl.firstFoundYear ? "earliest coverage found " + tl.firstFoundYear + ", " : "") +
+      plural(tl.totalHeadlines, "headline") + " since.");
+    else if(tl) push("press", "Exa time machine: " + tl.reason + ".", true);
+
+    const ap = s.apify;
+    if(ap && ap.ran && ap.countsUnavailable) push("voices", "Apify: counts unavailable for this run.", true);
+    else if(ap && ap.ran) push("voices", "Apify: " + plural(ap.itemsRead, "account") + " read, " +
+      n(ap.aboutCorner) + " about this corner, " + n(ap.streetRelevant) + " describe the street, " +
+      n(ap.kept) + " kept.");
+    else push("voices", "Apify: " + ((ap && ap.reason) || "did not run") + ".", true);
+
+    const vi = s.vision;
+    push("vision", vi && vi.ran
+      ? "Gemini vision: " + plural(vi.zonesFlagged, "hazard zone") + " flagged" +
+        (vi.labels && vi.labels.length ? ": " + vi.labels.join(", ") : "") + "."
+      : "Gemini vision: " + ((vi && vi.reason) || "did not run") + ".", !(vi && vi.ran));
+
+    if(vi && vi.ran) push("vision", "Corroboration: " + vi.confirmed + " CONFIRMED against city records, " +
+      vi.candidate + " candidate, " + vi.reported + " from records only.");
+
+    const ix = s.index;
+    push("index", ix && ix.ran
+      ? "Danger Index: " + ix.points + " points, worse than " + ix.percentile +
+        " percent of " + n(ix.sampleSize) + " sampled SF intersections: grade " + ix.grade + "."
+      : "Danger Index: " + ((ix && ix.reason) || "did not run") + ".", !(ix && ix.ran));
+
+    const lt = s.letter;
+    push("ask", lt && lt.ran
+      ? "Letter: assembled from " + plural((lt.inputs || []).length, "evidence lane") +
+        " (" + (lt.inputs || []).join(", ") + "), addressed to " + lt.supervisor + "."
+      : "Letter: " + ((lt && lt.reason) || "did not run") + ".", !(lt && lt.ran));
+
+    push("ask", '<a href="#scorewrap" id="rjump">See the evidence below.</a>');
+    return out;
+  }
+
+  function clear(){ timers.forEach(clearTimeout); timers = []; }
+
+  function render(m, instant){
+    const rows = lines(m);
+    log.innerHTML = rows.map(r =>
+      '<div class="rline ' + r.lane + (r.off ? ' off' : '') + (instant ? ' in' : '') + '">' +
+      '<b></b><span>' + r.text + '</span></div>').join("");
+    el("rdate").textContent = (m.ranAt || "").slice(0, 10) || "an earlier run";
+    el("rtrig").textContent = m.trigger === "cron" ? "autonomous run"
+      : m.trigger === "precompute" ? "precomputed run" : "run on a visit";
+    if(instant) return;
+    playing = true;
+    // Under 12 seconds in total: nine lines at 340ms apart lands near three.
+    [].forEach.call(log.children, (node, i) => {
+      timers.push(setTimeout(() => {
+        node.classList.add("in");
+        if(i === rows.length - 1) playing = false;
+      }, 60 + i * 340));
+    });
+  }
+
+  function open(){
+    panel.hidden = false;
+    if(manifest){ render(manifest, REDUCED); return; }
+    log.innerHTML = '<div class="rline in off"><b></b><span>Reading the run manifest...</span></div>';
+    fetch("/api/run" + X).then(r => r.json()).then(m => {
+      manifest = m;
+      render(m, REDUCED);
+    }).catch(() => {
+      log.innerHTML = '<div class="rline in off"><b></b><span>No run manifest is stored for this corner yet.</span></div>';
+    });
+  }
+
+  btn.addEventListener("click", () => { panel.hidden ? open() : (clear(), panel.hidden = true); });
+  // Linkable, so "watch how this was built" is one URL rather than an
+  // instruction. The panel starts hidden, so the browser's own fragment scroll
+  // lands on a zero height element and misses: scroll it in once it is real.
+  if(location.hash === "#replay"){
+    open();
+    setTimeout(() => panel.scrollIntoView({ behavior: "auto", block: "start" }), 0);
+  }
+  el("rskip").addEventListener("click", () => {
+    clear();
+    [].forEach.call(log.children, node => node.classList.add("in"));
+    playing = false;
+  });
+  el("rclose").addEventListener("click", () => { clear(); panel.hidden = true; });
+  log.addEventListener("click", (e) => {
+    if(e.target.id !== "rjump") return;
+    e.preventDefault();
+    const t = el("scorewrap");
+    if(t) t.scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "center" });
+  });
+})();
 
 // The press year strip. Phrased as coverage-we-can-find everywhere, never as
 // first report: Exa recall is not ground truth, and an empty year means this
