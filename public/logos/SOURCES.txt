@@ -1,31 +1,49 @@
 Official vendor marks, downloaded from each vendor's own domain and committed
 here so they are served same-origin and never hotlinked.
 
-exa.svg         https://exa.ai/images/logo/exa-logo-blue.svg
-apify.svg       https://apify.com/img/apify-logo/apify-logo-dark-512x141.svg
-                (listed on https://apify.com/resources/brand)
-cloudflare.svg  https://www.cloudflare.com/logo.svg
+exa.svg          https://exa.ai/images/logo/exa-logo-blue.svg
+apify.svg        https://apify.com/img/apify-logo/apify-logo-dark-512x141.svg
+                 (listed on https://apify.com/resources/brand)
+cloudflare.svg   https://www.cloudflare.com/logo.svg
+gemini.svg       https://www.gstatic.com/lamda/images/
+                 gemini_sparkle_v002_d4735304ff6292a690345.svg
+googlemaps.svg   https://www.gstatic.com/images/branding/productlogos/maps/v7/
+                 192px.svg
 
-Downloaded 2026-08-17. Each file was checked to be valid XML containing no
-<script> and no external references before being committed.
+Downloaded 2026-08-17 and 2026-08-18. Every file was checked to be valid XML
+containing no <script> and no external references before being committed. The
+only absolute URL in any of them is the SVG namespace declaration.
+
+The two Google files are the marks Google itself serves from gstatic, which is
+the CDN behind Google's own product surfaces. They are unmodified: the strip
+renders every mark at full color and full fidelity, scaled only by height. That
+matters, because the earlier version of this strip forced every logo to flat
+monochrome, and recoloring is exactly what Google's brand guidelines do not
+permit. Displaying the unaltered mark is permitted use; recoloring it was not,
+which is why these two rows were text until the strip went full color.
+
+Three of the five marks are icon only: both Google files, because Google does
+not publish downloadable wordmark SVGs for these products, and the Cloudflare
+file, which is the cloud glyph on its own. Each of those is paired with the
+product name set in the page's own type rather than with a traced or
+reconstructed wordmark. Exa and Apify ship real wordmarks and stand alone.
 
 Not included, deliberately:
 
-  Google Gemini, Google Maps
-    Google does not publish these as freely downloadable SVGs, and its brand
-    guidelines do not permit recoloring or otherwise modifying its marks, which
-    is exactly what the monochrome treatment used in this strip does. Those rows
-    stay as styled text rather than shipping a modified Google mark or an
-    unofficial redraw.
+  Upstash
+    Not a dependency of this product, so it does not belong under a heading that
+    says "Powered by". Resolved corners, generated imagery, scores, the daily
+    generation budget and rate limiting all run on Cloudflare KV. An Upstash
+    code path exists and would activate if those credentials were ever set, but
+    nothing in the deployed product uses it and no Upstash credentials are
+    configured. Listing it would be a claim about the architecture that the
+    architecture does not support.
+
+  DataSF
+    No strong logo mark, and the open data portal does not publish one. Styled
+    text by design, in the same fixed box as every other row.
 
   Cloudflare press kit
     The official press-kit archive linked from cloudflare.com/press-kit contains
     only JPG and PNG, no SVG. The file above is the mark Cloudflare serves from
     its own root domain, and it carries a <title>Cloudflare logo</title>.
-
-  DataSF
-    No strong logo mark. Styled text by design.
-
-  Upstash
-    Not a dependency of this product. Resolved corners, generated imagery, the
-    generation budget, and rate limiting all run on Cloudflare KV.

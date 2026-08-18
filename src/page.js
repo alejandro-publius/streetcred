@@ -248,16 +248,15 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
    only ever sees the header strip still learns this letter was never sent. */
 .phs .draft{letter-spacing:.09em}
 
-.stack{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 26px;margin-top:8px}
-.stack div{font-size:12.5px;color:var(--dim);line-height:1.5}
-.stack b{display:block;font-size:13.5px;color:var(--ink);font-weight:600;margin-bottom:5px}
-/* Fixed-height box so a blocked or failed logo cannot reflow the strip. Six
-   brand palettes at full saturation would fight the page, so every mark renders
-   flat ink at 70 percent and only returns to its own color on hover. */
-.stack .lg{display:flex;align-items:center;height:20px;margin-bottom:5px;overflow:hidden}
-.stack .lg img{height:20px;max-height:20px;width:auto;display:block;
-  filter:brightness(0);opacity:.7;transition:filter 200ms ease-out,opacity 200ms ease-out}
-.stack div:hover .lg img{filter:none;opacity:1}
+.stack{display:grid;grid-template-columns:repeat(3,1fr);gap:18px 26px;margin-top:8px}
+.stack div{font-size:12px;color:var(--dim);line-height:1.5}
+/* Fixed 140x44 box on every row, whether it holds a mark or a name. The space
+   is reserved before anything loads, so a blocked, slow, or failed logo shifts
+   nothing: the strip is the same height with images off. */
+.stack .lg{display:flex;align-items:center;gap:9px;width:140px;height:44px;margin-bottom:2px;overflow:hidden}
+.stack .lg img{max-height:24px;width:auto;display:block}
+.stack .lg b{font-size:14px;color:var(--ink);font-weight:600;white-space:nowrap;letter-spacing:-.01em}
+@media(max-width:860px){.stack .lg{width:auto}}
 footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
 
 .sk{background:linear-gradient(90deg,var(--card) 25%,#eeece4 50%,var(--card) 75%);background-size:200% 100%;animation:sh 1.3s infinite;border-radius:6px;height:13px;margin:9px 0}
@@ -454,16 +453,15 @@ ${BASE_CSS}
 </div>
 
 <div class="panel">
-  <div class="phs"><h2>The stack</h2></div>
+  <div class="phs"><h2>Powered by</h2></div>
   <div class="pbody">
   <div class="stack">
-    <div><b>DataSF</b>Collisions and 311, queried by radius around the corner</div>
-    <div><span class="lg"><img src="/logos/exa.svg" alt="Exa" width="64" height="20" loading="lazy"></span>Finds current press coverage of this intersection, cited</div>
-    <div><span class="lg"><img src="/logos/apify.svg" alt="Apify" width="73" height="20" loading="lazy"></span>Scrapes what residents say on Reddit and Google Maps</div>
-    <div><b>Gemini vision</b>Audits the real photo for hazards, renders the fix</div>
-    <div><b>Gemini text</b>Turns four sources into one addressed letter</div>
-    <div><span class="lg"><img src="/logos/cloudflare.svg" alt="Cloudflare" width="44" height="20" loading="lazy"></span>Workers serve the page, KV holds corners and imagery</div>
-    <div><b>Google Maps</b>Street View frames and the corner thumbnail</div>
+    <div><span class="lg"><img src="/logos/gemini.svg" alt="Google Gemini" width="24" height="24" loading="lazy"><b>Gemini</b></span>Audits the real Street View frame for hazards, renders the fix, writes the letter</div>
+    <div><span class="lg"><img src="/logos/exa.svg" alt="Exa" width="77" height="24" loading="lazy"></span>Finds current press coverage of this intersection, cited</div>
+    <div><span class="lg"><img src="/logos/apify.svg" alt="Apify" width="87" height="24" loading="lazy"></span>Scrapes what residents say on Reddit and Google Maps</div>
+    <div><span class="lg"><img src="/logos/googlemaps.svg" alt="Google Maps" width="24" height="24" loading="lazy"><b>Google Maps</b></span>Street View frames, the corner thumbnail, and the city map</div>
+    <div><span class="lg"><img src="/logos/cloudflare.svg" alt="Cloudflare" width="52" height="24" loading="lazy"><b>Cloudflare</b></span>Workers serve the page, KV holds corners, imagery and grades</div>
+    <div><span class="lg"><b>DataSF</b></span>Collisions and 311, queried by radius around the corner</div>
   </div>
   </div>
 </div>
