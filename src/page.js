@@ -66,6 +66,7 @@ ${BASE_CSS}
   ${LOGO}
   <div class="mark">Street<span>Cred</span></div>
 </header>
+<main>
 <div class="nf">
   <h1>No corner by that name</h1>
   <p>Nothing here matches <code>${String(slug || "").replace(/[&<>"]/g, "")}</code>.
@@ -86,7 +87,12 @@ export const BASE_CSS = `:root{
      ground a white panel with a #e8e6dc hairline reads as floating text rather
      than as a container, which is the whole problem this fixes. */
   --line3:#d6d2c4;
-  --ink:#141B2D; --accent:#F07E26; --dim:#8a867c; --blue:#6a9bcc; --green:#788c5d;
+  --ink:#141B2D; --accent:#F07E26; --blue:#6a9bcc; --green:#788c5d;
+  /* Dim text was #8a867c, 3.45:1 against the page ground, an AA failure on
+     every caption on the site. #6f6b61 is the same warm gray darkened until it
+     clears 4.5:1 on the ground (5.04), the panel (5.31) and the card (4.75).
+     Decorative uses that need the old lightness read --dimline instead. */
+  --dim:#6f6b61; --dimline:#8a867c;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Poppins,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
@@ -153,10 +159,10 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .rline{display:flex;gap:10px;padding:4px 0;color:rgba(255,255,255,.86);
   opacity:0;transform:translateY(4px);transition:opacity 150ms ease-out,transform 150ms ease-out}
 .rline.in{opacity:1;transform:none}
-.rline b{display:block;width:3px;flex:0 0 3px;border-radius:2px;background:var(--dim);margin-top:3px;align-self:stretch}
+.rline b{display:block;width:3px;flex:0 0 3px;border-radius:2px;background:var(--dimline);margin-top:3px;align-self:stretch}
 .rline.record b{background:#fff}
 .rline.press b{background:var(--blue)}
-.rline.voices b{background:var(--dim)}
+.rline.voices b{background:var(--dimline)}
 .rline.vision b{background:var(--accent)}
 .rline.index b{background:var(--accent)}
 .rline.ask b{background:var(--green)}
@@ -174,7 +180,7 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .corner .auto{display:block;font-size:10.5px;font-weight:600;letter-spacing:.06em;
   text-transform:uppercase;color:var(--accent);margin-top:3px}
 .lede{font-size:15px;color:var(--dim);max-width:660px;margin:0 0 26px;line-height:1.6}
-.nudge{font-family:inherit;font-size:inherit;color:var(--accent);background:none;border:0;padding:0;
+.nudge{font-family:inherit;font-size:inherit;color:#b0560e;background:none;border:0;padding:0;
   cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 
 /* Danger Index. The grade chip and the severity ramp stay inside the existing
@@ -292,7 +298,7 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 /* Footprint labels. The grade counts an 80m core and the tiles count 150m;
    both are deliberate and neither used to say so, which left the letter
    citing two different collision counts in one paragraph. */
-.rad{font-style:normal;font-size:11px;color:var(--dim);opacity:.85;display:inline-block;margin-top:3px}
+.rad{font-style:normal;font-size:11px;color:var(--dim);display:inline-block;margin-top:3px}
 .lpop{font-family:Poppins,system-ui,sans-serif;font-size:12.5px;line-height:1.5;color:var(--ink)}
 .lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
 .lpop-s{color:var(--dim);font-size:11.5px}
@@ -338,10 +344,12 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .phs .draft{margin:0}
 .pbody{padding:20px}
 .tag{font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;
-  border-radius:5px;background:rgba(106,155,204,.14);color:var(--blue);border:1px solid transparent}
+  /* Tag text is darkened until it clears AA on its wash (4.64:1); the wash and
+     the hue are unchanged, so the tag still reads as its lane's color. */
+  border-radius:5px;background:rgba(106,155,204,.14);color:#3d6690;border:1px solid transparent}
 /* Dashed, so a sample or empty state is legible as provisional at a glance and
    never gets mistaken for a live figure. */
-.tag.sample{background:rgba(240,126,38,.10);color:var(--accent);border:1px dashed rgba(240,126,38,.55)}
+.tag.sample{background:rgba(240,126,38,.10);color:#b0560e;border:1px dashed rgba(240,126,38,.55)}
 
 /* The year strip. One tick per year since 2014, height by how many results
    passed the same filter the panel below uses. A collision record says a corner
@@ -394,7 +402,7 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .lfoot{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
 .lfoot button{font-family:inherit;font-size:13px;font-weight:600;background:var(--ink);color:#fff;border:0;border-radius:8px;padding:9px 18px;cursor:pointer}
 .lfoot span{font-size:11.5px;color:var(--dim)}
-.draft{font-size:11.5px;color:var(--accent);font-weight:600;margin-bottom:12px;letter-spacing:.03em}
+.draft{font-size:11.5px;color:#a04d0c;font-weight:600;margin-bottom:12px;letter-spacing:.03em}
 /* The one status that belongs on the lid rather than in the body: a reader who
    only ever sees the header strip still learns this letter was never sent. */
 .phs .draft{letter-spacing:.09em}
@@ -409,6 +417,7 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .stack .lg img{max-height:24px;width:auto;display:block}
 .stack .lg b{font-size:14px;color:var(--ink);font-weight:600;white-space:nowrap;letter-spacing:-.01em}
 @media(max-width:860px){.stack .lg{width:auto}}
+.cname{display:inline;font-size:inherit;font-weight:inherit;margin:0;letter-spacing:inherit}
 footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
 footer a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
 footer a:hover{color:var(--ink)}
@@ -513,10 +522,11 @@ ${BASE_CSS}
   </form>
   <button class="share ghost" id="watch" type="button">Watch the run</button>
   <button class="share" id="share" type="button">Share corner</button>
-  <div class="corner"><b>${c.name}</b>${c.city}${
+  <div class="corner"><h1 class="cname"><b>${c.name}</b></h1>${c.city}${
     c.district ? `, District ${c.district}` : ", district unresolved"
   }${c.cotd ? `<span class="auto">Audited autonomously by StreetCred on ${c.cotd}</span>` : ""}</div>
 </header>
+<main>
 
 <p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
 
@@ -544,9 +554,9 @@ ${BASE_CSS}
     <div class="hero single" id="hero">
       <img id="base" alt="${c.name} today, from Street View">
       <img id="overlay" alt="">
-      <div id="handle" role="separator" aria-label="Drag to compare"></div>
+      <div id="handle" role="separator" tabindex="0" aria-label="Comparison slider, arrow keys move it" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
     </div>
-    <p class="cap"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
+    <p class="cap" aria-live="polite"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
     <div class="hz" id="hz" hidden></div>
   </div>
 </div>
@@ -645,6 +655,8 @@ ${BASE_CSS}
   </div>
 </div>
 
+</main>
+</main>
 <footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
 Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
 </div>
@@ -713,6 +725,17 @@ function render(){
   }
   hero.hidden = false;
   el("base").src = IMG.today;
+  // Alt text from data, not boilerplate: the audit names what it marked.
+  el("base").alt = "Street View of " + CORNER_GEO.name + " today";
+  const ovImg = el("overlay");
+  if(state === "hazards"){
+    const marked = (window.HZLABELS && window.HZLABELS.length)
+      ? "marking " + window.HZLABELS.join(" and ").toLowerCase()
+      : "with hazard zones marked";
+    ovImg.alt = "Automated hazard audit of " + CORNER_GEO.name + " " + marked;
+  } else if(state === "fix"){
+    ovImg.alt = "AI visualization of the proposed fix at " + CORNER_GEO.name + ". Not a photograph.";
+  } else { ovImg.alt = ""; }
   if(state === "today" || !IMG[state]){ hero.classList.add("single"); }
   else {
     hero.classList.remove("single");
@@ -733,7 +756,9 @@ let split = 50;
 function setSplit(pct){
   split = Math.max(0, Math.min(100, pct));
   el("overlay").style.clipPath = "inset(0 0 0 " + split + "%)";
-  el("handle").style.left = split + "%";
+  const h = el("handle");
+  h.style.left = split + "%";
+  h.setAttribute("aria-valuenow", String(Math.round(split)));
 }
 document.querySelectorAll(".toggle button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll(".toggle button").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
@@ -745,6 +770,14 @@ document.querySelectorAll(".toggle button").forEach(b => b.addEventListener("cli
     const x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
     setSplit(x / r.width * 100); };
   el("handle").addEventListener("pointerdown", e => { drag = true; e.preventDefault(); });
+  // Keyboard control: 5 percent per press, Home and End jump. The slider was
+  // the one piece of the page a keyboard user literally could not operate.
+  el("handle").addEventListener("keydown", e => {
+    if(e.key === "ArrowLeft" || e.key === "ArrowDown"){ e.preventDefault(); setSplit(split - 5); }
+    else if(e.key === "ArrowRight" || e.key === "ArrowUp"){ e.preventDefault(); setSplit(split + 5); }
+    else if(e.key === "Home"){ e.preventDefault(); setSplit(0); }
+    else if(e.key === "End"){ e.preventDefault(); setSplit(100); }
+  });
   addEventListener("pointerup", () => drag = false);
   addEventListener("pointermove", move);
 })();
@@ -940,6 +973,10 @@ fetch("/api/cred" + X).then(r => r.json()).then(d => {
 // this is display only.
 fetch("/api/hazards" + X).then(r => r.json()).then(d => {
   const items = d.items || [];
+  // Feed the hero's alt text: the audit image's description names what the
+  // audit actually flagged at this corner, not a generic phrase.
+  window.HZLABELS = items.filter(h => h.verdict !== "REPORTED").map(h => h.label);
+  if(IMG && state === "hazards") render();
   if(!items.length) return;
   el("hz").hidden = false;
   el("hz").innerHTML = items.map(h =>

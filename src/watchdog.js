@@ -202,7 +202,9 @@ ${BASE_CSS}
 /* A panel that is waiting for data has no business wearing the accent edge the
    headline number wears. Same container, quieter claim. */
 .bigwrap.soft{border-top:1.5px solid var(--line3);padding:18px 26px}
-.bignum{font-size:64px;font-weight:700;letter-spacing:-.03em;line-height:1;color:var(--accent)}
+/* Display numbers are large text (3:1 floor). The raw accent sits at 2.72
+   on white, so the number wears the same hue darkened one step. */
+.bignum{font-size:64px;font-weight:700;letter-spacing:-.03em;line-height:1;color:#d96a10}
 .bignum i{font-size:30px;font-style:normal;margin-left:2px}
 .bignum.quiet{color:var(--dim);font-size:40px}
 .bigsub{font-size:14px;color:var(--dim);margin:12px 0 0;line-height:1.6;max-width:620px}
@@ -257,6 +259,7 @@ ${BASE_CSS}
     <a href="/watchdog" class="on">The watchdog</a>
   </div>
 </header>
+<main>
 
 <h1 style="font-size:30px;letter-spacing:-.02em;margin:0 0 12px">The Corner Watchdog</h1>
 <p class="explain">
@@ -296,6 +299,7 @@ ${entries.map(entryHtml).join("\n")}`
   Threshold calibration from logged outcomes is not model retraining, and this page never calls it that.
 </p>
 
+</main>
 </div>
 </body>
 </html>`;

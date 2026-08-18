@@ -136,6 +136,7 @@ ${ranked.length ? `<meta property="og:image" content="${origin}/og.jpg?x=${ranke
 ${FONT_LINK}
 <style>
 ${BASE_CSS}
+.vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .hero-map{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line2);
   background:var(--card);margin:0 0 8px;
   /* The container owns its height, not the image inside it. When the Leaflet
@@ -178,7 +179,7 @@ ${BASE_CSS}
   border-radius:12px;padding:15px 18px;margin:0 0 10px;box-shadow:0 1px 3px rgba(20,27,45,.06);
   transition:transform 150ms ease-out,box-shadow 150ms ease-out;flex-wrap:wrap}
 .cotd:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(20,27,45,.10)}
-.cotdk{font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--accent)}
+.cotdk{font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:#b0560e}
 .cotdn{font-size:16px;font-weight:600}
 .cotds{font-size:11.5px;color:var(--dim);flex:1;min-width:180px}
 .cotdg{font-size:13px;font-weight:700;min-width:28px;height:28px;border-radius:8px;display:grid;
@@ -228,6 +229,8 @@ ${BASE_CSS}
   </form>
   <div class="corner"><b>San Francisco</b>${ranked.length} corners graded</div>
 </header>
+<main>
+<h1 class="vh">StreetCred, the San Francisco corner scoreboard</h1>
 
 <p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
 
@@ -317,6 +320,7 @@ ${ranked
   </div>
 </div>
 
+</main>
 <footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
 Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
 </div>

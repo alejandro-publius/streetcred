@@ -53,6 +53,7 @@ ${BASE_CSS}
     <a href="/methodology" class="on">Methodology</a>
   </div>
 </header>
+<main>
 
 <div class="doc">
 <h1>Methodology</h1>
@@ -172,6 +173,7 @@ they move anything, and the <a href="/changes">public changelog</a> keeps the re
 Service health: <a href="/status">/status</a> &middot;
 The agent's decisions: <a href="/watchdog">/watchdog</a></p>
 </div>
+</main>
 </div>
 </body>
 </html>`;

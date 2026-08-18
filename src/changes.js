@@ -48,6 +48,7 @@ ${BASE_CSS}
     <a href="/methodology">Methodology</a>
   </div>
 </header>
+<main>
 <div class="doc">
 <h1>Grade changes</h1>
 <p class="sub">Every stored grade or index movement, newest first, with who moved it and why.
@@ -70,6 +71,7 @@ ${
 the reason and the source will be recorded here whether or not anyone is watching.</p>`
 }
 </div>
+</main>
 </div>
 </body>
 </html>`;

@@ -45,7 +45,7 @@ ${BASE_CSS}
 .doc .sub{font-size:13.5px;color:var(--dim);margin:0 0 26px;line-height:1.6}
 .doc h2{font-size:15px;margin:26px 0 10px}
 .big{font-size:44px;font-weight:700;letter-spacing:-.02em;line-height:1}
-.big.ok{color:var(--green)} .big.bad{color:var(--accent)} .big.quiet{color:var(--dim);font-size:26px}
+.big.ok{color:#657850} .big.bad{color:#d96a10} .big.quiet{color:var(--dim);font-size:26px}
 .srow{display:flex;gap:10px;align-items:center;font-size:12.5px;padding:7px 0;border-bottom:1px solid var(--line);
   font-variant-numeric:tabular-nums}
 .srow i{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 8px}
@@ -70,6 +70,7 @@ ${BASE_CSS}
     <a href="/status" class="on">Status</a>
   </div>
 </header>
+<main>
 <div class="doc">
 <h1>Status</h1>
 <p class="sub">An hourly synthetic monitor loads the same pages a visitor would and records what
@@ -130,6 +131,7 @@ ${
 site through a service binding, so an edge-level outage in front of a healthy Worker would not show
 here; that caveat is part of the record too.</p>
 </div>
+</main>
 </div>
 </body>
 </html>`;
