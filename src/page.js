@@ -1,4 +1,28 @@
 import { CORNERS } from "./data.js";
+import { DISTRIBUTION } from "./score.js";
+
+// The citywide distribution strip, built once at module load from the frozen
+// array rather than shipped to the browser as 600 numbers on every page. The
+// bars are identical on every corner, so only the marker moves.
+//
+// Bar i is the points value at percentile i/BARS. The horizontal axis is
+// therefore percentile, which is exactly what the grade is, so a corner's
+// marker sits at its own index with no further arithmetic.
+const DIST_BARS = 64;
+function distributionSvg() {
+  const n = DISTRIBUTION.length;
+  const top = Math.sqrt(DISTRIBUTION[n - 1]) || 1;
+  const w = 100 / DIST_BARS;
+  const rects = Array.from({ length: DIST_BARS }, (_, i) => {
+    const v = DISTRIBUTION[Math.min(n - 1, Math.floor((i / DIST_BARS) * n))];
+    // A floor of 1.2 so the calm half of the city stays visible as a baseline
+    // rather than vanishing into the panel.
+    const h = Math.max(1.2, (Math.sqrt(v) / top) * 30);
+    return `<rect x="${(i * w).toFixed(3)}" y="${(30 - h).toFixed(2)}" width="${(w - 0.35).toFixed(3)}" height="${h.toFixed(2)}"/>`;
+  }).join("");
+  return `<svg class="dist" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">${rects}</svg>`;
+}
+const DIST_SVG = distributionSvg();
 
 export const LOGO = `<svg viewBox="0 0 64 64" width="38" height="38" aria-hidden="true">
   <rect width="64" height="64" rx="14" fill="#141B2D"/>
@@ -18,6 +42,10 @@ export const BASE_CSS = `:root{
   /* One step darker than --line, for panel edges that need to hold their own
      against the page rather than disappear into it. */
   --line2:#dcd9cc;
+  /* Darker again, and the one every panel edge actually uses. On a #faf9f5
+     ground a white panel with a #e8e6dc hairline reads as floating text rather
+     than as a container, which is the whole problem this fixes. */
+  --line3:#d6d2c4;
   --ink:#141B2D; --accent:#F07E26; --dim:#8a867c; --blue:#6a9bcc; --green:#788c5d;
 }
 *{box-sizing:border-box}
@@ -54,8 +82,9 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 /* Danger Index. The grade chip and the severity ramp stay inside the existing
    palette: ink reads as most severe, then the accent, then two accent tints. No
    new hues, so the score cannot fight the rest of the page. */
-.scorewrap{display:flex;gap:24px;align-items:center;background:var(--panel);border:1px solid var(--line2);
-  border-top:2px solid var(--ink);border-radius:14px;padding:18px 20px;margin-bottom:12px;flex-wrap:wrap;
+.scorewrap{display:flex;gap:24px;align-items:center;background:var(--panel);border:1.5px solid var(--line3);
+  border-top:3px solid var(--ink);border-radius:12px;padding:18px 20px;margin-bottom:12px;flex-wrap:wrap;
+  box-shadow:0 1px 3px rgba(20,27,45,.06);
   transition:transform 150ms ease-out,box-shadow 150ms ease-out}
 .scorefig{display:flex;align-items:center;gap:12px}
 .scoren{font-size:50px;font-weight:700;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
@@ -63,12 +92,33 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .scoreg{font-size:21px;font-weight:700;min-width:40px;height:40px;padding:0 9px;border-radius:11px;
   display:grid;place-items:center;color:#fff;background:var(--card);
   transition:background-color 2s ease-in,color 2s ease-in}
-.scoreg.gA,.scoreg.gB{background:var(--green)}
+/* Five steps through two existing hues. No new red: an F is the accent at full
+   strength, which is already the loudest thing in this palette. */
+.scoreg.gA{background:var(--green)}
+.scoreg.gB{background:rgba(120,140,93,.62)}
 .scoreg.gC{background:var(--blue)}
-.scoreg.gD{background:rgba(240,126,38,.72)}
+.scoreg.gD{background:rgba(240,126,38,.7)}
 .scoreg.gF{background:var(--accent)}
 .scoremeta{flex:1;min-width:230px}
-.scorelabel{font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:9px}
+.scorelabel{font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:7px}
+.scorepct{font-size:13px;font-weight:600;color:var(--ink);line-height:1.45;margin:0 0 9px}
+/* The citywide distribution, drawn from the same frozen 600 intersection sample
+   the grade is computed against. Square root scaled on the vertical, because on
+   a linear scale the tail is so heavy that only the last three bars are visible
+   and the shape stops making its own argument. Pure SVG, no library. */
+.distwrap{position:relative;margin:0}
+.dist{display:block;width:100%;height:30px}
+.dist rect{fill:#c7c3b3}
+.dmark{position:absolute;top:-5px;bottom:-1px;width:2px;margin-left:-1px;background:var(--ink);border-radius:1px}
+.dmark::after{content:"";position:absolute;top:-4px;left:50%;transform:translateX(-50%);
+  width:8px;height:8px;border-radius:50%;background:inherit}
+.dmark.gA{background:var(--green)}
+.dmark.gB{background:rgba(120,140,93,.62)}
+.dmark.gC{background:var(--blue)}
+.dmark.gD{background:rgba(240,126,38,.7)}
+.dmark.gF{background:var(--accent)}
+.distax{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);
+  letter-spacing:.04em;margin:4px 0 12px}
 .sevbar{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--card);margin-bottom:9px}
 .sevbar i{display:block;height:100%}
 .sevbar i.f{background:var(--ink)}
@@ -122,8 +172,9 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .cred .c.on::before{background:var(--ink)}
 .cred .v{font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);margin-left:3px}
 .cred .v.strong{color:var(--ink)}
-.stat{background:var(--panel);border:1px solid var(--line2);border-top:2px solid var(--ink);border-radius:14px;
-  padding:20px 22px;min-width:0;transition:transform 150ms ease-out,box-shadow 150ms ease-out}
+.stat{background:var(--panel);border:1.5px solid var(--line3);border-top:3px solid var(--ink);border-radius:12px;
+  padding:20px 22px;min-width:0;box-shadow:0 1px 3px rgba(20,27,45,.06);
+  transition:transform 150ms ease-out,box-shadow 150ms ease-out}
 .stat .n{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--accent)}
 .stat .l{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.45}
 
@@ -138,23 +189,33 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .lane[hidden]{display:none}
 
 #mappanel[hidden]{display:none}
-#mappanel{padding:18px 18px 14px}
+#mappanel .pbody{padding:16px 18px 14px}
 .mapimg{display:block;width:100%;max-height:230px;object-fit:cover;object-position:center;border-radius:10px;border:1px solid var(--line)}
 .mapfoot{font-size:11.5px;color:var(--dim);margin:9px 0 0}
 
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
-.panel{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:22px;margin-bottom:18px;
+.panel{background:var(--panel);border:1.5px solid var(--line3);border-radius:12px;padding:0;margin-bottom:20px;
+  box-shadow:0 1px 3px rgba(20,27,45,.06);
   transition:transform 150ms ease-out,box-shadow 150ms ease-out}
-/* A 2px cap in the lane's own color. Reads as the tab on a file folder, which
-   is the right metaphor for a page that is arguing from a case file. */
-.panel.lane-record{border-top:2px solid var(--ink)}
-.panel.lane-press{border-top:2px solid var(--blue)}
-.panel.lane-ask{border-top:2px solid var(--green)}
-.panel.lane-voices{border-top:2px solid var(--dim)}
-.panel.lane-corner{border-top:2px solid var(--line2)}
-.panel:hover,.stat:hover,.scorewrap:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(20,27,45,.07)}
-.ph{display:flex;align-items:center;gap:10px;margin-bottom:16px}
-.ph h2{font-size:15px;font-weight:600;margin:0}
+/* A 3px cap in the lane's own color, full width and part of the radius. Reads
+   as the tab on a file folder, which is the right metaphor for a page that is
+   arguing from a case file. */
+.panel.lane-record{border-top:3px solid var(--ink)}
+.panel.lane-press{border-top:3px solid var(--blue)}
+.panel.lane-ask{border-top:3px solid var(--green)}
+.panel.lane-voices{border-top:3px solid var(--dim)}
+.panel.lane-imagery{border-top:3px solid var(--accent)}
+.panel.lane-corner{border-top:3px solid var(--line3)}
+.panel:hover,.stat:hover,.scorewrap:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(20,27,45,.10)}
+/* The lid. A header strip in the card tint with a rule under it is what turns
+   loose text inside a border into a card, and it is where the lane's title and
+   its live/cache/sample tag belong: on the container they describe. */
+.phs{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--card);border-bottom:1px solid var(--line3);padding:11px 20px;
+  border-radius:9px 9px 0 0}
+.phs h2{font-size:13px;font-weight:600;margin:0;letter-spacing:.01em}
+.phs .draft{margin:0}
+.pbody{padding:20px}
 .tag{font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;
   border-radius:5px;background:rgba(106,155,204,.14);color:var(--blue);border:1px solid transparent}
 /* Dashed, so a sample or empty state is legible as provisional at a glance and
@@ -183,6 +244,9 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .lfoot button{font-family:inherit;font-size:13px;font-weight:600;background:var(--ink);color:#fff;border:0;border-radius:8px;padding:9px 18px;cursor:pointer}
 .lfoot span{font-size:11.5px;color:var(--dim)}
 .draft{font-size:11.5px;color:var(--accent);font-weight:600;margin-bottom:12px;letter-spacing:.03em}
+/* The one status that belongs on the lid rather than in the body: a reader who
+   only ever sees the header strip still learns this letter was never sent. */
+.phs .draft{letter-spacing:.09em}
 
 .stack{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 26px;margin-top:8px}
 .stack div{font-size:12.5px;color:var(--dim);line-height:1.5}
@@ -211,7 +275,18 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 }
 
 @media(max-width:860px){.cols,.stack{grid-template-columns:1fr}}
-@media(max-width:600px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  /* Panels now carry their own padding, so on a phone the body inset has to
+     give some of it back or the widest fixed element in the page, the three
+     button view toggle, pushes the whole document past the viewport and the
+     header stops wrapping. */
+  .wrap{padding:22px 14px 52px}
+  .pbody{padding:16px}
+  .phs{padding:10px 16px}
+  .toggle{width:auto;flex-wrap:wrap;padding:5px}
+  .toggle button{padding:9px 13px;font-size:13px}
+}
 @media(max-width:400px){.stats{grid-template-columns:1fr}}`;
 
 export const PAGE = (c, og = {}) => {
@@ -291,19 +366,24 @@ ${BASE_CSS}
 
 <p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
 
-<div class="toggle" role="group" aria-label="Corner view">
-  <button data-state="today" aria-pressed="true">Today</button>
-  <button data-state="hazards" aria-pressed="false"${c.generated ? " disabled" : ""}>Hazards</button>
-  <button data-state="fix" aria-pressed="false"${c.generated ? " disabled" : ""}>Proposed fix</button>
-</div>
+<div class="panel lane-imagery">
+  <div class="phs"><h2>The corner, three ways</h2><span class="tag" id="imgtag">Street View plus Gemini</span></div>
+  <div class="pbody">
+    <div class="toggle" role="group" aria-label="Corner view">
+      <button data-state="today" aria-pressed="true">Today</button>
+      <button data-state="hazards" aria-pressed="false"${c.generated ? " disabled" : ""}>Hazards</button>
+      <button data-state="fix" aria-pressed="false"${c.generated ? " disabled" : ""}>Proposed fix</button>
+    </div>
 
-<div class="hero single" id="hero">
-  <img id="base" alt="${c.name} today, from Street View">
-  <img id="overlay" alt="">
-  <div id="handle" role="separator" aria-label="Drag to compare"></div>
+    <div class="hero single" id="hero">
+      <img id="base" alt="${c.name} today, from Street View">
+      <img id="overlay" alt="">
+      <div id="handle" role="separator" aria-label="Drag to compare"></div>
+    </div>
+    <p class="cap"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
+    <div class="hz" id="hz" hidden></div>
+  </div>
 </div>
-<p class="cap"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
-<div class="hz" id="hz" hidden></div>
 
 <div class="eyebrow"><span>Official record</span></div>
 <div class="scorewrap" id="scorewrap" hidden>
@@ -313,6 +393,12 @@ ${BASE_CSS}
   </div>
   <div class="scoremeta">
     <div class="scorelabel">Danger Index, reported harm within 80 meters</div>
+    <div class="scorepct" id="scorepct"></div>
+    <div class="distwrap">
+      ${DIST_SVG}
+      <i class="dmark" id="dmark" hidden></i>
+    </div>
+    <div class="distax"><span>calmer</span><span>600 SF intersections, sampled</span><span>worst</span></div>
     <div class="sevbar" id="sevbar"></div>
     <div class="sevkey" id="sevkey"></div>
     <div class="scorecav" id="scorecav"></div>
@@ -326,41 +412,50 @@ ${BASE_CSS}
 <div class="cred" id="cred" hidden></div>
 
 <section class="lane" id="maplane" hidden>
-  <div class="eyebrow"><span>The corner</span></div>
   <div class="panel lane-corner" id="mappanel">
-    <img id="mapimg" class="mapimg" alt="Roadmap showing the location of ${c.name}, ${c.city}">
-    <p class="mapfoot">${c.name}, District ${c.district}. Map data: Google.</p>
+    <div class="phs"><h2>Location</h2><span class="tag">Google Maps</span></div>
+    <div class="pbody">
+      <img id="mapimg" class="mapimg" alt="Roadmap showing the location of ${c.name}, ${c.city}">
+      <p class="mapfoot">${c.name}, District ${c.district}. Map data: Google.</p>
+    </div>
   </div>
 </section>
 
 <div class="cols">
   <div>
-    <div class="eyebrow"><span id="newshead">Press coverage</span><span class="tag" id="newstag">found live, cited</span></div>
     <div class="panel lane-press">
-      <div class="news" id="news"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+      <div class="phs"><h2 id="newshead">Press coverage</h2><span class="tag" id="newstag">found live, cited</span></div>
+      <div class="pbody">
+        <div class="news" id="news"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+      </div>
     </div>
-    <div class="eyebrow"><span>Resident voices</span><span class="tag" id="voicestag">scraped</span></div>
     <div class="panel lane-voices">
-      <div id="voices"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+      <div class="phs"><h2>Resident voices</h2><span class="tag" id="voicestag">scraped</span></div>
+      <div class="pbody">
+        <div id="voices"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+      </div>
     </div>
   </div>
   <div>
-    <div class="eyebrow"><span>The ask</span><span class="tag" id="lettertag">drafted</span></div>
     <div class="panel lane-ask">
-      <div class="fixrow">
-        <div><div class="k">Proposed fix</div><div class="v" id="fixname">${c.fix.name}</div></div>
-        <div class="cost" id="fixcost">${c.fix.cost}</div>
-        <div><div class="k">Funding route</div><div class="v" id="fixgrant">${c.fix.grant}</div></div>
+      <div class="phs"><h2>The ask</h2><span class="draft">DRAFT ONLY</span></div>
+      <div class="pbody">
+        <div class="fixrow">
+          <div><div class="k">Proposed fix</div><div class="v" id="fixname">${c.fix.name}</div></div>
+          <div class="cost" id="fixcost">${c.fix.cost}</div>
+          <div><div class="k">Funding route</div><div class="v" id="fixgrant">${c.fix.grant}</div></div>
+        </div>
+        <div class="draft">NOT SENT TO ANY OFFICIAL</div>
+        <div class="letter" id="letter"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+        <div class="lfoot"><button id="copy">Copy letter</button><span class="tag" id="lettertag">drafted</span><span>by Gemini</span></div>
       </div>
-      <div class="draft">DRAFT ONLY, NOT SENT TO ANY OFFICIAL</div>
-      <div class="letter" id="letter"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
-      <div class="lfoot"><button id="copy">Copy letter</button><span>drafted by Gemini</span></div>
     </div>
   </div>
 </div>
 
 <div class="panel">
-  <div class="ph"><h2>The stack</h2></div>
+  <div class="phs"><h2>The stack</h2></div>
+  <div class="pbody">
   <div class="stack">
     <div><b>DataSF</b>Collisions and 311, queried by radius around the corner</div>
     <div><span class="lg"><img src="/logos/exa.svg" alt="Exa" width="64" height="20" loading="lazy"></span>Finds current press coverage of this intersection, cited</div>
@@ -369,6 +464,7 @@ ${BASE_CSS}
     <div><b>Gemini text</b>Turns four sources into one addressed letter</div>
     <div><span class="lg"><img src="/logos/cloudflare.svg" alt="Cloudflare" width="44" height="20" loading="lazy"></span>Workers serve the page, KV holds corners and imagery</div>
     <div><b>Google Maps</b>Street View frames and the corner thumbnail</div>
+  </div>
   </div>
 </div>
 
@@ -630,6 +726,14 @@ fetch("/api/score" + X).then(r => r.json()).then(d => {
   const g = el("scoreg");
   g.textContent = d.grade;
   g.className = "scoreg g" + d.grade;
+  // The index is a percentile, so say so in words next to the number. "99 out
+  // of 100" invites a reader to imagine a scale that stops somewhere.
+  el("scorepct").textContent =
+    "More reported harm than " + d.index + "% of San Francisco intersections.";
+  const m = el("dmark");
+  m.style.left = d.index + "%";
+  m.className = "dmark g" + d.grade;
+  m.hidden = false;
   const c = d.counts || {};
   const parts = [["f","Fatal",c.fatal],["s","Severe",c.severe],
                  ["o","Other visible",c.otherVisible],["p","Complaint of pain",c.pain]];
