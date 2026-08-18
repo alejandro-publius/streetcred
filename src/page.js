@@ -399,13 +399,18 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .fixrow .v{font-size:14px;font-weight:500;line-height:1.45}
 .fixrow .cost{font-size:19px;font-weight:700;color:var(--green);white-space:nowrap;text-align:right}
 .letter{font-family:Lora,Georgia,serif;font-size:14.5px;line-height:1.72;white-space:pre-wrap}
-.lfoot{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
-.lfoot button{font-family:inherit;font-size:13px;font-weight:600;background:var(--ink);color:#fff;border:0;border-radius:8px;padding:9px 18px;cursor:pointer}
+.lfoot{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);flex-wrap:wrap}
+/* Copy is the ask's primary action, so it wears the accent; download is its
+   quieter sibling. Both are real buttons, no anchors pretending. */
+.lfoot button{font-family:inherit;font-size:13px;font-weight:600;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 20px;cursor:pointer}
+.lfoot button.dl{background:none;color:var(--ink);border:1px solid var(--line2)}
+.lfoot button.dl:hover{border-color:var(--ink)}
 .lfoot span{font-size:11.5px;color:var(--dim)}
 .draft{font-size:11.5px;color:#a04d0c;font-weight:600;margin-bottom:12px;letter-spacing:.03em}
 /* The one status that belongs on the lid rather than in the body: a reader who
    only ever sees the header strip still learns this letter was never sent. */
 .phs .draft{letter-spacing:.09em}
+.phs-lg h2{font-size:15px}
 .vnote{font-size:11px;color:var(--dim);margin:9px 0 0;line-height:1.5;max-width:520px}
 
 .stack{display:grid;grid-template-columns:repeat(3,1fr);gap:18px 26px;margin-top:8px}
@@ -418,6 +423,21 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .stack .lg b{font-size:14px;color:var(--ink);font-weight:600;white-space:nowrap;letter-spacing:-.01em}
 @media(max-width:860px){.stack .lg{width:auto}}
 .cname{display:inline;font-size:inherit;font-weight:inherit;margin:0;letter-spacing:inherit}
+/* The sticky letter bar. Appears on scroll, never taller than 48px, hides
+   while the letter panel is on screen because an arrow pointing at something
+   already visible is noise. Dismiss survives until the next page load. */
+.sticky{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:center;gap:10px;
+  height:48px;max-height:48px;padding:0 14px calc(env(safe-area-inset-bottom, 0px) / 2);
+  background:var(--panel);border-top:1.5px solid var(--line3);box-shadow:0 -4px 14px rgba(20,27,45,.08)}
+.sg{font-size:13px;font-weight:700;min-width:26px;height:26px;border-radius:7px;display:grid;
+  place-items:center;color:#fff;background:var(--dimline)}
+.sg.gA{background:var(--green)} .sg.gB{background:#a3b088} .sg.gC{background:var(--blue)}
+.sg.gD{background:#e89a5f} .sg.gF{background:var(--accent)}
+.sn{flex:1;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sgo{font-size:12.5px;font-weight:600;color:#fff;background:var(--ink);border-radius:999px;
+  padding:8px 16px;text-decoration:none;white-space:nowrap}
+.sx{font-size:18px;line-height:1;background:none;border:0;color:var(--dim);cursor:pointer;padding:6px}
+
 /* The verdict block. The page's conclusion, stated first: the grade, the
    percentile sentence that must never travel without it, one thesis sentence
    from the same payloads every panel below re-derives, and the door to the
@@ -444,7 +464,7 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 @media (prefers-reduced-motion: reduce){.panel.lit{box-shadow:0 0 0 3px rgba(240,126,38,.35)}}
 /* Preview badge. Only the preview environment renders the element at all, so
    production carries neither the node nor the style burden of hiding it. */
-.pvw{position:fixed;right:14px;bottom:14px;z-index:80;font-size:10px;font-weight:700;
+.pvw{position:fixed;right:14px;bottom:62px;z-index:80;font-size:10px;font-weight:700;
   letter-spacing:.12em;text-transform:uppercase;color:var(--dim);background:var(--panel);
   border:1px dashed var(--line2);border-radius:999px;padding:5px 12px;opacity:.85;pointer-events:none}
 footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
@@ -465,7 +485,27 @@ footer a:hover{color:var(--ink)}
   .panel:hover,.stat:hover,.scorewrap:hover{transform:none;box-shadow:none}
 }
 
-@media(max-width:860px){.cols,.stack{grid-template-columns:1fr}}
+@media(max-width:860px){
+  .cols,.stack{grid-template-columns:1fr}
+  /* Mobile reading order: verdict, imagery, letter, evidence, map, stack.
+     The letter is why a person came; on a phone it must not sit under four
+     panels of receipts. display:contents releases the two columns into main's
+     flex flow so order can interleave them. */
+  main{display:flex;flex-direction:column}
+  main > *{order:20}
+  .lede{order:0}
+  #verdict{order:1}
+  #replay{order:2}
+  .panel.lane-imagery{order:3}
+  .cols{display:contents}
+  .cols > div:nth-child(2){order:4}
+  .eyebrow{order:5}
+  #scorewrap{order:6}
+  #stats{order:7}
+  #cred{order:8}
+  .cols > div:nth-child(1){order:9}
+  #maplane{order:10}
+}
 @media(max-width:600px){
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   /* Panels now carry their own padding, so on a phone the body inset has to
@@ -569,6 +609,13 @@ ${BASE_CSS}
   <a class="vgo" id="vgo" href="#letterpanel">Get the letter</a>
 </section>
 
+<div class="sticky" id="sticky" hidden>
+  <span class="sg" id="stickyg" aria-hidden="true"></span>
+  <span class="sn">${c.short || c.name}</span>
+  <a class="sgo" href="#letterpanel" id="stickygo">Get the letter</a>
+  <button class="sx" id="stickyx" type="button" aria-label="Dismiss this bar">&times;</button>
+</div>
+
 <section class="replay" id="replay" hidden aria-label="Replay of this corner's pipeline run">
   <div class="rhead">
     <span class="rttl">Replay of the actual run from <b id="rdate">this corner</b></span>
@@ -664,7 +711,7 @@ ${BASE_CSS}
   </div>
   <div>
     <div class="panel lane-ask" id="letterpanel">
-      <div class="phs"><h2>The ask</h2><span class="draft">DRAFT ONLY</span></div>
+      <div class="phs phs-lg"><h2>The ask</h2><span class="draft">DRAFT ONLY</span></div>
       <div class="pbody">
         <div class="fixrow">
           <div><div class="k">Proposed fix</div><div class="v" id="fixname">${c.fix.name}</div></div>
@@ -673,7 +720,7 @@ ${BASE_CSS}
         </div>
         <div class="draft">NOT SENT TO ANY OFFICIAL</div>
         <div class="letter" id="letter"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
-        <div class="lfoot"><button id="copy">Copy letter</button><span class="tag" id="lettertag">drafted</span><span>by Gemini</span></div>
+        <div class="lfoot"><button id="copy">Copy letter</button><button id="download" class="dl" type="button">Download as text</button><span class="tag" id="lettertag">drafted</span><span>by Gemini</span></div>
         <p class="vnote">Every figure in this letter is checked against the source records before it is shown. A draft that states something the records do not support is rejected and rewritten.</p>
       </div>
     </div>
@@ -800,6 +847,32 @@ function setSplit(pct){
   h.style.left = split + "%";
   h.setAttribute("aria-valuenow", String(Math.round(split)));
 }
+// Sticky bar lifecycle.
+(function(){
+  const bar = el("sticky");
+  if(!bar || !("IntersectionObserver" in window)) return;
+  let dismissed = false, letterVisible = false, pastVerdict = false;
+  const sync = () => { bar.hidden = dismissed || letterVisible || !pastVerdict; };
+  el("stickyx").addEventListener("click", () => { dismissed = true; sync(); });
+  el("stickygo").addEventListener("click", (e) => {
+    const t = el("letterpanel");
+    if(!t) return;
+    e.preventDefault();
+    t.scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"});
+  });
+  const vio = new IntersectionObserver((en) => {
+    pastVerdict = !en[0].isIntersecting && en[0].boundingClientRect.top < 0;
+    sync();
+  });
+  const vEl = el("verdict"); if(vEl) vio.observe(vEl);
+  const lio = new IntersectionObserver((en) => { letterVisible = en[0].isIntersecting; sync(); });
+  const lEl = el("letterpanel"); if(lEl) lio.observe(lEl);
+  // Fill the chip once the score lands.
+  const fill = setInterval(() => {
+    if(V.score){ const g = el("stickyg"); g.textContent = V.score.grade; g.className = "sg g" + V.score.grade; clearInterval(fill); }
+  }, 400);
+})();
+
 el("vgo") && el("vgo").addEventListener("click", (e) => {
   const t = el("letterpanel");
   if(!t) return;
@@ -1352,6 +1425,19 @@ fetch("/api/voices" + X).then(r => r.json()).then(d => {
 fetch("/api/letter" + X).then(r => r.json()).then(d => {
   mark("lettertag", d.source);
   el("letter").textContent = d.text || "";
+// Download as text: a client-side blob of exactly what is on screen, named
+// for the corner. Nothing fetched, nothing regenerated.
+el("download") && el("download").addEventListener("click", () => {
+  const text = el("letter") ? el("letter").textContent : "";
+  if(!text.trim()) return;
+  const blob = new Blob([text], {type: "text/plain;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "streetcred-letter-" + CORNER_SLUG + ".txt";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+});
   el("copy").addEventListener("click", () => {
     navigator.clipboard.writeText(d.text || "");
     el("copy").textContent = "Copied";
