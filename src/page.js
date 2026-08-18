@@ -1,3 +1,5 @@
+import { CORNERS } from "./data.js";
+
 const LOGO = `<svg viewBox="0 0 64 64" width="38" height="38" aria-hidden="true">
   <rect width="64" height="64" rx="14" fill="#141B2D"/>
   <path d="M32 12v40M12 32h40" stroke="#F07E26" stroke-width="7" stroke-linecap="round"/>
@@ -26,6 +28,10 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:Poppins,system-u
 header{display:flex;align-items:center;gap:14px;padding-bottom:22px}
 .mark{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1}
 .mark span{color:var(--accent)}
+.switcher{display:flex;gap:7px;margin-left:22px}
+.switcher a{font-size:12.5px;font-weight:600;text-decoration:none;color:var(--dim);
+  background:var(--card);border:1px solid var(--line);border-radius:999px;padding:7px 15px;white-space:nowrap}
+.switcher a.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .corner{margin-left:auto;text-align:right;font-size:13px;color:var(--dim);line-height:1.5}
 .corner b{display:block;font-size:15px;color:var(--ink);font-weight:600}
 .lede{font-size:15px;color:var(--dim);max-width:660px;margin:0 0 26px;line-height:1.6}
@@ -80,6 +86,7 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px}
 .voice{background:var(--card);border-radius:11px;padding:15px 17px;margin-bottom:11px}
 .voice p{margin:0;font-family:Lora,Georgia,serif;font-style:italic;font-size:14.5px;line-height:1.6}
 .voice .m{font-size:11.5px;color:var(--dim);margin-top:9px;text-transform:capitalize}
+.empty{margin:0;font-size:13.5px;color:var(--dim);line-height:1.55}
 
 .fixrow{display:grid;grid-template-columns:1fr auto;gap:8px 18px;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
 .fixrow .k{font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
@@ -110,6 +117,14 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 <header>
   ${LOGO}
   <div class="mark">Street<span>Cred</span></div>
+  <nav class="switcher" aria-label="Choose a corner">
+    ${Object.values(CORNERS)
+      .map(
+        (k) =>
+          `<a href="/?x=${k.slug}"${k.slug === c.slug ? ' class="on" aria-current="page"' : ""}>${k.short}</a>`,
+      )
+      .join("")}
+  </nav>
   <div class="corner"><b>${c.name}</b>${c.city}, District ${c.district}</div>
 </header>
 
@@ -191,6 +206,7 @@ const CAPS = {
   hazards:["Hazards","Gemini read the real photograph and marked the zones it flags as high risk: faded crosswalk markings in red, vehicle conflict zones in amber. Drag to compare."],
   fix:["Proposed fix","An AI visualization of continental crosswalks, a protected bike lane, and a corner curb extension. Not a photograph of anything that exists. Drag to compare."]
 };
+const X = "?x=${c.slug}";
 let IMG = null, state = "today";
 
 const el = id => document.getElementById(id);
@@ -226,7 +242,7 @@ document.querySelectorAll(".toggle button").forEach(b => b.addEventListener("cli
   addEventListener("pointermove", move);
 })();
 
-fetch("/api/imagery").then(r => r.json()).then(d => { IMG = d; render(); });
+fetch("/api/imagery" + X).then(r => r.json()).then(d => { IMG = d; render(); });
 
 // The map panel stays out of the document until the thumbnail actually decodes.
 // A failed Static Maps request removes it rather than leaving a broken image.
@@ -234,10 +250,10 @@ fetch("/api/imagery").then(r => r.json()).then(d => { IMG = d; render(); });
   const img = el("mapimg");
   img.addEventListener("load", () => el("maplane").hidden = false);
   img.addEventListener("error", () => el("maplane").remove());
-  img.src = "/map.jpg";
+  img.src = "/map.jpg" + X;
 })();
 
-fetch("/api/stats").then(r => r.json()).then(d => {
+fetch("/api/stats" + X).then(r => r.json()).then(d => {
   const n = [d.crashes, d.reports311, d.district].map(v => Number(v).toLocaleString());
   const l = ["Collisions on record within 150m","Street-related 311 reports, 3 years","Supervisor district"];
   el("stats").innerHTML = n.map((v,i) =>
@@ -245,7 +261,7 @@ fetch("/api/stats").then(r => r.json()).then(d => {
     (d.source === "sample" && i === 0 ? ' <span class="tag sample">sample</span>' : '') + '</div></div>').join("");
 });
 
-fetch("/api/news").then(r => r.json()).then(d => {
+fetch("/api/news" + X).then(r => r.json()).then(d => {
   mark("newstag", d.source);
   el("news").innerHTML = (d.items||[]).map(x =>
     '<a href="' + esc(x.url) + '" target="_blank" rel="noopener"><div class="t">' + esc(x.title) +
@@ -253,15 +269,25 @@ fetch("/api/news").then(r => r.json()).then(d => {
     || '<div class="m">No coverage found.</div>';
 });
 
-fetch("/api/voices").then(r => r.json()).then(d => {
+fetch("/api/voices" + X).then(r => r.json()).then(d => {
+  const items = d.items || [];
+  const tag = el("voicestag");
+  if (!items.length) {
+    // Say so plainly. An empty scrape is a real result, not a hole to fill.
+    tag.textContent = "none found";
+    tag.classList.add("sample");
+    el("voices").innerHTML =
+      '<p class="empty">No on-topic resident accounts found for this corner.</p>';
+    return;
+  }
   mark("voicestag", d.source);
-  el("voices").innerHTML = (d.items||[]).map(v =>
+  el("voices").innerHTML = items.map(v =>
     '<div class="voice"><p>&ldquo;' + esc(v.text) + '&rdquo;</p><div class="m">' +
     esc(String(v.source).replace("_"," ")) + (v.stars ? " &middot; " + v.stars + "&#9733;" : "") +
     (v.when ? " &middot; " + esc(v.when) : "") + '</div></div>').join("");
 });
 
-fetch("/api/letter").then(r => r.json()).then(d => {
+fetch("/api/letter" + X).then(r => r.json()).then(d => {
   mark("lettertag", d.source);
   el("letter").textContent = d.text || "";
   el("copy").addEventListener("click", () => {

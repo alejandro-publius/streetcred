@@ -20,6 +20,26 @@ export const CORNERS = {
       grant: "Caltrans Highway Safety Improvement Program (HSIP)",
     },
   },
+  "6th-market": {
+    slug: "6th-market",
+    name: "6th Street and Market Street",
+    short: "6th & Market",
+    city: "San Francisco",
+    lat: 37.78221014549322,
+    lon: -122.4103752550649,
+    // Heading picked the same way as the first corner: the frame a person waiting
+    // to cross actually sees, with the crosswalk filling the foreground.
+    heading: 270,
+    pitch: 0,
+    radiusMeters: 150,
+    district: 6,
+    voicesKey: "voices:6th-and-market",
+    fix: {
+      name: "Continental crosswalks, corner daylighting, and a leading pedestrian interval",
+      cost: "$310,000 estimated",
+      grant: "California Active Transportation Program (ATP)",
+    },
+  },
 };
 
 export const DEFAULT_SLUG = "16th-mission";

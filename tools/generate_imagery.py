@@ -14,13 +14,25 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 IMG = ROOT / "public" / "img"
 MODEL = "gemini-3.1-flash-image"
 
-CORNER = {
-    "slug": "16th-mission",
-    "name": "16th Street and Mission Street",
-    "lat": 37.76504541503217,
-    "lon": -122.4196931274286,
-    "heading": 0,
-    "pitch": 0,
+# Mirrors CORNERS in src/data.js. Adding a corner there means adding it here and
+# running this once for the new slug.
+CORNERS = {
+    "16th-mission": {
+        "slug": "16th-mission",
+        "name": "16th Street and Mission Street",
+        "lat": 37.76504541503217,
+        "lon": -122.4196931274286,
+        "heading": 0,
+        "pitch": 0,
+    },
+    "6th-market": {
+        "slug": "6th-market",
+        "name": "6th Street and Market Street",
+        "lat": 37.78221014549322,
+        "lon": -122.4103752550649,
+        "heading": 270,
+        "pitch": 0,
+    },
 }
 
 HAZARD_PROMPT = (
@@ -109,7 +121,10 @@ def collect(proc, req, resp, out_path):
 
 def main():
     IMG.mkdir(parents=True, exist_ok=True)
-    c = CORNER
+    slug = sys.argv[1] if len(sys.argv) > 1 else "16th-mission"
+    if slug not in CORNERS:
+        sys.exit(f"unknown corner {slug}, have: {', '.join(CORNERS)}")
+    c = CORNERS[slug]
     maps_key = load_key("GOOGLE_MAPS_API_KEY")
     gemini_key = load_key("GEMINI_API_KEY")
     today = fetch_today(c, maps_key)

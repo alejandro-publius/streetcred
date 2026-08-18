@@ -18,6 +18,29 @@ async function cached(key, ttlMs, fn) {
   return value;
 }
 
+// Second cache layer, in front of the in-process one. A Worker isolate is
+// short-lived and per-colo, so `memo` alone cannot make a corner switch feel
+// instant: the next request usually lands on a cold isolate and pays the full
+// upstream cost again. The edge cache survives that. Sample and empty payloads
+// are never stored, so a lane that failed once is retried rather than pinned.
+async function edgeCached(ctx, key, ttlSec, produce) {
+  const cache = caches.default;
+  const req = new Request(`https://streetcred.internal/api/${key}`);
+  const hit = await cache.match(req);
+  if (hit) return hit;
+  const value = await produce();
+  const res = new Response(JSON.stringify(value), {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": `public, max-age=${ttlSec}`,
+    },
+  });
+  if (value && value.source !== "sample" && value.source !== "empty") {
+    ctx.waitUntil(cache.put(req, res.clone()));
+  }
+  return res;
+}
+
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {
     status,
@@ -54,10 +77,22 @@ async function getStats(c) {
       "$select": "count(*)",
       "$where": `${circle} AND requested_datetime > '${since}' AND service_name like '%Street%'`,
     }),
-    soql(DS_CRASHES, { "$select": "supervisor_district", "$where": circle, "$limit": 1 }),
+    // Grouped, not $limit 1. A major street is often a district boundary: within
+    // 150m of 6th and Market, DataSF holds 242 rows in District 6 and 114 in
+    // District 5, so a single arbitrary row picks the wrong Supervisor. The
+    // corner's configured district wins; this is corroboration and a fallback.
+    soql(DS_CRASHES, {
+      "$select": "supervisor_district,count(*)",
+      "$where": circle,
+      "$group": "supervisor_district",
+    }).catch(() => []),
   ]);
   // Landmine: crashes return "11" but 311 returns "9.00000". Always parseInt.
-  const district = parseInt(dist?.[0]?.supervisor_district ?? c.district, 10) || c.district;
+  const majority = (dist || [])
+    .map((r) => ({ d: parseInt(r.supervisor_district, 10), n: parseInt(r.count, 10) || 0 }))
+    .filter((r) => Number.isFinite(r.d))
+    .sort((a, b) => b.n - a.n)[0]?.d;
+  const district = parseInt(c.district ?? majority, 10) || majority;
   return {
     source: "live",
     crashes: parseInt(crashes?.[0]?.count ?? 0, 10),
@@ -67,6 +102,16 @@ async function getStats(c) {
 }
 
 // ---------------------------------------------------------------- news
+// Street names pulled from the corner itself, so the relevance filter travels to
+// any corner. "16th Street and Mission Street" gives ["16th", "mission"].
+function streetTokens(c) {
+  return c.name
+    .toLowerCase()
+    .replace(/\b(street|st|avenue|ave|boulevard|blvd|road|rd|drive|dr|and)\b/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 2);
+}
+
 async function getNews(c, env) {
   const r = await fetch("https://api.exa.ai/search", {
     method: "POST",
@@ -81,7 +126,7 @@ async function getNews(c, env) {
   if (r.status === 402) throw new Error("exa 402 credits");
   if (!r.ok) throw new Error(`exa ${r.status}`);
   const d = await r.json();
-  const tokens = ["16th", "mission", "sixteenth"];
+  const tokens = streetTokens(c);
   const items = (d.results || [])
     .filter((x) => x.title && tokens.some((t) => (x.title + " " + (x.url || "")).toLowerCase().includes(t)))
     .map((x) => ({
@@ -163,6 +208,24 @@ async function getImagery(c, env, origin) {
   };
 }
 
+// ---------------------------------------------------------------- fallbacks
+// Fallback payloads are built per corner, never shared. The sample stats and
+// headlines describe one specific intersection, and showing them under a
+// different corner would put the wrong district, and therefore the wrong
+// Supervisor, on the page.
+function sampleStats(c) {
+  const s = c.slug === DEFAULT_SLUG ? SAMPLE.stats : { crashes: 0, reports311: 0 };
+  return { source: "sample", crashes: s.crashes, reports311: s.reports311, district: c.district };
+}
+
+function sampleNews(c) {
+  return { source: "sample", items: c.slug === DEFAULT_SLUG ? SAMPLE.news : [] };
+}
+
+// No scraped accounts means an empty panel that says so. Inventing resident
+// testimony to fill space would be the one failure this product cannot afford.
+const emptyVoices = () => ({ source: "empty", items: [] });
+
 // ---------------------------------------------------------------- map
 // A Static Maps thumbnail, fetched server side for the same reason the Street
 // View frame is: the key must never reach the browser. Static image only, no
@@ -219,7 +282,7 @@ async function getLetter(c, env, ctx) {
 Use these facts and cite them plainly:
 - ${ctx.stats.crashes} collisions recorded by the city within 150 meters of this intersection.
 - ${ctx.stats.reports311} street-related 311 reports at this location in the last three years.
-- Recent press coverage: ${headlines || "local reporting on Mission Street pedestrian safety"}.
+${headlines ? `- Recent press coverage: ${headlines}.` : "- No press coverage was found for this corner. Do not cite or invent any news reporting."}
 - An automated visual audit of the intersection identified sub-standard, faded crosswalk markings and vehicle turning conflict zones where drivers cross the pedestrian path.
 ${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident testimony."}
 - The request: fund ${c.fix.name}, estimated ${c.fix.cost}, through the ${c.fix.grant}.
@@ -359,24 +422,19 @@ export default {
       }
 
       if (p === "/api/stats") {
-        const v = await cached(`stats:${c.slug}`, 3600e3, () =>
-          getStats(c).catch(() => ({ source: "sample", ...SAMPLE.stats })),
+        return await edgeCached(ctx, `stats-${c.slug}`, 3600, () =>
+          cached(`stats:${c.slug}`, 3600e3, () => getStats(c).catch(() => sampleStats(c))),
         );
-        return json(v);
       }
 
       if (p === "/api/news") {
-        const v = await cached(`news:${c.slug}`, 600e3, () =>
-          getNews(c, env).catch(() => ({ source: "sample", items: SAMPLE.news })),
+        return await edgeCached(ctx, `news-${c.slug}`, 600, () =>
+          cached(`news:${c.slug}`, 600e3, () => getNews(c, env).catch(() => sampleNews(c))),
         );
-        return json(v);
       }
 
       if (p === "/api/voices") {
-        const v = await getVoices(c, env, origin).catch(() => ({
-          source: "sample",
-          items: SAMPLE.voices,
-        }));
+        const v = await getVoices(c, env, origin).catch(emptyVoices);
         return json(v);
       }
 
@@ -385,17 +443,20 @@ export default {
       }
 
       if (p === "/api/letter") {
-        const v = await cached(`letter:${c.slug}`, 24 * 3600e3, async () => {
-          const [stats, news, voices] = await Promise.all([
-            getStats(c).catch(() => ({ source: "sample", ...SAMPLE.stats })),
-            getNews(c, env).catch(() => ({ source: "sample", items: SAMPLE.news })),
-            getVoices(c, env, origin).catch(() => ({ source: "sample", items: SAMPLE.voices })),
-          ]);
-          return getLetter(c, env, { stats, news, voices }).catch(() =>
-            sampleLetter(c, stats.district),
-          );
-        });
-        return json(v);
+        // The slowest lane by far, and the one worth caching hardest: a fresh
+        // draft costs several seconds of Gemini time.
+        return await edgeCached(ctx, `letter-${c.slug}`, 24 * 3600, () =>
+          cached(`letter:${c.slug}`, 24 * 3600e3, async () => {
+            const [stats, news, voices] = await Promise.all([
+              getStats(c).catch(() => sampleStats(c)),
+              getNews(c, env).catch(() => sampleNews(c)),
+              getVoices(c, env, origin).catch(emptyVoices),
+            ]);
+            return getLetter(c, env, { stats, news, voices }).catch(() =>
+              sampleLetter(c, stats.district),
+            );
+          }),
+        );
       }
 
       if (p === "/api/health") {
