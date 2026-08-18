@@ -1,5 +1,8 @@
 # StreetCred
 
+- **Live site:** https://streetcred.thealexschroeder.workers.dev
+- **Demo video:** recording in progress, link lands here
+
 **Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor.**
 
 ![The Hazards state at 16th and Mission. The real Street View frame on the left, the Gemini safety audit annotated onto that same frame on the right, drag handle between them, with a legend naming faded crosswalk markings in red and vehicle conflict zones in amber.](docs/hazards.jpg)
@@ -42,7 +45,7 @@ pedestrian safety OR crash OR traffic 16th Street and Mission Street San Francis
 
 sent with `type: "auto"`, `numResults: 8`, and page text requested as a **nested** `contents: { text: { maxCharacters: 400 } }`. The nesting matters: a flat `text` field is rejected, so the shape of that object is not cosmetic.
 
-**The filter.** Relevance tokens are derived from the corner's own name, so `"16th Street and Mission Street"` yields `["16th", "mission"]` and the filter travels to any corner rather than being pinned to the first one. A result counts as corner level only when it carries every street token, not just the neighborhood, and the panel claims corner-level precision only when at least three results clear that bar. Below it the heading drops to "Coverage of this corridor," which is the honest description of what is actually on screen. Law firm and lead generation domains are denied outright: they republish crash reports to farm clients and they are not press coverage. Results are then sorted newest first and capped at five.
+**The filter.** Relevance tokens are derived from the corner's own name, so `"16th Street and Mission Street"` yields `["16th", "mission"]` and the filter travels to any corner rather than being pinned to the first one. Results are filtered toward the corner and its corridor rather than to the corner alone: a result counts as corner level only when its title or URL carries every street token, and in practice most live headlines are corridor level, naming one of the streets or the neighborhood. The panel claims corner-level precision only when at least three results clear the corner bar. Below that the heading reads "Coverage of this corridor," which is the honest description of what is on screen most of the time. Law firm and lead generation domains are denied outright: they republish crash reports to farm clients and they are not press coverage. Results are then sorted newest first and capped at five.
 
 **The render.** Every headline shows its outlet domain and publish date and links out, so any claim on the page can be checked in one click. That is what makes this an evidence lane rather than a search box.
 
@@ -85,13 +88,13 @@ Gemini does two distinct jobs here, on two different models, and the first one i
 2. **Hazards.** The Today frame goes to `gemini-3.1-flash-image`, which reads the actual photograph and returns it annotated: red hatching over sub-standard or faded crosswalk markings, amber over vehicle turning conflict zones, plus a legend naming the intersection. The distinction that matters is that this is an **audit of a real photograph**, not an invented scene: the model is finding the hazards in a specific corner that exists, and the annotation is rendered onto that frame. The overlay marks the zones the model flags as high risk. It is zonal, not surveyed, and it does not measure anything.
 3. **Proposed fix.** The same Today frame, edited to hold everything constant (buildings, vehicles, people, sky, poles, signals, camera angle, lighting) while changing only the safety infrastructure: fresh asphalt, high visibility continental crosswalks, a green painted bike lane with white flex posts, and a concrete curb extension with plantings. Labeled on the page as an AI visualization of a proposed fix, never as a photograph of something that exists.
 
-Both derived states are generated in parallel at build time by `tools/generate_imagery.py` and served as static assets, so nothing is generated during a demo.
+Both derived states are generated in parallel, on demand, the first time a corner is opened, and stored in Cloudflare KV keyed by corner and state. A page never blocks on generation: the imagery lane returns `pending` immediately and the panel polls until the frames land, usually within ten seconds. Nothing regenerates for a corner that already has frames, which is what keeps a public, billed image model from being an open tap.
 
-The pipeline is not tuned to one corner. It was validated first on a completely different intersection, Telegraph Avenue and Durant Avenue in Berkeley, producing the same three states from the same code path. Any intersection with Street View coverage works: add one object to `CORNERS`.
+The pipeline is not tuned to one corner. It was validated first on a completely different intersection, Telegraph Avenue and Durant Avenue in Berkeley, producing the same three states from the same code path. Any intersection with Street View coverage works, typed into the search box, with no code change.
 
 **Text: the ask.** `gemini-3.7-flash` receives the corner, the district, the Supervisor's name, the live collision and 311 counts, the top two Exa headlines with outlets, one resident quote, the hazards the visual audit named, and the costed fix with its grant program. It returns a letter under 220 words in plain civic English.
 
-The strongest sentence in that letter is the one only this product can write: *an automated visual audit of the intersection identified sub-standard, faded crosswalk markings and vehicle turning conflict zones.* That is a specific, checkable claim, and it is corroborated by the collision count, the press coverage, and the residents independently. Four lanes agreeing on one claim is the entire thesis.
+The sentence only this product can write is the audit finding, and the whole discipline of the letter is in how much licence that finding gets. A separate structured audit pass looks at the Today frame and answers yes or no to each hazard in a fixed vocabulary. Each answer is then checked against the city's own records for the same corner, and the letter is told what it may say: a CONFIRMED hazard, seen in the photograph and corroborated by records, may be presented as documented; a REPORTED one belongs to the records rather than the photograph; a CANDIDATE is an observation the letter is explicitly forbidden to dress up as fact. The letter earlier in this project's life asserted one hardcoded audit sentence at every corner, including corners whose crosswalks are visibly in good condition. That is the failure this replaced.
 
 The letter renders as a draft with a copy button. **Nothing is ever sent to any official, and no email addresses appear anywhere in this product.**
 
