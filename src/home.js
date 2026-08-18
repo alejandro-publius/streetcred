@@ -136,6 +136,29 @@ ${ranked.length ? `<meta property="og:image" content="${origin}/og.jpg?x=${ranke
 ${FONT_LINK}
 <style>
 ${BASE_CSS}
+.askhero{text-align:center;padding:26px 0 30px}
+.askq{font-size:clamp(26px, 4.5vw, 40px);font-weight:700;letter-spacing:-.02em;margin:0 0 18px}
+.findbig{margin:0 auto;max-width:520px;display:flex;justify-content:center;position:relative}
+.findbig input{width:100%;max-width:380px;font-size:15px;padding:13px 20px}
+.findbig button{font-size:14px;padding:13px 24px}
+.findbig .ta{top:52px;text-align:left}
+.scope{font-size:12.5px;color:var(--dim);margin:14px 0 0}
+.mine{margin:0 0 22px}
+.mhead{display:flex;align-items:baseline;gap:10px;margin:0 0 10px}
+.mhead h2{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin:0}
+.mnote{font-size:11px;color:var(--dim)}
+.mclear{margin-left:auto;font-family:inherit;font-size:11.5px;color:var(--dim);background:none;
+  border:1px solid var(--line2);border-radius:999px;padding:4px 11px;cursor:pointer}
+.mclear:hover{color:var(--ink);border-color:var(--ink)}
+.mrow{display:flex;gap:9px;flex-wrap:wrap}
+.mcard{display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:inherit;
+  background:var(--panel);border:1.5px solid var(--line3);border-radius:10px;padding:8px 13px;font-size:13px}
+.mcard b{font-weight:600}
+.mg{font-size:11px;font-weight:700;min-width:20px;height:20px;border-radius:6px;display:grid;
+  place-items:center;color:#fff;background:var(--dimline)}
+.mg.gA{background:var(--green)} .mg.gB{background:#a3b088} .mg.gC{background:var(--blue)}
+.mg.gD{background:#e89a5f} .mg.gF{background:var(--accent)}
+.mdot{width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block}
 .vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .hero-map{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line2);
   background:var(--card);margin:0 0 8px;
@@ -221,18 +244,20 @@ ${BASE_CSS}
 <header>
   ${LOGO}
   <div class="mark">Street<span>Cred</span></div>
-  <form class="find" id="find" role="search">
+  <div class="corner"><b>San Francisco</b>${ranked.length} corners audited</div>
+</header>
+<main>
+
+<section class="askhero">
+  <h1 class="askq">What's your corner's grade?</h1>
+  <form class="find findbig" id="find" role="search">
     <input id="q" type="search" placeholder="Try 24th and Valencia" autocomplete="off"
       aria-label="Check any San Francisco corner">
     <button type="submit" id="findgo">Check</button>
     <div class="findmsg" id="findmsg" role="status" hidden></div>
   </form>
-  <div class="corner"><b>San Francisco</b>${ranked.length} corners graded</div>
-</header>
-<main>
-<h1 class="vh">StreetCred, the San Francisco corner scoreboard</h1>
-
-<p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
+  <p class="scope" id="scope">${ranked.length} intersections fully audited, one more every morning.</p>
+</section>
 
 ${
   today
@@ -255,6 +280,12 @@ ${
 }`
     : ""
 }
+
+<section class="mine" id="mine" hidden aria-label="Corners you have checked">
+  <div class="mhead"><h2>Your corners</h2><span class="mnote">Saved on this device only</span>
+    <button class="mclear" id="mclear" type="button">Clear</button></div>
+  <div class="mrow" id="mrow"></div>
+</section>
 
 ${
   ranked.length
@@ -353,6 +384,44 @@ var VIEW = {lat: ${view.center.lat}, lon: ${view.center.lon}, zoom: ${view.zoom}
 var AUDITED = ${JSON.stringify(
     ranked.map((c) => ({ slug: c.slug, name: c.name, lat: c.lat, lon: c.lon, grade: c.grade, index: c.index })),
   )};
+// Scope line: audited count is server-rendered truth; the scored-tier count
+// arrives from the same static asset the map's rings use.
+fetch("/data/scoretier.json").then(function(r){return r.ok?r.json():null;}).then(function(t){
+  if(!t || !t.corners) return;
+  var el = document.getElementById("scope");
+  if(el) el.textContent = (AUDITED.length + t.corners.length) + " intersections scored, " +
+    AUDITED.length + " fully audited, one more every morning.";
+}).catch(function(){});
+
+// Your corners: what this browser has checked, kept only in this browser.
+(function(){
+  var wrap = document.getElementById("mine"), row = document.getElementById("mrow");
+  if(!wrap || !row) return;
+  var visits = [];
+  try { visits = JSON.parse(localStorage.getItem("sc:visits") || "[]"); } catch(e){ visits = []; }
+  if(!visits.length) return;
+  var current = {};
+  AUDITED.forEach(function(c){ current[c.slug] = c.grade; });
+  fetch("/data/scoretier.json").then(function(r){return r.ok?r.json():{corners:[]};}).catch(function(){return {corners:[]};})
+  .then(function(t){
+    (t.corners||[]).forEach(function(c){ if(!(c.slug in current)) current[c.slug] = c.grade; });
+    row.innerHTML = visits.slice(0, 12).map(function(v){
+      var now = current[v.slug] || v.gradeSeen;
+      var changed = current[v.slug] && v.gradeSeen && current[v.slug] !== v.gradeSeen;
+      var when = v.at ? new Date(v.at).toISOString().slice(0,10) : "";
+      return '<a class="mcard" href="/c/' + v.slug + '"><span class="mg g' + now + '">' + now + '</span><b>' +
+        (v.name || v.slug) + '</b>' +
+        (changed ? '<span class="mdot" title="Grade changed since you last looked: was ' + v.gradeSeen + '"></span>' : '') +
+        (when ? '<span style="font-size:11px;color:var(--dim)">' + when + '</span>' : '') + '</a>';
+    }).join("");
+    wrap.hidden = false;
+  });
+  document.getElementById("mclear").addEventListener("click", function(){
+    localStorage.removeItem("sc:visits");
+    wrap.hidden = true;
+  });
+})();
+
 // Interactive map, progressive enhancement. The static image and its anchor
 // pins are the baseline; Leaflet replaces them in place only once tiles have
 // actually arrived. Failure at any step leaves the baseline untouched.

@@ -1144,6 +1144,15 @@ function paintVerdict(){
 fetch("/api/score" + X).then(r => r.json()).then(d => {
   if(!d || typeof d.index !== "number") return;
   V.score = d; paintVerdict();
+  // Remember this visit on this device and nowhere else: slug, name, the grade
+  // seen, when. The homepage strip renders it and a later grade change earns a
+  // dot. Capped, deduped, most recent first.
+  try {
+    const visits = JSON.parse(localStorage.getItem("sc:visits") || "[]")
+      .filter(v => v && v.slug !== CORNER_SLUG);
+    visits.unshift({ slug: CORNER_SLUG, name: CORNER_GEO.name, gradeSeen: d.grade, at: Date.now() });
+    localStorage.setItem("sc:visits", JSON.stringify(visits.slice(0, 12)));
+  } catch(e) {}
   el("scorewrap").hidden = false;
   el("scoren").innerHTML = d.index + '<small>/100</small>';
   const g = el("scoreg");
