@@ -107,4 +107,5 @@ wrangler dev
 - The hazard overlay is a model reading of a photograph. It marks zones, it does not measure them.
 - The proposed fix image is a visualization, not an engineering drawing, and the cost is an order-of-magnitude estimate.
 - 311 counts are filtered to street-related service types within 150 meters, which is a proxy for street complaints, not a precise one.
+- The voices lane is the weakest of the five tonight, and the reason is a finding rather than a bug. Both Apify actors ran and returned real data, but Google Maps reviews at this corner are overwhelmingly about the BART station (escalators, cleanliness, policing) and the Reddit search returned mostly off-corner noise. The quotes shown are real scrape output, they are simply thinner on crossing conditions than the other four lanes. The letter therefore only quotes a resident when the quote is actually about the street, and otherwise quotes no one rather than inventing testimony. The fix is a better-targeted actor input, not more code.
 - One corner is wired tonight. The architecture generalizes, the validation does not yet.
