@@ -59,10 +59,21 @@ def clean(text):
 
 
 def score(text):
-    """0 means drop it. Higher means it speaks more directly to street safety."""
+    """0 means drop it. Higher means it speaks more directly to street safety.
+
+    Kept in step with scoreText in src/voices.js, which is the canonical copy
+    because it is the one the cron runs unattended.
+    """
     if not text or len(text) < 40 or BLOCK.search(text):
         return 0
-    s = 3 * len(STRONG.findall(text)) + len(WEAK.findall(text))
+    strong = len(STRONG.findall(text))
+    weak = len(WEAK.findall(text))
+    # A weak word never qualifies a quote on its own, and neither does the
+    # corner name: "corner" in "my go-to corner store" is not a street corner.
+    # Same rule src/cred.js applies to the same question.
+    if strong == 0:
+        return 0
+    s = 3 * strong + weak
     if any(t in text.lower() for t in CORNER_TOKENS):
         s += 2
     return s

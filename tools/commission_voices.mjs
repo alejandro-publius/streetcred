@@ -18,7 +18,7 @@
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { kvEnv, devVar } from "./lib/kvenv.mjs";
-import { commissionVoices, ingestVoices, gmapsInput, redditInput } from "../src/voices.js";
+import { commissionVoices, ingestVoices, rescoreVoices, gmapsInput, redditInput } from "../src/voices.js";
 import { cityCornerFor } from "../src/city.js";
 import { parseQuery } from "../src/resolve.js";
 import { canonicalSlug, CORNERS } from "../src/data.js";
@@ -28,6 +28,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const DRY = args.includes("--dry");
 const INGEST = args.includes("--ingest");
+const RESCORE = args.includes("--rescore");
 const query = args.filter((a) => !a.startsWith("--")).join(" ");
 const log = (m) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
 
@@ -53,6 +54,7 @@ if (INGEST) {
 if (!query) {
   console.log("usage: node tools/commission_voices.mjs \"24th and Valencia\" [--dry]");
   console.log("       node tools/commission_voices.mjs --ingest");
+  console.log("       node tools/commission_voices.mjs \"24th and Valencia\" --rescore");
   process.exit(1);
 }
 
@@ -69,6 +71,18 @@ if (!corner) {
   process.exit(1);
 }
 log(`corner: ${corner.name} (${slug}) at ${corner.lat}, ${corner.lon}`);
+
+if (RESCORE) {
+  // Free: the scrape is already paid for, this only re-reads its datasets.
+  const out = await rescoreVoices(env, slug, corner);
+  if (!out.ok) {
+    log(out.reason);
+    process.exit(1);
+  }
+  log(`rescored ${out.slug}: ${out.kept} kept from ${out.candidates} candidates, no new spend`);
+  for (const v of out.items) log(`  [${v.source}${v.stars ? " " + v.stars + "*" : ""}] ${v.text.slice(0, 110)}`);
+  process.exit(0);
+}
 
 if (DRY) {
   log("google maps actor input (compass~crawler-google-places):");

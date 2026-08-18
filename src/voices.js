@@ -120,7 +120,19 @@ const count = (re, s) => (s.match(re) || []).length;
 // Zero means drop it. Higher means it speaks more directly to street safety.
 export function scoreText(text, cornerTokens = []) {
   if (!text || text.length < 40 || BLOCK.test(text)) return 0;
-  let s = 3 * count(STRONG, text) + count(WEAK, text);
+  const strong = count(STRONG, text);
+  const weak = count(WEAK, text);
+  // A weak word never qualifies a quote on its own, and neither does the corner
+  // name. This is the rule src/cred.js already applies to the same question:
+  // "dangerous" and "corner" mean the street about half the time and something
+  // else the rest, so they only count beside a word that can only mean the
+  // street. The first autonomous run is what proved it necessary here too. It
+  // kept five quotes, of which four were restaurant reviews: a steak dinner
+  // scored on the corner-name bonus, and "my go-to corner store" scored on the
+  // word corner. Both are now zero, and the run keeps the one quote that is
+  // actually about a cyclist being struck on Valencia.
+  if (strong === 0) return 0;
+  let s = 3 * strong + weak;
   const low = text.toLowerCase();
   if (cornerTokens.some((t) => t && low.includes(t))) s += 2;
   return s;
@@ -272,6 +284,34 @@ export async function commissionVoices(env, c) {
   }).catch(() => {});
 
   return { ok: true, ...rec };
+}
+
+// Re-apply the current scorer to datasets already paid for. Dataset reads are
+// free; the scrape is the billed part and it has already happened. Without
+// this, improving the relevance filter would mean re-commissioning every
+// corner, which is the wrong incentive for a filter that should keep getting
+// stricter.
+export async function rescoreVoices(env, slug, corner) {
+  const rec = await getVoiceRun(env, slug);
+  if (!rec?.runs?.length) return { ok: false, reason: "no commissioned run recorded for this corner" };
+  const tokens = corner ? cornerTokens(corner) : [];
+  const candidates = [];
+  for (const run of rec.runs) {
+    const rows = await datasetItems(env, run.datasetId).catch(() => []);
+    candidates.push(...(run.actor === "google_maps" ? fromGmaps(rows, tokens) : fromReddit(rows, tokens)));
+  }
+  const items = pickVoices(candidates);
+  await putVoicesStored(env, slug, {
+    source: items.length ? "live" : "empty",
+    version: VOICES_VERSION,
+    commissioned: true,
+    collected: new Date().toISOString().slice(0, 10),
+    commissionedAt: rec.commissionedAt,
+    candidates: candidates.length,
+    rescoredAt: new Date().toISOString(),
+    items,
+  });
+  return { ok: true, slug, candidates: candidates.length, kept: items.length, items };
 }
 
 // ---------------------------------------------------------------- ingest

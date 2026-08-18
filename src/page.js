@@ -1710,9 +1710,17 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
   // street word stands alone, a weak one only counts beside a strong one. If
   // no rendered quote is about the street itself, the honest empty state wins
   // over quotes about a neighborhood, a station, or a movie.
-  const STRONG = ["crossing","cross","crosswalk","driver","drivers","traffic","cars","speeding","signal","curb","sidewalk","intersection","pedestrian"];
+  //
+  // The harm words are here as well as the conditions ones. Without them a
+  // quote reading "another cyclist struck on Valencia" was hidden as "none
+  // about the street", which is the opposite of true.
+  const STRONG = ["crossing","cross","crosswalk","driver","drivers","traffic","cars","speeding","signal","curb","sidewalk","intersection","pedestrian","struck","killed","collision","crash","cyclist"];
   const isStreet = t => { const low = String(t||"").toLowerCase(); return STRONG.some(w => low.includes(w)); };
-  if (!items.some(v => isStreet(v.text))) {
+  // A commissioned payload was already filtered server side by a stricter rule
+  // than this one. Re-deciding it here with a different word list can only
+  // produce a contradiction: a quote the pipeline kept, hidden under a line
+  // saying nothing was found.
+  if (!d.commissioned && !items.some(v => isStreet(v.text))) {
     tag.textContent = "none about the street";
     tag.classList.add("pending");
     el("voices").innerHTML =

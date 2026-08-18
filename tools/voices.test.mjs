@@ -67,6 +67,25 @@ test("short, abusive, and empty text is dropped outright", () => {
   assert.equal(scoreText("the traffic here is absolute shit and the crosswalk is bad every day"), 0);
 });
 
+// The flaw the first real autonomous run exposed: four of five kept quotes
+// were restaurant reviews that mentioned the street and said nothing about it.
+test("naming the corner does not by itself qualify a quote", () => {
+  const tokens = cornerTokens(corner);
+  const review = "Super low key place with good espresso and quiet vibes, the opposite of the extreme coffee bars on Valencia.";
+  assert.equal(scoreText(review, tokens), 0, "a coffee review is not testimony about a crossing");
+  const closing = "Funky Elephant at Valencia and 24th is closing, last day of service is June 21st this year.";
+  assert.equal(scoreText(closing, tokens), 0, "a business closing is not testimony about a crossing");
+  // "corner" means the street about half the time. It cannot qualify a quote
+  // by itself, which is the rule src/cred.js already applies.
+  const store = "In a city of plenty options, for years this has been my go-to corner store for convenience.";
+  assert.equal(scoreText(store, tokens), 0, "a corner store is not a street corner");
+});
+
+test("a weak word only counts beside a word that can only mean the street", () => {
+  assert.equal(scoreText("The sidewalk here is usually busy with people around this corner most days."), 0);
+  assert.ok(scoreText("A cyclist was struck on the sidewalk here and drivers never slow down at all.") > 0);
+});
+
 test("naming the corner itself is worth points", () => {
   const tokens = cornerTokens(corner);
   const text = "Crossing here on foot is nerve wracking, drivers turn through the crosswalk constantly.";
