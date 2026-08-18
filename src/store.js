@@ -71,7 +71,8 @@ export async function putCorner(env, corner) {
 // No TTL. A Danger Index is computed once per corner and then holds still,
 // because a grade that drifts between page loads is a grade nobody can cite.
 // The stored record carries the version it was computed under, so a change to
-// the weights or REFERENCE_MAX invalidates it rather than serving a stale grade.
+// the weights or the frozen distribution invalidates it rather than serving a
+// stale grade.
 export async function getScore(env, slug, version) {
   const raw = await rawGet(env, `score:${slug}`);
   if (!raw) return null;

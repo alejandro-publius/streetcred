@@ -172,10 +172,18 @@ The name promised a score. This is where it gets paid.
 **The Danger Index** is 0 to 100 with a letter grade, computed only from DataSF. No model touches the calculation, so every input is a number anyone can look up:
 
 ```
-points = 10*fatal + 6*severe + 3*otherVisible + 1*pain + 2*pedInvolved + 0.5*safety311
+collisionPoints   = 10*fatal + 6*severe + 3*otherVisible + 1*pain + 2*pedInvolved
+maintenanceSignal = min(0.05 * safety311, 8)
+points            = collisionPoints + maintenanceSignal
 ```
 
-all within 80 meters, collisions over five years, filtered 311 over twelve months. `REFERENCE_MAX` is **frozen at 142**, computed once against ten known-severe SF intersections; 16th and Mission set it at 142.0 points with 6th and Market second at 136.0. It must never float with whatever corners happen to be loaded, because a corner graded B on Tuesday that becomes a C on Friday with nothing changed on the ground is a grade nobody can cite, and people screenshot these. One caveat travels with the number everywhere it appears, on the page rather than buried here: there is no exposure normalization, so the index ranks reported harm, not risk per crossing.
+all within 80 meters, collisions over five years, filtered 311 over twelve months.
+
+The first version of this weighted each 311 report at half a point with no ceiling, and that was backwards. A corner with 88 street-condition reports collected 44 points of paperwork against 10 points for a death, so the complaint count, not the collision record, was deciding grades. The maintenance signal is worth keeping, because a corner nobody reports is a corner nobody is watching, but it is capped at 8 points, which is less than one fatality.
+
+**The scale is a percentile, not a ratio.** Reported harm is heavy tailed: half of San Francisco's intersections sit under 3.1 points and the worst carries 157.8, so dividing by any fixed maximum spends most of the range on corners that do not exist and pins every busy corner at 100. Instead, `tools/calibrate_score.js` draws **600 intersections** from the 8,254 real crossings in `gmfx-8h6i` using a committed seed, runs this same formula against each, and freezes the sorted result as a constant array in `src/score.js`. A corner's index is its position in that distribution, so **an F literally means worse than 93 percent of San Francisco intersections**: A below the 40th percentile, B to the 64th, C to the 79th, D to the 92nd, F at 93 and above.
+
+Frozen means frozen. The array must never float with whatever corners happen to be loaded, because a corner graded B on Tuesday that becomes a C on Friday with nothing changed on the ground is a grade nobody can cite, and people screenshot these. Rerunning the calibration script with the committed seed reproduces the array exactly. One caveat travels with the number everywhere it appears, on the page rather than buried here: there is no exposure normalization, so the index ranks reported harm, not risk per crossing.
 
 **Corroboration** is what makes the audit worth anything. A structured pass asks Gemini which of four fixed conditions it can actually see in that corner's frame and returns booleans. Everything after that is arithmetic: `label()` in `src/hazards.js` decides CONFIRMED, CANDIDATE or REPORTED from record counts alone, and `tools/label.test.mjs` covers all six branches without a network or a key.
 
