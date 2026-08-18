@@ -39,7 +39,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 // stats, news, voices and hazards are the payloads the lanes already produced.
 // Bump when a lane rule or a token list changes.
-export const CRED_VERSION = "v1";
+export const CRED_VERSION = "v2";
 
 export function credCheck({ stats, news, voices, hazards }) {
   // Official records. One injury collision is not noise, and three filtered

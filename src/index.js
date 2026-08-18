@@ -21,14 +21,14 @@ const GEMINI_TEXT_MODEL = "gemini-3.7-flash";
 // served from a cache holding the old ones. The edge cache is per-colo, so
 // without this a correction lands unevenly across data centers and some
 // visitors keep reading the old numbers for the life of the TTL.
-const CACHE_VERSION = "v9";
+const CACHE_VERSION = "v10";
 
 // The letter embeds live figures, press headlines, and the Danger Index, so it
 // goes stale in more ways than any other lane and it is the one artifact a
 // person might actually send to an official. It carries its own version on top
 // of CACHE_VERSION: bump this whenever the prompt, the facts fed into it, or the
 // score semantics change, even if nothing else does.
-const LETTER_VERSION = "v3";
+const LETTER_VERSION = "v5";
 
 // Small in-process cache. The Worker isolate holds this between requests, which
 // is all the caching this product needs: every slow artifact (imagery, scraped
@@ -203,7 +203,12 @@ async function getCred(c, env, origin) {
 // citable document, but it is not press coverage of the corner: it is the
 // record that coverage would be written about. Listed explicitly rather than
 // pattern matched, so adding one is a deliberate decision.
-const OFFICIAL_SOURCE = /^(sanfranciscopolice\.org|sfmta\.com|sf\.gov|sfgov\.org)$/i;
+// ceqanet is the state CEQA filings database. A project's environmental filing
+// is the most purely record-like document on this list: it is the paperwork the
+// work generates, and treating it as coverage would let a 2017 filing satisfy
+// the press lane at a corner no journalist has written about.
+const OFFICIAL_SOURCE =
+  /^(sanfranciscopolice\.org|sfmta\.com|sfpublicworks\.org|sf\.gov|sfgov\.org|sfcta\.org|ceqanet\.lci\.ca\.gov)$/i;
 // Street names pulled from the corner itself, so the relevance filter travels to
 // any corner. "16th Street and Mission Street" gives ["16th", "mission"].
 function streetTokens(c) {
@@ -246,9 +251,9 @@ async function getNews(c, env) {
   const tight = scored.filter((s) => s.corner);
   // Only claim corner-level precision when there is enough of it to stand on.
   const precise = tight.length >= 3;
-  const chosen = (precise ? tight : scored.filter((s) => s.loose)).map((s) => s.x);
+  const chosen = precise ? tight : scored.filter((s) => s.loose);
 
-  const mapped = chosen.map((x) => {
+  const mapped = chosen.map(({ x, corner }) => {
     const domain = (() => {
       try {
         return new URL(x.url).hostname.replace(/^www\./, "");
@@ -260,6 +265,7 @@ async function getNews(c, env) {
       title: x.title.trim(),
       url: x.url,
       domain,
+      corner,
       date: (x.publishedDate || "").slice(0, 10),
       official: OFFICIAL_SOURCE.test(domain),
       // Computed here because this is the only place the Exa page text still
@@ -274,16 +280,24 @@ async function getNews(c, env) {
   const press = mapped.filter((x) => !x.official);
   const official = mapped.filter((x) => x.official);
 
+  // Corner level first, then newest. A story naming both streets is about this
+  // crossing; a story naming one is about the corridor it sits on. Both belong
+  // in the panel, but the reader should meet them in that order, and this is
+  // what lets the README promise ranking rather than precision it cannot show.
+  const byRank = (a, b) =>
+    Number(b.corner) - Number(a.corner) || (b.date || "").localeCompare(a.date || "");
   const byDate = (a, b) => (b.date || "").localeCompare(a.date || "");
   const cutoff = Date.now() - 18 * 30 * 24 * 3600 * 1000;
   const fresh = (x) => x.date && Date.parse(x.date) >= cutoff;
   // Only push stale results down when there is enough recent coverage to fill
-  // the panel without them. A 2022 story beats an empty lane.
+  // the panel without them. A 2022 story beats an empty lane. Recency is the
+  // coarse bucket and corner level is the ordering inside it, so an old story
+  // about this exact crossing never displaces this month's corridor coverage.
   const recent = press.filter(fresh);
   const orderedPress =
     recent.length >= 3
-      ? [...recent.sort(byDate), ...press.filter((x) => !fresh(x)).sort(byDate)]
-      : [...press].sort(byDate);
+      ? [...recent.sort(byRank), ...press.filter((x) => !fresh(x)).sort(byRank)]
+      : [...press].sort(byRank);
 
   const items = [...orderedPress, ...official.sort(byDate)].slice(0, 5);
   if (!items.length) throw new Error("exa no on-topic results");
@@ -438,8 +452,12 @@ async function getLetter(c, env, ctx) {
         .join("\n")
     : "- No visual audit findings are available for this corner. Do not describe any audit.";
 
+  // Phrased as a comparison rather than a raw score, because that is what the
+  // number now is. "99 out of 100" invites a reader to imagine a scale that
+  // stops somewhere; "worse than 99 percent of San Francisco intersections" is
+  // the actual claim and it is the one a Supervisor can check.
   const scoreLine = ctx.score
-    ? `- This intersection scores ${ctx.score.index} out of 100 on our reported-harm index, grade ${ctx.score.grade}. State that score and immediately add this caveat in your own words: ${SCORE_CAVEAT}\n`
+    ? `- This intersection shows more reported harm than ${ctx.score.index} percent of San Francisco intersections, which is grade ${ctx.score.grade} on the Danger Index. State that comparison in those terms, not as a score out of 100, and immediately add this caveat in your own words: ${SCORE_CAVEAT}\n`
     : "";
 
   const prompt = `Write a respectful one-page letter from a resident to San Francisco ${addressee} about the intersection of ${c.name}${where}.
