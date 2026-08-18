@@ -1,5 +1,5 @@
 import {
-  CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, canonicalSlug, makeCorner, SERVICE_NAMES,
+  CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, hasSupervisor, canonicalSlug, makeCorner, SERVICE_NAMES,
   COTD_SEED,
 } from "./data.js";
 import { PAGE } from "./page.js";
@@ -13,6 +13,7 @@ import {
   getSuggestion, putSuggestion,
   getJournal, appendJournal, putAgentRescore, putAgentLetter, putAgentFlag,
   countAgentReject, getAgentRejects,
+  getVerifiedLetter, putVerifiedLetter, appendTrustIncident, getTrustIncidents,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import { imageryFor } from "./imagery.js";
@@ -22,6 +23,7 @@ import { buildManifest, PUBLIC_TRIGGERS } from "./manifest.js";
 import { classify, streetTokens, domainOf, searchQuery } from "./newsfilter.js";
 import { buildTimeline, TIMELINE_VERSION } from "./timeline.js";
 import { buildSuggestion, SUGGEST_VERSION } from "./suggest.js";
+import { buildInputSet, verifyLetter, retryInstruction, VERIFY_VERSION } from "./verify.js";
 import { handleAgentReport, journalStats, JOURNAL_CAP } from "./agent.js";
 import { WATCHDOG } from "./watchdog.js";
 
@@ -565,7 +567,11 @@ async function getLetter(c, env, ctx) {
   // With no clear district majority the addressee is the citywide official, and
   // the letter must not invent a district number to sound authoritative.
   const dist = ctx.stats?.district;
-  const addressee = dist ? `Supervisor ${supervisor}` : supervisor;
+  // Title only when the district actually maps to a Supervisor. Otherwise the
+  // addressee is the citywide official under their own title, never "Supervisor
+  // Mayor Daniel Lurie".
+  const titled = hasSupervisor(dist);
+  const addressee = titled ? `Supervisor ${supervisor}` : supervisor;
   const where = dist ? ` in District ${dist}` : " in San Francisco";
   const signoff = dist ? `A resident of District ${dist}` : "A resident of San Francisco";
   // The index only enters the letter when it actually computed. A letter that
@@ -618,21 +624,66 @@ ${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident
 
 Rules: plain civic English. Under 220 words. Address only ${addressee}. Distinguish clearly between what city records document and what the visual audit merely observed. Never present an observation as a documented fact. No em dashes anywhere. No placeholders in brackets. Sign off as "${signoff}". Return only the letter text.`;
 
-  const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-    },
-  );
-  if (!r.ok) throw new Error(`gemini ${r.status}`);
-  const d = await r.json();
-  const text = (d.candidates?.[0]?.content?.parts || [])
-    .map((p) => p.text || "")
-    .join("")
-    .trim();
-  if (!text) throw new Error("gemini empty letter");
+  // 3.7-flash returns UNAVAILABLE under load often enough that a single attempt
+  // makes the letter lane look broken when it is only busy. Transient statuses
+  // get three tries with a short backoff; a 400 or a 403 is a real fault and is
+  // surfaced immediately with the reason attached, because a bare status code
+  // sent me looking for a revoked key when the answer was model overload.
+  const TRANSIENT = new Set([429, 500, 502, 503, 504]);
+  // Five attempts with exponential backoff, not three with a flat one. Flash
+  // returns UNAVAILABLE for roughly one request in four during a busy hour, and
+  // waiting on a fetch costs no Worker CPU, so patience here is nearly free and
+  // the alternative is a flagship letter silently becoming a sample.
+  const draft = async (extra = "") => {
+    let lastErr = "";
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt + extra }] }] }),
+        },
+      );
+      if (r.ok) {
+        const d = await r.json();
+        const t = (d.candidates?.[0]?.content?.parts || [])
+          .map((p) => p.text || "")
+          .join("")
+          .trim();
+        if (!t) throw new Error("gemini empty letter");
+        return t.replace(/—/g, ", ");
+      }
+      const detail = await r.text().catch(() => "");
+      lastErr = `gemini ${r.status}: ${detail.slice(0, 180)}`;
+      if (!TRANSIENT.has(r.status)) throw new Error(lastErr);
+      await new Promise((res) => setTimeout(res, 500 * 2 ** attempt));
+    }
+    throw new Error(lastErr || "gemini unavailable");
+  };
+
+  // The verifier runs on the same inputs the prompt was built from, so a claim
+  // that survives it is a claim traceable to a record. One retry, and the retry
+  // names the exact token that failed, because a retry that only says "try
+  // again" reshuffles the same invention into a new sentence.
+  const inputSet = buildInputSet({
+    corner: c,
+    stats: ctx.stats,
+    score: ctx.score,
+    news: ctx.news,
+    timeline: ctx.timeline,
+    supervisor: dist ? supervisor : null,
+  });
+
+  let text = await draft();
+  let check = verifyLetter(text, inputSet);
+  let attempts = 1;
+
+  if (!check.ok) {
+    text = await draft(retryInstruction(check));
+    check = verifyLetter(text, inputSet);
+    attempts = 2;
+  }
 
   // Which lanes actually reached the prompt, recorded from the prompt itself
   // rather than from what was available. A letter written with no press
@@ -644,22 +695,63 @@ Rules: plain civic English. Under 220 words. Address only ${addressee}. Distingu
   if (ctx.score) inputs.push("index");
   if (longevityLine) inputs.push("history");
   const generatedAt = new Date().toISOString();
-  await putLetterRun(env, c.slug, { generatedAt, supervisor, inputs, model: GEMINI_TEXT_MODEL });
 
-  return {
+  if (!check.ok) {
+    // Twice unverified. Serving this would put an unsourced figure in front of
+    // someone about to send it to an elected official, so it is not served.
+    // Last week's verified letter is stale and true, which beats fresh and
+    // invented every time.
+    await appendTrustIncident(env, {
+      at: generatedAt,
+      slug: c.slug,
+      attempts,
+      failures: check.failures.slice(0, 8),
+      model: GEMINI_TEXT_MODEL,
+    });
+    const fallback = await getVerifiedLetter(env, c.slug).catch(() => null);
+    if (fallback?.text) {
+      return {
+        source: "verified-cache",
+        supervisor: fallback.supervisor ?? supervisor,
+        generatedAt: fallback.generatedAt,
+        verified: true,
+        stale: true,
+        text: fallback.text,
+        fix: c.fix.name,
+        cost: c.fix.cost,
+        grant: c.fix.grant,
+      };
+    }
+    // Nothing verified has ever been written for this corner, so there is
+    // nothing honest to fall back to. The sample path handles it, tagged.
+    throw new Error(`letter failed verification twice: ${check.failures.map((f) => f.token).join(", ")}`);
+  }
+
+  await putLetterRun(env, c.slug, {
+    generatedAt, supervisor, inputs, model: GEMINI_TEXT_MODEL,
+    verified: true, attempts, numbersChecked: check.checked.numbers,
+  });
+
+  const record = {
     source: "live",
     supervisor,
     generatedAt,
-    text: text.replace(/—/g, ", "),
+    verified: true,
+    attempts,
+    text,
     fix: c.fix.name,
     cost: c.fix.cost,
     grant: c.fix.grant,
   };
+  await putVerifiedLetter(env, c.slug, record).catch(() => {});
+  return record;
 }
 
 function sampleLetter(c, district) {
   const supervisor = supervisorFor(district);
-  const salutation = district ? `Dear Supervisor ${supervisor}` : `Dear ${supervisor}`;
+  // Same rule as the live path: title only when the district maps to a real
+  // Supervisor, never "Dear Supervisor Mayor Daniel Lurie".
+  const salutation = hasSupervisor(district) ? `Dear Supervisor ${supervisor}` : `Dear ${supervisor}`;
   const where = district ? `, in District ${district}` : ", in San Francisco";
   const signoff = district ? `A resident of District ${district}` : "A resident of San Francisco";
   return {
@@ -1296,8 +1388,13 @@ export default {
               // to trigger a dozen Exa searches as a side effect.
               getTimeline(env, c.slug, TIMELINE_VERSION).catch(() => null),
             ]);
-            return getLetter(c, env, { stats, news, voices, score, hazards, timeline }).catch(() =>
-              sampleLetter(c, stats.district),
+            return getLetter(c, env, { stats, news, voices, score, hazards, timeline }).catch((e) => {
+              // A letter quietly becoming a sample is the failure a reader is
+              // least likely to notice and most likely to be misled by, so it
+              // leaves a trace with the reason attached rather than vanishing.
+              console.log(`letter fell back to sample at ${c.slug}: ${String(e?.message || e)}`);
+              return sampleLetter(c, stats.district);
+            },
             );
           }),
         );

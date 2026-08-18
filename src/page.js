@@ -319,6 +319,7 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 /* The one status that belongs on the lid rather than in the body: a reader who
    only ever sees the header strip still learns this letter was never sent. */
 .phs .draft{letter-spacing:.09em}
+.vnote{font-size:11px;color:var(--dim);margin:9px 0 0;line-height:1.5;max-width:520px}
 
 .stack{display:grid;grid-template-columns:repeat(3,1fr);gap:18px 26px;margin-top:8px}
 .stack div{font-size:12px;color:var(--dim);line-height:1.5}
@@ -539,6 +540,7 @@ ${BASE_CSS}
         <div class="draft">NOT SENT TO ANY OFFICIAL</div>
         <div class="letter" id="letter"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
         <div class="lfoot"><button id="copy">Copy letter</button><span class="tag" id="lettertag">drafted</span><span>by Gemini</span></div>
+        <p class="vnote">Every figure in this letter is checked against the source records before it is shown. A draft that states something the records do not support is rejected and rewritten.</p>
       </div>
     </div>
   </div>

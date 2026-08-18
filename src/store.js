@@ -362,6 +362,53 @@ export async function reserveGeneration(env) {
   return true;
 }
 
+// ---------------------------------------------------------------- trust
+
+// The last letter that passed verification at this corner, kept so a corner
+// whose regeneration keeps failing can still serve something true. Stale and
+// verified beats fresh and unsourced: a reader forwarding a letter to their
+// Supervisor is better served by last week's accurate figures than by this
+// morning's invented ones.
+export async function getVerifiedLetter(env, slug) {
+  const raw = await rawGet(env, `letter:verified:${slug}`);
+  try {
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putVerifiedLetter(env, slug, rec) {
+  await rawPut(env, `letter:verified:${slug}`, JSON.stringify(rec));
+}
+
+// Every time a draft failed verification twice. This is the number that tells
+// you whether the model is drifting, and it is kept whether or not anyone is
+// looking, because a rail with no telemetry is a rail nobody can audit.
+export async function appendTrustIncident(env, incident) {
+  const raw = await rawGet(env, "trust:incidents");
+  let log = [];
+  try {
+    const parsed = raw ? JSON.parse(raw) : [];
+    log = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    log = [];
+  }
+  log.unshift(incident);
+  await rawPut(env, "trust:incidents", JSON.stringify(log.slice(0, 200)));
+  return log.length;
+}
+
+export async function getTrustIncidents(env) {
+  const raw = await rawGet(env, "trust:incidents");
+  try {
+    const l = raw ? JSON.parse(raw) : [];
+    return Array.isArray(l) ? l : [];
+  } catch {
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------- watchdog
 
 // Everything the Corner Watchdog writes lives under agent:, so the whole

@@ -21,6 +21,9 @@
 // router hands in the readers it already has, which keeps this file testable
 // and keeps the two systems from ever disagreeing about a number.
 
+import { buildInputSet, verifyLetter } from "./verify.js";
+import { supervisorFor } from "./data.js";
+
 export const AGENT_VERSION = "v1";
 
 // The journal is the demo. It is also the only durable record of a decline,
@@ -53,60 +56,10 @@ const int = (v) => {
 
 // ------------------------------------------------------------------ numbers
 
-// Every integer a letter is allowed to state at this corner, built from what
-// the city's own records actually say. Anything outside this set is a number
-// the agent introduced on its own, which is the failure mode that matters.
-export function groundTruth({ stats, score, corner, timeline }) {
-  const allow = new Set();
-  const add = (n) => {
-    const v = int(n);
-    if (v !== null) allow.add(v);
-  };
-
-  add(stats?.crashes);
-  add(stats?.fatal);
-  add(stats?.reports311);
-  add(stats?.district);
-  add(score?.index);
-  add(score?.percentile);
-
-  // The dataset is named in the sentence that cites it, so the digits "311"
-  // appear in every letter that mentions a service request.
-  add(311);
-
-  // The windows the letter is permitted to describe. These are constants in the
-  // prompt, not model output: five years of collisions, three years of 311, a
-  // 150 metre radius.
-  add(3);
-  add(5);
-  add(150);
-
-  // Years the time machine actually found coverage in, plus the two figures the
-  // longevity sentence is built from.
-  for (const y of timeline?.years || []) add(y?.year ?? y);
-  add(timeline?.firstReportedYear);
-  add(timeline?.yearsReported);
-
-  // Figures from the corner's own funding ask, which the letter quotes back.
-  for (const m of String(corner?.fix?.cost || "").matchAll(/\d[\d,]*/g)) {
-    add(parseInt(m[0].replace(/,/g, ""), 10));
-  }
-
-  return [...allow].sort((a, b) => a - b);
-}
-
-// Deliberately strict, and it fails closed. A letter citing a figure this file
-// cannot trace to a record is stored unverified and rendered as unverified,
-// which is a worse outcome for the agent than writing a shorter letter. That
-// asymmetry is the point.
-export function verifyLetterNumbers(text, allowed) {
-  const allow = new Set(allowed);
-  const claimed = [...String(text || "").matchAll(/\b\d[\d,]*\b/g)]
-    .map((m) => parseInt(m[0].replace(/,/g, ""), 10))
-    .filter(Number.isFinite);
-  const unsupported = [...new Set(claimed.filter((n) => !allow.has(n)))].sort((a, b) => a - b);
-  return { claimed: claimed.length, unsupported, verified: unsupported.length === 0 };
-}
+// Deliberately not a second implementation. The serving path and this path call
+// the same verifier over the same input set, because a rail the agent can route
+// around is not a rail, and two verifiers that drift apart are worse than one.
+// buildInputSet and verifyLetter both live in verify.js.
 
 // ------------------------------------------------------------------ payloads
 
@@ -251,19 +204,28 @@ export async function handleAgentReport(request, env, deps) {
     return { status: 409, body: { error: "no stats for this corner, cannot verify", accepted: false } };
   }
 
-  const allowed = groundTruth({ stats, score, corner, timeline });
-  const check = verifyLetterNumbers(record.text, allowed);
+  const inputSet = buildInputSet({
+    corner,
+    stats,
+    score,
+    timeline,
+    // The agent posts no press lane of its own, so any domain it cites is
+    // unsourced by definition and the verifier will say so.
+    news: null,
+    supervisor: stats?.district ? supervisorFor(stats.district) : null,
+  });
+  const check = verifyLetter(record.text, inputSet);
 
   await deps.putAgentLetter(env, {
     slug: record.slug,
     text: record.text,
-    verified: check.verified,
+    verified: check.ok,
     claimedVerified: record.claimedVerified,
     // Recorded when the agent's self-assessment and this file's arithmetic
     // disagree. A run of these is the most interesting number in the project.
-    selfReportDisputed: record.claimedVerified !== check.verified,
-    unsupported: check.unsupported,
-    numbersChecked: check.claimed,
+    selfReportDisputed: record.claimedVerified !== check.ok,
+    failures: check.failures.slice(0, 8),
+    numbersChecked: check.checked.numbers,
     at: new Date().toISOString(),
   });
 
@@ -273,10 +235,10 @@ export async function handleAgentReport(request, env, deps) {
       accepted: true,
       kind,
       slug: record.slug,
-      verified: check.verified,
-      numbersChecked: check.claimed,
-      unsupported: check.unsupported,
-      selfReportDisputed: record.claimedVerified !== check.verified,
+      verified: check.ok,
+      numbersChecked: check.checked.numbers,
+      failures: check.failures.slice(0, 8),
+      selfReportDisputed: record.claimedVerified !== check.ok,
     },
   };
 }

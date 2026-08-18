@@ -127,7 +127,10 @@ export const COTD_SEED = [
 
 export const SUPERVISORS = {
   1: "Connie Chan",
+  2: "Stephen Sherrill",
   3: "Danny Sauter",
+  4: "Alan Wong",
+  5: "Bilal Mahmood",
   6: "Matt Dorsey",
   7: "Myrna Melgar",
   8: "Rafael Mandelman",
@@ -141,6 +144,16 @@ export const FALLBACK_OFFICIAL = "Mayor Daniel Lurie";
 export function supervisorFor(district) {
   const d = parseInt(district, 10);
   return SUPERVISORS[d] || FALLBACK_OFFICIAL;
+}
+
+// Whether the district resolved to an actual Supervisor, as opposed to the
+// citywide fallback. Callers need this because prefixing the fallback with a
+// title produces "Dear Supervisor Mayor Daniel Lurie", which appeared on every
+// District 4 and 5 letter for as long as those districts were missing from the
+// table above. A letter that cannot get the addressee's title right is not one
+// anybody will send.
+export function hasSupervisor(district) {
+  return Boolean(SUPERVISORS[parseInt(district, 10)]);
 }
 
 // Last-resort payloads. Every one of these is rendered with a visible SAMPLE tag
