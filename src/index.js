@@ -10,6 +10,7 @@ import {
   getCredCached, putCredCached, getShareCard, getHinList, getRun, putRun, getApifyCounts, getLetterRun, putLetterRun,
   getTimeline, putTimeline, reserveTimeline, timelineBudget,
   getQueue, putQueue, getCotdLog, appendCotdLog, putHinList, getImageryStatus,
+  getSuggestion, putSuggestion,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import { imageryFor } from "./imagery.js";
@@ -18,6 +19,7 @@ import { credCheck, isSafetyCoverage, CRED_VERSION } from "./cred.js";
 import { buildManifest, PUBLIC_TRIGGERS } from "./manifest.js";
 import { classify, streetTokens, domainOf, searchQuery } from "./newsfilter.js";
 import { buildTimeline, TIMELINE_VERSION } from "./timeline.js";
+import { buildSuggestion, SUGGEST_VERSION } from "./suggest.js";
 
 // DataSF open datasets, keyless.
 const DS_CRASHES = "ubvf-ztfx";
@@ -233,6 +235,39 @@ async function getTimelineFor(c, env) {
     // load is exactly how a credit balance disappears overnight.
     return { source: "unavailable", reason: "failed", note: String(e.message || e).slice(0, 120) };
   }
+}
+
+// ---------------------------------------------------------------- suggestion
+
+// The board's one lead. Seeded from the worst corner's best recent headline,
+// because that is the story most likely to be written about alongside other
+// dangerous crossings. Cached for a day and never allowed to block a page.
+async function boardSuggestion(env) {
+  const hit = await getSuggestion(env, SUGGEST_VERSION);
+  if (hit) return { ...hit, source: hit.source === "empty" ? "empty" : "cache" };
+
+  const corners = await getHinList(env);
+  if (!corners.length) return { source: "empty", reason: "no corners are warmed yet" };
+  const warmed = new Set(corners.map((c) => c.slug));
+
+  // Up to five seeds, worst corner first, stopping at the first one that yields
+  // a crossing the city's own table recognises. One seed was too thin: the
+  // coverage around any single corner is often entirely citywide, and a lead
+  // that only exists when the top story happens to name two streets is not a
+  // feature, it is a coincidence.
+  let last = null;
+  for (const c of corners.slice(0, 5)) {
+    const tl = await getTimeline(env, c.slug, TIMELINE_VERSION).catch(() => null);
+    const year = [...(tl?.years || [])].reverse().find((y) => y.best && !y.best.official);
+    if (!year) continue;
+    const attempt = await buildSuggestion(year.best, env, warmed).catch(() => null);
+    if (!attempt) continue;
+    last = attempt;
+    if (attempt.slug) break;
+  }
+  const fresh = last || { source: "empty", version: SUGGEST_VERSION, reason: "no seed article is available" };
+  await putSuggestion(env, fresh);
+  return fresh;
 }
 
 // ---------------------------------------------------------------- run manifest
@@ -1075,11 +1110,14 @@ export default {
         if (legacy) {
           return Response.redirect(`${origin}/c/${canonicalSlug(legacy)}`, 301);
         }
-        const [corners, cotdLog] = await Promise.all([
+        const [corners, cotdLog, suggestion] = await Promise.all([
           getHinList(env),
           getCotdLog(env).catch(() => []),
+          // Read only. The homepage must never wait on a findSimilar call, so
+          // a suggestion that has not been built yet simply does not render.
+          getSuggestion(env, SUGGEST_VERSION).catch(() => null),
         ]);
-        return new Response(HOME(corners, origin, cotdLog), {
+        return new Response(HOME(corners, origin, cotdLog, suggestion), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1117,6 +1155,13 @@ export default {
         return await edgeCached(ctx, `hazards-${c.slug}`, 24 * 3600, () =>
           getHazardsFor(c, env, origin).catch(() => ({ source: "empty", items: [] })),
         );
+      }
+
+      if (p === "/api/suggest") {
+        return json(await boardSuggestion(env).catch((e) => ({
+          source: "empty",
+          reason: String(e.message || e).slice(0, 120),
+        })));
       }
 
       if (p === "/api/timeline") {

@@ -99,7 +99,7 @@ function severityLine(c) {
   return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
 
-export const HOME = (corners, origin = "", cotd = []) => {
+export const HOME = (corners, origin = "", cotd = [], suggestion = null) => {
   const ranked = [...corners].sort((a, b) => b.index - a.index);
   // Newest first. The log is append only, so the last entry is this morning's.
   const runs = [...cotd].filter((e) => e && e.slug).reverse();
@@ -182,6 +182,15 @@ ${BASE_CSS}
 .gC{background:var(--blue)}
 .gD{background:rgba(240,126,38,.7)}
 .gF{background:var(--accent)}
+/* A lead, never a finding. It only renders when Exa surfaced a crossing that
+   the city's own intersection table recognises, and it says in its own text
+   that nothing has been run on it. An empty result renders nothing at all
+   rather than an apologetic panel. */
+.lead{font-size:12.5px;color:var(--dim);line-height:1.6;margin:0 0 18px;padding:13px 16px;
+  background:var(--card);border:1px solid var(--line2);border-radius:10px}
+.lead b{color:var(--ink);font-weight:600}
+.lead a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
+.lead a.leadgo{color:var(--accent);border-color:var(--accent);font-weight:600;white-space:nowrap}
 .emptyboard{font-size:13.5px;color:var(--dim);line-height:1.6;padding:22px 0}
 @media(max-width:600px){
   .row{grid-template-columns:26px 1fr auto;gap:10px}
@@ -250,6 +259,11 @@ ${
     : ""
 }
 
+${
+  suggestion && suggestion.slug
+    ? `<p class="lead"><b>Worth auditing next</b> ${esc(suggestion.name)}. Exa found it in coverage related to <a href="${esc(suggestion.seed.url)}" target="_blank" rel="noopener">${esc(suggestion.seed.domain)}</a>, and the city's intersection table confirms the crossing exists. This is a suggestion, not an audit: nothing has been run on it. <a class="leadgo" href="/c/${esc(suggestion.slug)}">Audit it</a></p>`
+    : ""
+}
 <div class="eyebrow"><span>The scoreboard</span><span class="tag">Danger Index, worst first</span></div>
 ${
   ranked.length

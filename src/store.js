@@ -223,6 +223,26 @@ export async function reserveTimeline(env) {
   return true;
 }
 
+// One findSimilar lead for the whole board, not one per corner. It is a
+// suggestion about the city, it costs an Exa call plus a few DataSF lookups to
+// build, and it changes only when the top corner's coverage changes.
+export async function getSuggestion(env, version) {
+  const raw = await rawGet(env, "suggest:board");
+  if (!raw) return null;
+  try {
+    const s = JSON.parse(raw);
+    return s.version === version ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putSuggestion(env, suggestion) {
+  // A day. Long enough that it is not rebuilt on every homepage load, short
+  // enough that it follows the news rather than freezing on one week's story.
+  await rawPut(env, "suggest:board", JSON.stringify(suggestion), 24 * 3600);
+}
+
 // ---------------------------------------------------------------- run manifest
 
 // What each tool actually did on this corner's last run. No TTL: it is a record
