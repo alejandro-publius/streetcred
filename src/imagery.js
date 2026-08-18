@@ -8,7 +8,11 @@
 // The prompts are the same ones tools/generate_imagery.py uses at build time, so
 // a corner generated on demand is indistinguishable from a precomputed one.
 
-import { getImage, putImage, putImageryStatus, getImageryStatus, reserveGeneration } from "./store.js";
+import {
+  getImage, putImage, putImageryStatus, getImageryStatus, reserveGeneration,
+  reservePhoto, photoBudget,
+} from "./store.js";
+import { skipsAudit } from "./city.js";
 
 const MODEL = "gemini-3.1-flash-image";
 
@@ -138,10 +142,10 @@ export async function generateStates(c, env) {
 const RECORDS_ONLY_NOTE =
   "This corner was warmed for its records only, so the visual audit was not generated. The Street View photograph is real.";
 
-// The score tier: corners the citywide sweep ranked high enough to publish but
-// that no one has spent an audit on yet. The state must say "not yet" rather
-// than "not ever", because these are exactly the corners the daily cron works
-// through, worst first.
+// Corners the citywide sweep graded but that no one has spent an audit on yet:
+// the published score tier, and every other corner in the city shards behind
+// it. The state must say "not yet" rather than "not ever", because these are
+// exactly the corners the daily cron works through, worst first.
 const SCORED_ONLY_NOTE =
   "Scored from city records. The visual audit has not run for this corner yet. The Street View photograph is real.";
 
@@ -193,6 +197,27 @@ export async function imageryFor(c, env, ctx, opts = {}) {
   }
 
   // First ask for this corner. Confirm free things before spending anything.
+  //
+  // A corner that will not be audited still shows its real photograph, and the
+  // metadata check below is free, but the frame itself is a billed Maps
+  // request. There are 7,353 scored corners and one crawler is enough to fetch
+  // all of them, so this lane reserves against a daily ceiling first. Nothing
+  // is written when the reservation fails: the next visitor retries rather than
+  // finding the corner pinned photoless forever.
+  if (skipsAudit(c) && !(await reservePhoto(env))) {
+    const b = await photoBudget(env);
+    return {
+      source: "live",
+      status: "scoredonly",
+      note:
+        `${SCORED_ONLY_NOTE} The Street View frame is not loaded here yet: the daily photograph ` +
+        `budget for scored corners is spent (${b.used} of ${b.cap}). It resets tomorrow.`,
+      today: null,
+      hazards: null,
+      fix: null,
+    };
+  }
+
   if (!(await hasCoverage(c, env))) {
     await putImageryStatus(env, c.slug, { status: "nocoverage", states: [], at: Date.now() });
     return {
@@ -226,7 +251,7 @@ export async function imageryFor(c, env, ctx, opts = {}) {
   // is made entirely by the index and the collision record. Two billed image
   // generations per corner would buy nothing it needs, so they are not spent,
   // and the panel says so rather than showing an empty state that looks broken.
-  if (c.tier === "score") {
+  if (skipsAudit(c)) {
     await putImageryStatus(env, c.slug, { status: "scoredonly", states: [], at: Date.now() });
     return {
       source: "live",

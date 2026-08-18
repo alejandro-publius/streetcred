@@ -1,5 +1,6 @@
 import { CORNERS } from "./data.js";
 import { DISTRIBUTION } from "./score.js";
+import { TIER_LABEL, TIER_NOTE, TIERS } from "./city.js";
 
 // The citywide distribution strip, built once at module load from the frozen
 // array rather than shipped to the browser as 600 numbers on every page. The
@@ -281,6 +282,11 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .cred .c::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--line2)}
 .cred .c.on{color:var(--ink);border-color:var(--ink)}
 .cred .c.on::before{background:var(--ink)}
+/* Three states, not two. A lane nobody has checked is not a lane that failed,
+   and drawing them the same way is how absence gets read as evidence. */
+.cred .c.pending{border-style:dashed}
+.cred .c.pending::before{background:none;box-shadow:inset 0 0 0 1.5px var(--line2)}
+.vcred i.pending{background:none;box-shadow:inset 0 0 0 2px var(--line2)}
 .cred .v{font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);margin-left:3px}
 .cred .v.strong{color:var(--ink)}
 .stat{background:var(--panel);border:1.5px solid var(--line3);border-top:3px solid var(--ink);border-radius:12px;
@@ -299,6 +305,21 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
    both are deliberate and neither used to say so, which left the letter
    citing two different collision counts in one paragraph. */
 .rad{font-style:normal;font-size:11px;color:var(--dim);display:inline-block;margin-top:3px}
+/* The freshness line under the tiles. Swept figures are true as of a date, and
+   the date is part of the number rather than a footnote about it. */
+.statcap{margin:-4px 0 16px;font-size:11.5px;color:var(--dim);line-height:1.5}
+/* Which tier this corner is in, said once, next to its name. */
+.tierchip{display:inline-block;margin-left:8px;font-size:10px;font-weight:700;letter-spacing:.12em;
+  padding:3px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--dim);vertical-align:2px}
+.tierchip.t-audited{border-color:var(--ink);color:var(--ink)}
+.tierchip.t-scored{border-style:dashed}
+/* The one line every unchecked lane shows, so the page says the same thing in
+   six places rather than six things. */
+.lanenote{margin:10px 0 0;font-size:12px;color:var(--dim);line-height:1.55;
+  padding-left:10px;border-left:2px solid var(--line3)}
+.gated{margin:10px 0 0;font-size:12.5px;color:var(--dim);line-height:1.55}
+.gated b{color:var(--ink);font-weight:600}
+button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .lpop{font-family:Poppins,system-ui,sans-serif;font-size:12.5px;line-height:1.5;color:var(--ink)}
 .lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
 .lpop-s{color:var(--dim);font-size:11.5px}
@@ -633,7 +654,9 @@ ${BASE_CSS}
   </form>
   <button class="share ghost" id="watch" type="button">Watch the run</button>
   <button class="share" id="share" type="button">Share corner</button>
-  <div class="corner"><h1 class="cname"><b>${c.name}</b></h1>${c.city}${
+  <div class="corner"><h1 class="cname"><b>${c.name}</b>${
+    og.tier ? `<span class="tierchip t-${og.tier}" title="${esc(TIER_NOTE[og.tier] || "")}">${TIER_LABEL[og.tier]}</span>` : ""
+  }</h1>${c.city}${
     c.district ? `, District ${c.district}` : ", district unresolved"
   }${c.cotd ? `<span class="auto">Audited autonomously by StreetCred on ${c.cotd}</span>` : ""}</div>
 </header>
@@ -709,7 +732,7 @@ ${BASE_CSS}
       ${DIST_SVG}
       <i class="dmark" id="dmark" hidden></i>
     </div>
-    <div class="distax"><span>calmer</span><span>600 SF intersections, sampled</span><span>worst</span></div>
+    <div class="distax"><span>calmer</span><span>${DISTRIBUTION.length.toLocaleString("en-US")} SF intersections, the whole city</span><span>worst</span></div>
     <div class="sevbar" id="sevbar"></div>
     <div class="sevkey" id="sevkey"></div>
     <div class="scorecav" id="scorecav"></div>
@@ -724,6 +747,7 @@ ${BASE_CSS}
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-condition 311 reports, 3 years<br><i class="rad">within 150m</i></div></div>
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>
 </div>
+<p class="statcap" id="statcap" hidden></p>
 <div class="cred" id="cred" hidden></div>
 
 <section class="lane" id="maplane" hidden>
@@ -731,7 +755,7 @@ ${BASE_CSS}
     <div class="phs"><h2>Location</h2><span class="tag" id="maptag">Google Maps</span></div>
     <div class="pbody">
       <img id="mapimg" class="mapimg" alt="Roadmap showing the location of ${c.name}, ${c.city}">
-      <p class="mapfoot">${c.name}, District ${c.district}. <span id="mapprov">Map data: Google.</span></p>
+      <p class="mapfoot">${c.name}${c.district ? `, District ${c.district}` : ""}. <span id="mapprov">Map data: Google.</span></p>
     </div>
   </div>
 </section>
@@ -815,12 +839,24 @@ const CAPS = {
 // into a closure. A full page load still initializes them from the server.
 let X = "?x=${c.slug}";
 let CORNER_SLUG = "${c.slug}";
+// Which tier the server resolved this corner into. Read by the map (a scored
+// corner skips the billed static thumbnail) and by the swap path, which has to
+// re-read it when the corner changes underneath the page.
+let TIER = "${og.tier || ""}";
 let CORNER_GEO = {lat: ${c.lat}, lon: ${c.lon}, name: ${JSON.stringify(c.short || c.name)}};
 let IMG = null, state = "today";
 
 const el = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
-const mark = (id, src) => { const t = el(id); if (src !== "live" && src !== "cache") { t.textContent = "sample"; t.classList.add("sample"); } };
+const mark = (id, src, asOf) => {
+  const t = el(id);
+  if(!t) return;
+  if(src === "live" || src === "cache") return;
+  // A swept figure is the real record as of a stated date. Tagging it "sample"
+  // would say the opposite of what it is, so the tag carries the date instead.
+  if(src === "sweep"){ t.textContent = asOf ? "as of " + asOf : "from the sweep"; t.classList.add("pending"); return; }
+  t.textContent = "sample"; t.classList.add("sample");
+};
 
 // Motion is decoration on this page, never information, so reduced-motion takes
 // the short path everywhere: final values, drawn rules, no shimmer.
@@ -1005,6 +1041,7 @@ function applyImagery(d){
     else if(d.status && d.status !== "ready"){ b.disabled = true; b.textContent = LABELS[s] + ", unavailable"; }
   }
   render();
+  paintTier();
 }
 
 function loadImagery(){
@@ -1078,6 +1115,17 @@ loadImagery();
 // A failed Static Maps request removes it rather than leaving a broken image.
 (function(){
   const img = el("mapimg");
+  // The thumbnail is one billed Static Maps request per corner. The audited
+  // fleet is small and already paid for; the scored city is 7,353 corners a
+  // crawler can walk in an afternoon, and the interactive map that replaces
+  // the thumbnail a moment later draws on free tiles anyway. So a scored
+  // corner skips straight to it and spends nothing.
+  if(TIER === "scored"){
+    img.remove();
+    el("maplane").hidden = false;
+    upgradeMap();
+    return;
+  }
   img.addEventListener("load", () => { el("maplane").hidden = false; upgradeMap(); });
   img.addEventListener("error", () => el("maplane").remove());
   img.src = "/map.jpg" + X;
@@ -1093,13 +1141,22 @@ function upgradeMap(){
   const wrap = document.createElement("div");
   wrap.className = "mapwrap";
   wrap.style.position = "relative";
-  img.parentNode.insertBefore(wrap, img);
-  wrap.appendChild(img);
+  if(img){
+    img.parentNode.insertBefore(wrap, img);
+    wrap.appendChild(img);
+  } else {
+    // No thumbnail to build on: a scored corner goes straight to tiles.
+    const body = document.querySelector("#mappanel .pbody");
+    if(!body) return;
+    body.insertBefore(wrap, body.firstChild);
+  }
   // Inside the band the wrap flexes to fill the column; standalone it keeps
   // the thumbnail's height as before.
-  if(!document.querySelector(".band")) wrap.style.height = img.clientHeight ? img.clientHeight + "px" : "300px";
-  img.style.position = "absolute"; img.style.inset = "0";
-  img.style.width = "100%"; img.style.height = "100%"; img.style.objectFit = "cover";
+  if(!document.querySelector(".band")) wrap.style.height = (img && img.clientHeight ? img.clientHeight : 300) + "px";
+  if(img){
+    img.style.position = "absolute"; img.style.inset = "0";
+    img.style.width = "100%"; img.style.height = "100%"; img.style.objectFit = "cover";
+  }
   const s = document.createElement("script");
   s.src = "/leafmap.js"; s.defer = true;
   s.onload = () => {
@@ -1138,8 +1195,15 @@ LANE_LOADERS.stats = () => fetch("/api/stats" + X).then(r => r.json()).then(d =>
   // A null district means no clear majority, which prints as "n/a" rather than
   // as the 0 that Number(null) would quietly produce.
   const vals = [d.crashes, d.reports311, d.district];
+  // The window and the footprint come from the payload, never from the page.
+  // Live tiles count 150m over three years; a swept corner's tiles are the 80m
+  // core over twelve months, and a label baked in here would describe one of
+  // them while the other number sat underneath it.
+  const win = d.reports311Window || "3 years";
+  const rad = d.radiusM ? "within " + d.radiusM + "m" : "";
+  const sub = [rad, rad, ""];
   const l = ["Injury collisions, last 5 years" + (d.fatal ? ", including " + d.fatal + " fatal" : ""),
-             "Street-condition 311 reports, 3 years","Supervisor district"];
+             "Street-condition 311 reports, " + win,"Supervisor district"];
   // Each figure is a quiet link to the exact Socrata query it came from, same
   // size and color as the plain number, underline on hover only. The reader who
   // clicks re-runs the count on data.sfgov.org; everyone else sees a number.
@@ -1152,8 +1216,22 @@ LANE_LOADERS.stats = () => fetch("/api/stats" + X).then(r => r.json()).then(d =>
         'aria-label="' + l[i].replace(/"/g, "") + ': opens source query on data.sfgov.org">' + num + '</a>'
       : num;
     return '<div class="stat">' + linked + '<div class="l">' + l[i] +
+      (sub[i] ? '<br><i class="rad">' + sub[i] + '</i>' : '') +
       (d.source === "sample" && i === 0 ? ' <span class="tag sample">sample</span>' : '') + '</div></div>';
   }).join("");
+  // Swept numbers are true as of the sweep, and the provenance links below them
+  // re-run live. Both facts are stated, because the reader who clicks through
+  // and gets a slightly different count deserves to know why in advance.
+  const cap = el("statcap");
+  if(cap){
+    if(d.asOf){
+      cap.textContent = "Counted in the citywide sweep of " + d.asOf +
+        ", within " + (d.radiusM || 80) + " meters. Each number links to the same query, which re-runs live.";
+      cap.hidden = false;
+    } else {
+      cap.hidden = true; cap.textContent = "";
+    }
+  }
   onFirstView(el("stats"), () => {
     el("stats").querySelectorAll(".n").forEach(node => {
       const to = node.getAttribute("data-to");
@@ -1170,10 +1248,11 @@ LANE_LOADERS.cred = () => fetch("/api/cred" + X).then(r => r.json()).then(d => {
   if(!d || !d.lanes) return;
   el("cred").hidden = false;
   el("cred").innerHTML = d.lanes.map(l =>
-    '<span class="c' + (l.hit ? ' on' : '') + '" title="' + esc(l.detail) + '">' + esc(l.label) + '</span>'
+    '<span class="c' + (l.hit ? ' on' : (l.pending ? ' pending' : '')) + '" title="' + esc(l.detail) + '">' + esc(l.label) + '</span>'
   ).join("") +
     '<span class="v' + (d.score >= 3 ? ' strong' : '') + '" title="' + esc(d.score) +
-    ' of 4 lanes agree">' + esc(d.verdict) + '</span>';
+    (d.pending ? ' of ' + (4 - d.pending) + ' lanes checked so far agree' : ' of 4 lanes agree') +
+    '">' + esc(d.verdict) + '</span>';
 });
 
 // Corroboration. Which audit findings the public record backs, which it does
@@ -1214,14 +1293,38 @@ function paintVerdict(){
     // The corroboration clause only when the Cred Check actually corroborates:
     // a score-tier corner with no audit yet gets the numbers and no chorus.
     const agree = V.cred && V.cred.score >= 3 ? ", and the evidence agrees" : "";
-    el("vthesis").textContent = V.stats.crashes + " injury collisions in 5 years" + f + agree + ".";
+    // A swept count says which footprint it counted and when, in the same
+    // sentence as the number, because this line is the one people quote.
+    const when = V.stats.asOf
+      ? " within " + (V.stats.radiusM || 80) + "m, as of " + V.stats.asOf
+      : "";
+    el("vthesis").textContent = V.stats.crashes + " injury collisions in 5 years" + f + when + agree + ".";
   }
   if(V.cred && V.cred.lanes){
     el("vcred").innerHTML = V.cred.lanes.map(l =>
-      '<i class="' + (l.hit ? "on" : "") + '" title="' + esc(l.label) + '"></i>').join("") +
+      '<i class="' + (l.hit ? "on" : (l.pending ? "pending" : "")) + '" title="' + esc(l.label) +
+      (l.pending ? ", not yet checked" : "") + '"></i>').join("") +
       '<span>' + esc(V.cred.verdict) + '</span>';
   }
   v.hidden = false;
+  paintTier();
+}
+
+// The chip beside the corner name. The server renders it for the corner the
+// page loaded with; a swapped-in corner can be in a different tier, and this
+// derives it from the lanes that already landed rather than asking again.
+function paintTier(){
+  const chip = document.querySelector(".tierchip");
+  if(!chip) return;
+  let t = TIER;
+  if(V.score && V.score.source === "sweep") t = "scored";
+  else if(IMG && IMG.status === "ready") t = "audited";
+  else if(IMG && IMG.status) t = "enriched";
+  if(!t){ chip.hidden = true; return; }
+  TIER = t;
+  chip.hidden = false;
+  chip.textContent = t.toUpperCase();
+  chip.className = "tierchip t-" + t;
 }
 
 LANE_LOADERS.score = () => fetch("/api/score" + X).then(r => r.json()).then(d => {
@@ -1244,7 +1347,8 @@ LANE_LOADERS.score = () => fetch("/api/score" + X).then(r => r.json()).then(d =>
   // The index is a percentile, so say so in words next to the number. "99 out
   // of 100" invites a reader to imagine a scale that stops somewhere.
   el("scorepct").textContent =
-    "More reported harm than " + d.index + "% of San Francisco intersections.";
+    "More reported harm than " + d.index + "% of San Francisco intersections." +
+    (d.asOf ? " Measured in the citywide sweep of " + d.asOf + "." : "");
   const m = el("dmark");
   m.style.left = d.index + "%";
   m.className = "dmark g" + d.grade;
@@ -1284,6 +1388,14 @@ fetch("/api/changes").then(r => r.json()).then(d => {
 }).catch(() => {});
 
 LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
+  // A lane that has not run is not a lane that found nothing. "No coverage
+  // found" would be a claim about this corner that nobody has checked.
+  if(d.note && !(d.items || []).length){
+    const t = el("newstag"); t.textContent = "not yet checked"; t.classList.add("pending");
+    el("news").innerHTML = '<p class="empty">Press coverage has not been searched at this corner yet.</p>' +
+      '<p class="lanenote">' + esc(d.note) + '</p>';
+    return;
+  }
   mark("newstag", d.source);
   // Do not claim corner-level precision the result set does not support.
   if (d.heading) el("newshead").textContent = d.heading;
@@ -1397,6 +1509,14 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
     if(manifest){ render(manifest, REDUCED); return; }
     log.innerHTML = '<div class="rline in off"><b></b><span>Reading the run manifest...</span></div>';
     LANE_LOADERS.run = () => fetch("/api/run" + X).then(r => r.json()).then(m => {
+      // No pipeline has run at this corner, so there is no run to replay. The
+      // stage-by-stage log would otherwise print nine "did not run" lines and
+      // read as a broken pipeline rather than an unstarted one.
+      if(m && m.source === "empty"){
+        log.innerHTML = '<div class="rline in off"><b></b><span>No pipeline run is recorded at this corner yet.</span></div>' +
+          '<div class="rline in off"><b></b><span>' + esc(m.note || "") + '</span></div>';
+        return;
+      }
       manifest = m;
       render(m, REDUCED);
     }).catch(() => {
@@ -1499,6 +1619,12 @@ fetch("/api/run" + X).then(r => r.json()).then(m => {
 LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d => {
   const items = d.items || [];
   const tag = el("voicestag");
+  if (d.note && !items.length) {
+    tag.textContent = "not yet checked"; tag.classList.add("pending");
+    el("voices").innerHTML = '<p class="empty">Resident accounts have not been scraped at this corner yet.</p>' +
+      '<p class="lanenote">' + esc(d.note) + '</p>';
+    return;
+  }
   if (!items.length) {
     // Say so plainly. An empty scrape is a real result, not a hole to fill.
     tag.textContent = "none found";
@@ -1559,6 +1685,21 @@ LANE_LOADERS.precedents = () => fetch("/data/precedents.json").then(r => r.json(
 }).catch(() => {});
 
 LANE_LOADERS.letter = () => fetch("/api/letter" + X).then(r => r.json()).then(d => {
+  const copyBtn = el("copy"), dlBtn = el("download");
+  // Not drafted, and not pretending otherwise. A sample letter is the one
+  // artifact on this site somebody might actually send, so a corner without a
+  // real draft shows the offer and the reason it cannot run right now.
+  if(d.source === "ondemand"){
+    const t = el("lettertag"); t.textContent = "not drafted"; t.classList.add("pending");
+    el("letter").innerHTML = '<p class="empty">' + esc(d.note || "") + '</p>' +
+      '<p class="gated"><button class="offer" type="button" disabled>Draft the letter for this corner</button><br>' +
+      '<b>Drafting is paused.</b> ' + esc(d.gatedReason || "") + '</p>';
+    if(copyBtn) copyBtn.disabled = true;
+    if(dlBtn) dlBtn.disabled = true;
+    return;
+  }
+  if(copyBtn) copyBtn.disabled = false;
+  if(dlBtn) dlBtn.disabled = false;
   mark("lettertag", d.source);
   el("letter").textContent = d.text || "";
 
@@ -1616,6 +1757,20 @@ function resetTransient(){
     b.setAttribute("aria-pressed", String(i === 0));
     if(b.dataset.state !== "today"){ b.disabled = true; b.textContent = b.dataset.state === "hazards" ? "Hazards" : "Proposed fix"; }
   });
+  // Lane tags accumulate state as their payloads land. A swap that did not
+  // reset them would show the previous corner's verdict on the new corner's
+  // lanes, which is the one thing a tag exists to prevent.
+  [["newstag","found live, cited"],["voicestag","scraped"],["lettertag","drafted"],
+   ["imgtag","Street View plus Gemini"]].forEach(pair => {
+    const t = el(pair[0]);
+    if(!t) return;
+    t.textContent = pair[1];
+    t.classList.remove("sample","pending");
+  });
+  const cap = el("statcap");
+  if(cap){ cap.hidden = true; cap.textContent = ""; }
+  if(el("copy")) el("copy").disabled = false;
+  if(el("download")) el("download").disabled = false;
 }
 
 function swapCorner(info, push){

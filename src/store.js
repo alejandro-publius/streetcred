@@ -15,6 +15,18 @@
 // worth trusting.
 export const DAILY_GENERATION_CAP = 25;
 
+// Street View frames fetched per day for corners that are only scored.
+//
+// Publishing the whole city means 7,353 pages a crawler can walk in an
+// afternoon, and each one wants the free-to-look-at-but-billed-to-fetch Street
+// View frame. The audited fleet is ~130 corners and pays for itself; the other
+// 7,200 must not be able to turn one crawl into a Maps invoice. Same discipline
+// as the image and timeline budgets: reject before spending, from a global KV
+// counter rather than the per-colo edge cache. A frame already stored is free
+// and is never counted, so this ceiling only ever meets a corner nobody has
+// opened before.
+export const DAILY_PHOTO_CAP = 300;
+
 // Resolve attempts allowed per IP per window. Generous for a person exploring
 // corners, useless for a crawler trying to burn the image budget.
 const RATE_LIMIT = 20;
@@ -410,6 +422,21 @@ export async function reserveGeneration(env) {
   const used = parseInt((await rawGet(env, key)) || "0", 10) || 0;
   if (used >= DAILY_GENERATION_CAP) return false;
   // Two days, so a counter written just before midnight cannot linger a week.
+  await rawPut(env, key, String(used + 1), 48 * 3600);
+  return true;
+}
+
+// ---------------------------------------------------------------- photo budget
+
+export async function photoBudget(env) {
+  const used = parseInt((await rawGet(env, `photo:${today()}`)) || "0", 10) || 0;
+  return { used, cap: DAILY_PHOTO_CAP, remaining: Math.max(0, DAILY_PHOTO_CAP - used) };
+}
+
+export async function reservePhoto(env) {
+  const key = `photo:${today()}`;
+  const used = parseInt((await rawGet(env, key)) || "0", 10) || 0;
+  if (used >= DAILY_PHOTO_CAP) return false;
   await rawPut(env, key, String(used + 1), 48 * 3600);
   return true;
 }

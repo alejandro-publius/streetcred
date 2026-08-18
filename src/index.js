@@ -17,6 +17,11 @@ import {
   getScoreRaw, appendChange, getChanges,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
+import {
+  cityCornerFor, getCityMeta, getRankPage, cityStats, cityScore, cityCred,
+  cityNews, cityVoices, cityTimeline, cityRun, cityHazards, cityLetter,
+  TIERS, TIER_LABEL, tierOf, RANK_PAGE_SIZE,
+} from "./city.js";
 import { imageryFor } from "./imagery.js";
 import { corroborate, HAZARD_VERSION } from "./hazards.js";
 import { credCheck, isSafetyCoverage, CRED_VERSION } from "./cred.js";
@@ -127,8 +132,18 @@ async function corner(url, env) {
   const slug = canonicalSlug(slugFromUrl(url));
   if (CORNERS[slug]) return CORNERS[slug];
   const stored = await getCorner(env, slug);
-  return stored || CORNERS[DEFAULT_SLUG];
+  if (stored) return stored;
+  // The city shards, read only after the stored record has missed. Order is
+  // the whole correctness argument: a corner that has been audited must serve
+  // its live numbers, and a shard row that shadowed the stored record would
+  // quietly roll a warmed corner back to the sweep date.
+  const graded = await cityCornerFor(env, slug);
+  return graded || CORNERS[DEFAULT_SLUG];
 }
+
+// A corner whose numbers come from the citywide sweep rather than from a live
+// query. Every lane checks this before reaching for the network.
+const isScored = (c) => c?.tier === TIERS.SCORED;
 
 // Strict lookup, null when the corner is unknown. The forgiving version above
 // falls back to the default corner, which is right for a browser following a
@@ -191,6 +206,12 @@ async function getStats(c) {
   const resolved = parseInt(c.district ?? majority, 10);
   return {
     source: "live",
+    // The radius and the window travel with the figures, because the tiles
+    // that render them are also rendered from swept counts at a different
+    // radius over a different window. A label baked into the page instead of
+    // into the payload would eventually describe the other one.
+    radiusM: c.radiusMeters,
+    reports311Window: "3 years",
     crashes: parseInt(crashes?.[0]?.count ?? 0, 10),
     fatal: parseInt(fatal?.[0]?.sum_number_killed ?? 0, 10) || 0,
     reports311: parseInt(reports?.[0]?.count ?? 0, 10),
@@ -891,6 +912,14 @@ async function resolveCorner(q, env) {
   const cached = await getCorner(env, slug);
   if (cached) return { ok: true, corner: cached, source: "cache" };
 
+  // The city shards, before any geocoding. Every corner the sweep graded
+  // resolves here from one KV read: no DataSF lookup, no Nominatim fallback,
+  // nothing external at all. Deliberately not written back to KV: storing it
+  // would promote a corner to the warmed fleet just because somebody looked at
+  // it, and the fleet is what the daily audit works through.
+  const graded = await cityCornerFor(env, slug);
+  if (graded) return { ok: true, corner: graded, source: "city" };
+
   const loc = await locate(parsed);
   if (!loc.ok) {
     const [a, b] = parsed.streets.map(titleCase);
@@ -1005,11 +1034,18 @@ async function shareCard(c, env, ctx, origin) {
 // Reads only what is already computed. A crawler must never trigger a score, a
 // corroboration pass, or an image generation just by fetching a page.
 async function ogFor(c, env) {
-  const [score, cred] = await Promise.all([
+  // A scored corner already carries all of this on the shard row that resolved
+  // it. Two more KV reads to confirm two records that by construction do not
+  // exist would double the cost of the commonest page on the site.
+  if (isScored(c)) return { score: cityScore(c), cred: cityCred(c), tier: TIERS.SCORED };
+  const [score, cred, imagery] = await Promise.all([
     getScore(env, c.slug, SCORE_VERSION).catch(() => null),
     getCredCached(env, c.slug, CRED_VERSION).catch(() => null),
+    // Which of the two warmed tiers this is, decided by whether both generated
+    // states exist as bytes rather than by a label somebody set once.
+    getImageryStatus(env, c.slug).catch(() => null),
   ]);
-  return { score, cred };
+  return { score, cred, tier: tierOf(c, imagery) };
 }
 
 // ---------------------------------------------------------------- generated imagery
@@ -1109,6 +1145,18 @@ async function cornerOfTheDay(env, ctx, origin) {
     };
     await appendCotdLog(env, entry);
     return { ok: false, ...entry };
+  }
+
+  // The queue resolves its corners out of the city shards, and out of the
+  // published score tier before that. Both tags mean the same thing to the
+  // imagery lane: do not spend two generations on a corner nobody scheduled.
+  // This run is that schedule. The tag comes off and the corner is stored
+  // before any lane reads it, or the morning audit would politely decline to
+  // audit the corner it woke up for.
+  if (corner.tier) {
+    const { tier, sweep, ...promoted } = corner;
+    corner = promoted;
+    await putCorner(env, corner);
   }
 
   // Every lane is allowed to fail on its own. A failed lane publishes in its
@@ -1443,18 +1491,28 @@ export default {
       }
 
       if (p === "/api/stats") {
+        // A scored corner answers from the shard row already in hand. No
+        // Socrata query, no edge cache entry, no wait.
+        if (isScored(c)) return json(cityStats(c));
         return await edgeCached(ctx, `stats-${c.slug}`, 3600, () =>
           cached(`stats:${c.slug}`, 3600e3, () => getStats(c).catch(() => sampleStats(c))),
         );
       }
 
       if (p === "/api/news") {
+        // Press coverage is an Exa search per corner. Running one for every
+        // corner in the city on first view would spend the credit balance on
+        // corners nobody asked about; the lane says it has not run instead.
+        if (isScored(c)) return json(cityNews());
         return await edgeCached(ctx, `news-${c.slug}`, 600, () =>
           cached(`news:${c.slug}`, 600e3, () => getNews(c, env).catch(() => sampleNews(c))),
         );
       }
 
       if (p === "/api/cred") {
+        // Records from the sweep, three lanes honestly not yet checked. Never
+        // stored: cred:{slug} is the record of a real four lane check.
+        if (isScored(c)) return json(cityCred(c));
         return await edgeCached(ctx, `cred-${c.slug}`, 3600, async () => {
           const hit = await getCredCached(env, c.slug, CRED_VERSION);
           return hit ? { ...hit, source: "cache" } : getCred(c, env, origin);
@@ -1462,6 +1520,7 @@ export default {
       }
 
       if (p === "/api/hazards") {
+        if (isScored(c)) return json(cityHazards());
         return await edgeCached(ctx, `hazards-${c.slug}`, 24 * 3600, () =>
           getHazardsFor(c, env, origin).catch(() => ({ source: "empty", items: [] })),
         );
@@ -1509,7 +1568,7 @@ export default {
         // corner's own crash counts. Cached beside the score it derives from.
         return await edgeCached(ctx, `impact-${c.slug}`, 24 * 3600, async () => {
           const [score, tableRes] = await Promise.all([
-            getScoreFor(c, env).catch(() => null),
+            isScored(c) ? cityScore(c) : getScoreFor(c, env).catch(() => null),
             asset(env, origin, "/data/cmf.json").catch(() => null),
           ]);
           let table = null;
@@ -1522,20 +1581,33 @@ export default {
       }
 
       if (p === "/api/timeline") {
+        // A timeline is a dozen Exa searches. A scored corner must not be able
+        // to start one by being opened, and must not consume a reservation
+        // from the daily timeline budget to find that out.
+        if (isScored(c)) return json(cityTimeline());
         return json(await getTimelineFor(c, env));
       }
 
       if (p === "/api/run") {
+        // There is no run to replay: no pipeline has run at this corner. The
+        // manifest builder would go and run one, lane by lane, to find that out.
+        if (isScored(c)) return json(cityRun());
         const asked = url.searchParams.get("trigger");
         const trigger = PUBLIC_TRIGGERS.has(asked) ? asked : "user";
         return json(await runManifest(c, env, origin, trigger, url.searchParams.has("refresh")));
       }
 
       if (p === "/api/score") {
+        // The grade a scored corner already carries, computed at build time by
+        // the same formula and the same frozen census the live path uses.
+        // Deliberately not written to score:{slug}: a stored score is what
+        // makes a corner part of the warmed fleet.
+        if (isScored(c)) return json(cityScore(c));
         return await edgeCached(ctx, `score-${c.slug}`, 3600, () => getScoreFor(c, env));
       }
 
       if (p === "/api/voices") {
+        if (isScored(c)) return json(cityVoices());
         const v = await getVoices(c, env, origin).catch(emptyVoices);
         return json(v);
       }
@@ -1554,6 +1626,9 @@ export default {
       }
 
       if (p === "/api/letter") {
+        // Offered, never drafted on sight. A draft is a billed model call and
+        // one is not spent because a crawler opened a page.
+        if (isScored(c)) return json(cityLetter(c));
         // The slowest lane by far, and the one worth caching hardest: a fresh
         // draft costs several seconds of Gemini time.
         return await edgeCached(ctx, `letter-${LETTER_VERSION}-${c.slug}`, 24 * 3600, () =>
