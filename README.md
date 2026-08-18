@@ -2,11 +2,13 @@
 
 **Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor.**
 
+![The Hazards state at 16th and Mission. The real Street View frame on the left, the Gemini safety audit annotated onto that same frame on the right, drag handle between them, with a legend naming faded crosswalk markings in red and vehicle conflict zones in amber.](docs/hazards.jpg)
+
 Pick a San Francisco intersection. StreetCred shows what the city's own data records, what the press reports, and what residents say, each claim traceable to where it came from. Then it shows what an automated visual audit finds wrong with the corner, what the fix would look like, and drafts the letter to the correct District Supervisor.
 
 Built in a single 55 minute sprint at Build Club, "Moonlighting with Gemini + Exa", August 17 2026. The git log covers the whole product.
 
-Live corner tonight: **16th Street and Mission Street, District 9**.
+Two corners are live: **16th Street and Mission Street** (District 9, Supervisor Fielder) and **6th Street and Market Street** (District 6, Supervisor Dorsey). A switcher in the header swaps the whole page, every lane and the letter with it.
 
 ## Why this exists
 
@@ -40,7 +42,7 @@ pedestrian safety OR crash OR traffic 16th Street and Mission Street San Francis
 
 sent with `type: "auto"`, `numResults: 8`, and page text requested as a **nested** `contents: { text: { maxCharacters: 400 } }`. The nesting matters: a flat `text` field is rejected, so the shape of that object is not cosmetic.
 
-**The filter.** Results are kept only when the title or URL carries a street token (`16th`, `mission`, `sixteenth`), then sorted newest first and capped at five. Without that filter the query pulls in citywide Vision Zero coverage that is real but not about this corner.
+**The filter.** Relevance tokens are derived from the corner's own name, so `"16th Street and Mission Street"` yields `["16th", "mission"]` and the filter travels to any corner rather than being pinned to the first one. A result counts as corner level only when it carries every street token, not just the neighborhood, and the panel claims corner-level precision only when at least three results clear that bar. Below it the heading drops to "Coverage of this corridor," which is the honest description of what is actually on screen. Law firm and lead generation domains are denied outright: they republish crash reports to farm clients and they are not press coverage. Results are then sorted newest first and capped at five.
 
 **The render.** Every headline shows its outlet domain and publish date and links out, so any claim on the page can be checked in one click. That is what makes this an evidence lane rather than a search box.
 
@@ -60,9 +62,11 @@ Two actors run against the corner, and getting each one to return anything usefu
 
 **Normalization.** The two output shapes have nothing in common: Google Maps nests `reviews[]` with `text`, `stars`, and `publishedAtDate`, while Reddit returns flat records with `title`, `body`, and `createdAt` and no rating at all. `tools/collect_voices.py` flattens both into one contract, `{source, stars, text, when}`, scoring each candidate on how directly it speaks to street safety and keeping both sources represented. Reviewer names are dropped on purpose, quotes are truncated, and HTML entities and Reddit's "submitted by" boilerplate are stripped.
 
-**Serving.** Scraping happens ahead of the demo, never during one: actor runs take minutes and a page load cannot wait on one. `/api/voices` reads the selected quotes from Upstash Redis under `voices:16th-and-mission`, so refreshing the panel is a Redis write rather than a redeploy, and falls back to the normalized file baked into `public/data/` when Upstash is unreachable. `/api/health` reports the Upstash leg separately, so a missing key is visible rather than silently papered over.
+**Serving.** Scraping happens ahead of the demo, never during one: actor runs take minutes and a page load cannot wait on one. `/api/voices` reads the selected quotes from Upstash Redis under a per-corner key carried in the corner config (`voices:16th-and-mission` for the first corner), so refreshing the panel is a Redis write rather than a redeploy, and falls back to the normalized file baked into `public/data/` when Upstash is unreachable. `/api/health` reports the Upstash leg separately, so a missing key is visible rather than silently papered over.
 
 **Honest limit.** Reviews at this corner skew heavily toward the BART station: escalators, cleanliness, policing, rather than crossing conditions. The quotes shown are real scrape output and thinner on traffic safety than the other four lanes. The letter therefore only quotes a resident when the quote is actually about the street, and otherwise quotes no one rather than inventing testimony. The fix is better targeting, not more code.
+
+The second corner makes the same point more sharply. The Reddit scrape for 6th and Market returned 40 items, none of them actually about crossing that street, so the panel shows an empty state saying no on-topic resident accounts were found and the letter for that corner quotes no resident. A lane that reports nothing when it found nothing is worth more here than a lane that always fills.
 
 This is the Apify category criteria almost word for word: collecting and structuring data from the web, and applying external information the product could not otherwise reach.
 
@@ -101,9 +105,30 @@ src/page.js    the entire front end as one HTML string
 src/data.js    corner registry, Supervisor roster, sample payloads
 tools/         build-time pipelines: imagery generation, voices normalization
 public/        generated imagery, normalized voices, logo
+docs/          the README screenshot
 ```
 
-Adding a second corner is one object in `CORNERS` plus one imagery run.
+**Caching, in two layers.** An in-process `Map` sits inside the Worker isolate, and a Cloudflare edge cache (`caches.default`) sits in front of it. The second layer is the one that matters: Worker isolates are short lived and per-colo, so warming the in-process map does nothing for the next visitor, who usually lands on a cold isolate and pays the full upstream cost again. With the edge cache in place every lane on both corners returns in under 0.26s, and the letter went from about 7s to 0.16s.
+
+Two deliberate rules govern it. **Sample and empty payloads are never cached**, so a lane that failed once is retried on the next request rather than pinned in that state for an hour. And what goes back to the browser is always `no-store` while the internally cached copy carries `max-age`: fast internally, never stale externally, so a data correction ships and actually shows up. A `CACHE_VERSION` constant invalidates every cached payload at once when the numbers change.
+
+Adding a corner is one object in `CORNERS` plus one imagery run. What that object cannot do is paper over code that assumed one specific corner, which is what the second corner was for.
+
+## What the second corner exposed
+
+Generalizing from one corner to two is where a demo either holds up or quietly starts lying. Three bugs only became visible under a second corner, and each one had been silently wrong the whole time.
+
+**The district boundary bug.** The Supervisor lookup took the first row DataSF happened to return and read its `supervisor_district`. That works until the corner sits on a district line, and major streets very often are one. Within 150 meters of 6th and Market, DataSF holds 242 crash records in District 6 and 114 in District 5, so the answer depended entirely on row order. The lookup is now a grouped majority query, and the corner's configured district is authoritative with the majority as corroboration and fallback. A wrong answer here does not look like a bug, it looks like a letter confidently addressed to the wrong elected official.
+
+**Hardcoded Exa relevance tokens.** The press filter tested titles against the literal strings `16th`, `mission`, and `sixteenth`. Every result for the second corner failed that test, so the lane discarded its entire result set and fell through to sample. Tokens now derive from the corner name.
+
+**The sample quote fallback.** The last-resort resident quotes named 16th and Mission in their text. Under any other corner they would have been not merely generic but flatly, specifically wrong, and they would have rendered as testimony. That fallback is gone. A corner with no usable scrape now shows an empty state that says so.
+
+**The related landmine, for anyone extending this:** `supervisor_district` comes back as `"11"` from the collisions dataset and `"9.00000"` from 311. Always `parseInt`.
+
+**An honest empty state, live right now.** The Reddit scrape for 6th and Market returned 40 items and nothing that was actually about the street. That corner's voices panel says no on-topic resident accounts were found, and its letter quotes no resident at all. That is the correct output, not a gap waiting to be filled.
+
+**Data corrections shipped at the same time.** The 311 filter had been substring matching on "Street", which swept in Street and Sidewalk Cleaning, a 3.4M row sanitation queue. That single bug inflated this corner from roughly 355 street-condition reports to 8,546. It is now an explicit allow list of service types. The collision count had also been unbounded back to 2005, describing two decades of a corner that has since been rebuilt; it is now bounded to five years and shows the fatal count alongside it.
 
 ## Running it
 
@@ -122,4 +147,5 @@ wrangler dev
 - The proposed fix image is a visualization, not an engineering drawing, and the cost is an order-of-magnitude estimate.
 - 311 counts are filtered to street-related service types within 150 meters, which is a proxy for street complaints, not a precise one.
 - The voices lane is the thinnest of the five, and the reason is a finding rather than a bug. Both Apify actors ran and returned real data, but Google Maps reviews at this corner are overwhelmingly about the BART station (escalators, cleanliness, policing) and the Reddit search returned mostly off-corner noise. That is why selection moved out of the scrape and into Redis: the normalizer now scores quotes by how directly they speak to street safety rather than passing a flat keyword test, and the surviving set is curated into the key the Worker reads. Every quote shown is still real scrape output, never generated. The letter also only quotes a resident when the quote is actually about the street, and otherwise quotes no one rather than inventing testimony.
-- One corner is wired tonight. The architecture generalizes, the validation does not yet.
+- Two corners are wired, in two different districts, which is what turned three latent one-corner assumptions into fixed bugs. The imagery pipeline was also validated on a third intersection outside San Francisco entirely. But a visitor still cannot type in their own corner: this is a registry of corners, not yet a tool you point at an arbitrary intersection. That is the next thing to build, and until it exists the generalization claim rests on three corners rather than on the whole city.
+- Nothing on the page is scored yet. StreetCred currently displays the evidence and traces each claim to its source; it does not grade a corner or rank it against any other. The name is a promise the product has not finished keeping.
