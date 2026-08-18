@@ -20,7 +20,7 @@ const GEMINI_TEXT_MODEL = "gemini-3.7-flash";
 // served from a cache holding the old ones. The edge cache is per-colo, so
 // without this a correction lands unevenly across data centers and some
 // visitors keep reading the old numbers for the life of the TTL.
-const CACHE_VERSION = "v7";
+const CACHE_VERSION = "v8";
 
 // The letter embeds live figures, press headlines, and the Danger Index, so it
 // goes stale in more ways than any other lane and it is the one artifact a
@@ -165,12 +165,7 @@ async function getScoreFor(c, env) {
 // The Today frame lives in two places depending on how the corner arrived:
 // static assets for the precomputed pair, KV for anything typed. Both are
 // bytes by the time this returns, so nothing downstream has to care.
-async function todayFrame(c, env, origin) {
-  if (CORNERS[c.slug]) {
-    const r = await asset(env, origin, `/img/${c.slug}-today.jpg`);
-    if (!r.ok) throw new Error(`today asset ${r.status}`);
-    return r.arrayBuffer();
-  }
+async function todayFrame(c, env) {
   const bytes = await getImage(env, c.slug, "today");
   if (!bytes) throw new Error("no today frame stored");
   return bytes;
@@ -179,7 +174,7 @@ async function todayFrame(c, env, origin) {
 async function getHazardsFor(c, env, origin) {
   const hit = await getHazards(env, c.slug, HAZARD_VERSION);
   if (hit) return { ...hit, source: "cache" };
-  const today = await todayFrame(c, env, origin);
+  const today = await todayFrame(c, env);
   const fresh = await corroborate(c, today, env);
   await putHazards(env, c.slug, fresh);
   return fresh;
@@ -344,20 +339,6 @@ async function bakedVoices(c, env, origin) {
   const d = await r.json();
   if (!d.items?.length) throw new Error("voices empty");
   return { source: "cache", items: d.items.slice(0, 5), collected: d.collected || null };
-}
-
-// ---------------------------------------------------------------- imagery
-// Three states, all generated at build time by tools/generate_imagery.py and
-// served as static assets. Nothing is generated during a demo.
-async function getImagery(c, env, origin) {
-  const base = `/img/${c.slug}`;
-  const head = await asset(env, origin, `${base}-fix.jpg`);
-  return {
-    source: head.ok ? "cache" : "sample",
-    today: `${base}-today.jpg`,
-    hazards: `${base}-hazards.jpg`,
-    fix: `${base}-fix.jpg`,
-  };
 }
 
 // ---------------------------------------------------------------- fallbacks
@@ -564,8 +545,8 @@ async function health(env, origin) {
       if (d.status !== "OK") throw new Error(d.status);
     }),
     ping("imagery", async () => {
-      const r = await asset(env, origin, `/img/${c.slug}-fix.jpg`);
-      if (!r.ok) throw new Error(`missing ${r.status}`);
+      const bytes = await getImage(env, c.slug, "fix");
+      if (!bytes) throw new Error("not in KV");
     }),
     ping("staticmap", async () => {
       // Cache first, so a health check does not spend a Static Maps request.
@@ -574,10 +555,9 @@ async function health(env, origin) {
       if (!r.ok || !(r.headers.get("content-type") || "").startsWith("image/"))
         throw new Error(`http ${r.status}`);
     }),
-    ping("upstash", async () => {
-      if (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN)
-        throw new Error("not configured");
-      await redisVoices(c, env);
+    ping("kv", async () => {
+      if (!env.STORE) throw new Error("no STORE binding");
+      await env.STORE.get("healthcheck");
     }),
     ping("voices", async () => {
       const r = await asset(env, origin, `/data/voices-${c.slug}.json`);
@@ -624,12 +604,18 @@ async function handleResolve(url, request, env) {
 
   if (CORNERS[slug]) {
     const c = CORNERS[slug];
-    return json({ ok: true, slug: c.slug, name: c.name, district: c.district, source: "precomputed" });
+    return json({
+      ok: true, slug: c.slug, name: c.name, district: c.district,
+      lat: c.lat, lon: c.lon, heading: c.heading ?? 0, source: "precomputed",
+    });
   }
 
   const cached = await getCorner(env, slug);
   if (cached) {
-    return json({ ok: true, slug: cached.slug, name: cached.name, district: cached.district, source: "cache" });
+    return json({
+      ok: true, slug: cached.slug, name: cached.name, district: cached.district,
+      lat: cached.lat, lon: cached.lon, heading: cached.heading ?? 0, source: "cache",
+    });
   }
 
   const loc = await locate(parsed);
@@ -662,7 +648,10 @@ async function handleResolve(url, request, env) {
   });
   await putCorner(env, c);
 
-  return json({ ok: true, slug: c.slug, name: c.name, district, source: loc.source });
+  return json({
+    ok: true, slug: c.slug, name: c.name, district,
+    lat: c.lat, lon: c.lon, heading: c.heading ?? 0, source: loc.source,
+  });
 }
 
 // ---------------------------------------------------------------- share card
@@ -677,16 +666,9 @@ async function shareCard(c, env, ctx, origin) {
   if (hit) return hit;
 
   let bytes = await getShareCard(env, c.slug);
-  if (!bytes) {
-    // No composited card for this corner yet. The plain frame is a worse card
-    // but an honest one, and it means every corner has a preview.
-    if (CORNERS[c.slug]) {
-      const r = await asset(env, origin, `/img/${c.slug}-today.jpg`);
-      if (r.ok) bytes = await r.arrayBuffer();
-    } else {
-      bytes = await getImage(env, c.slug, "today");
-    }
-  }
+  // No composited card for this corner yet. The plain frame is a worse card but
+  // an honest one, and it means every corner has a preview.
+  if (!bytes) bytes = await getImage(env, c.slug, "today");
   if (!bytes) return new Response("no preview", { status: 404 });
 
   const res = new Response(bytes, {
@@ -805,9 +787,8 @@ export default {
       }
 
       if (p === "/api/imagery") {
-        // Precomputed corners serve from static assets exactly as before: no
-        // status field, no polling, no generation, same speed.
-        if (CORNERS[c.slug]) return json(await getImagery(c, env, origin));
+        // One path for every corner now. A warmed corner answers "ready" from
+        // KV on the first ask and never polls; only a cold corner generates.
         return json(
           await imageryFor(c, env, ctx, {
             recordsEmpty: async () => {

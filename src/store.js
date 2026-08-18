@@ -123,6 +123,22 @@ export async function putCredCached(env, slug, cred) {
   await rawPut(env, `cred:${slug}`, JSON.stringify(cred));
 }
 
+// ---------------------------------------------------------------- leaderboard
+
+// The ranked corner list the city view reads. Written by
+// tools/precompute_hin.js, so the homepage costs one KV read rather than
+// twenty score lookups.
+export async function getHinList(env) {
+  const raw = await rawGet(env, "hin:list");
+  if (!raw) return [];
+  try {
+    const d = JSON.parse(raw);
+    return Array.isArray(d) ? d : d.corners || [];
+  } catch {
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------- share card
 
 // The 1200x630 preview, composited offline and uploaded, because a Worker has

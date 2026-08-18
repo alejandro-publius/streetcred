@@ -6,3 +6,6 @@ node_modules/
 public/img/probe_*.jpg
 .DS_Store
 .ogtmp/
+.hin-progress.json
+.hin-list.json
+hin-run.log
