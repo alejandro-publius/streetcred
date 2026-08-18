@@ -98,14 +98,23 @@ export const BASE_CSS = `:root{
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Poppins,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1120px;margin:0 auto;padding:28px 22px 64px}
-header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wrap}
+/* Two rows, always: controls, then the corner's title block.
+   One row was tried and cannot hold. The content column is capped at 1120px
+   minus padding, and at the longest warmed corner name ("16th Street and
+   Mission Street") the controls plus the title block need more than that, so
+   the title had nowhere to go but into the buttons. The rule the layout has to
+   satisfy is a 24px clear gap between the title block and the nearest control;
+   on one row that gap measured 14px at every width from 360 to 1600, so the
+   title block gets its own row and keeps a real one. */
+header{display:flex;flex-direction:column;align-items:stretch;gap:24px;padding-bottom:22px}
+.hctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .mark{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1}
 .mark span{color:var(--accent)}
-.switcher{display:flex;gap:7px;margin-left:22px}
+.switcher{display:flex;gap:7px;margin-left:14px}
 .switcher a{font-size:12.5px;font-weight:600;text-decoration:none;color:var(--dim);
   background:var(--card);border:1px solid var(--line);border-radius:999px;padding:7px 15px;white-space:nowrap}
 .switcher a.on{background:var(--ink);border-color:var(--ink);color:#fff}
-.find{display:flex;align-items:center;gap:7px;margin-left:12px;position:relative}
+.find{display:flex;align-items:center;gap:7px;margin-left:6px;position:relative}
 .find input{font-family:inherit;font-size:13px;color:var(--ink);background:var(--panel);
   border:1px solid var(--line);border-radius:999px;padding:8px 15px;width:200px;outline:none}
 .find input:focus{border-color:var(--accent)}
@@ -173,8 +182,14 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 @media(prefers-reduced-motion:reduce){
   .rline{opacity:1;transform:none;transition:none}
 }
-.corner{margin-left:auto;text-align:right;font-size:13px;color:var(--dim);line-height:1.5}
-.corner b{display:block;font-size:15px;color:var(--ink);font-weight:600}
+.corner{text-align:right;font-size:13px;color:var(--dim);line-height:1.5}
+/* The name and its tier chip are siblings in a flex row, never one inside the
+   other. The chip used to live inside the h1, whose only child was a block
+   element, so the two boxes overlapped and the page read "Market StreetAUDITED"
+   at every width. Wrapping is allowed: when the name takes the full line the
+   chip drops to its own line rather than squeezing. */
+.ctitle{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.cmeta{margin-top:4px}
 /* Only present on a corner the scheduled handler audited by itself. It is a
    claim about the product rather than about the corner, so it appears only when
    the run record says so and never as decoration. */
@@ -309,8 +324,11 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
    the date is part of the number rather than a footnote about it. */
 .statcap{margin:-4px 0 16px;font-size:11.5px;color:var(--dim);line-height:1.5}
 /* Which tier this corner is in, said once, next to its name. */
-.tierchip{display:inline-block;margin-left:8px;font-size:10px;font-weight:700;letter-spacing:.12em;
-  padding:3px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--dim);vertical-align:2px}
+/* inline-flex and no margin: the 10px gap belongs to the flex container, so
+   the chip cannot drift out of alignment with whatever it sits beside. */
+.tierchip{display:inline-flex;align-items:center;font-size:10px;font-weight:700;letter-spacing:.12em;
+  padding:3px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--dim);
+  white-space:nowrap;flex:none}
 .tierchip.t-audited{border-color:var(--ink);color:var(--ink)}
 .tierchip.t-scored{border-style:dashed}
 /* The one line every unchecked lane shows, so the page says the same thing in
@@ -367,7 +385,13 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 /* The lid. A header strip in the card tint with a rule under it is what turns
    loose text inside a border into a card, and it is where the lane's title and
    its live/cache/sample tag belong: on the container they describe. */
-.phs{display:flex;align-items:center;justify-content:space-between;gap:10px;
+/* Wraps rather than overflows. A panel heading and its tag together are wider
+   than a 360px phone once the padding is counted, and with nowrap the tag ran
+   off the right edge and gave the whole page a horizontal scrollbar. It only
+   became visible when scored corners started showing the map panel without
+   waiting for a thumbnail, which is what put a panel heading on screen at that
+   width for the first time. */
+.phs{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
   background:var(--card);border-bottom:1px solid var(--line3);padding:11px 20px;
   border-radius:9px 9px 0 0}
 .phs h2{font-size:13px;font-weight:600;margin:0;letter-spacing:.01em}
@@ -459,7 +483,7 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .stack .lg img{max-height:24px;width:auto;display:block}
 .stack .lg b{font-size:14px;color:var(--ink);font-weight:600;white-space:nowrap;letter-spacing:-.01em}
 @media(max-width:860px){.stack .lg{width:auto}}
-.cname{display:inline;font-size:inherit;font-weight:inherit;margin:0;letter-spacing:inherit}
+.cname{display:block;font-size:15px;color:var(--ink);font-weight:600;margin:0;letter-spacing:inherit;line-height:1.3}
 /* Projected outcome. Corroboration-chip scale, under the fix caption, shown
    only on the fix state. The not-a-promise label is the header, permanently. */
 .impact{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
@@ -505,7 +529,8 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
   place-items:center;color:#fff;background:var(--dimline)}
 .sg.gA{background:var(--green)} .sg.gB{background:#a3b088} .sg.gC{background:var(--blue)}
 .sg.gD{background:#e89a5f} .sg.gF{background:var(--accent)}
-.sn{flex:1;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sname{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
+.sn{min-width:0;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sgo{font-size:12.5px;font-weight:600;color:#fff;background:var(--ink);border-radius:999px;
   padding:8px 16px;text-decoration:none;white-space:nowrap}
 .sx{font-size:18px;line-height:1;background:none;border:0;color:var(--dim);cursor:pointer;padding:6px}
@@ -645,29 +670,36 @@ ${BASE_CSS}
 <body>
 <div class="wrap">
 <header>
-  ${LOGO}
-  <div class="mark">Street<span>Cred</span></div>
-  <nav class="switcher" aria-label="Choose a corner">
-    ${Object.values(CORNERS)
-      .map(
-        (k) =>
-          `<a href="/c/${k.slug}"${k.slug === c.slug ? ' class="on" aria-current="page"' : ""}>${k.short}</a>`,
-      )
-      .join("")}
-  </nav>
-  <form class="find" id="find" role="search">
-    <input id="q" type="search" placeholder="Try 24th and Valencia" autocomplete="off"
-      aria-label="Check any San Francisco corner">
-    <button type="submit" id="findgo">Check</button>
-    <div class="findmsg" id="findmsg" role="status" hidden></div>
-  </form>
-  <button class="share ghost" id="watch" type="button">Watch the run</button>
-  <button class="share" id="share" type="button">Share corner</button>
-  <div class="corner"><h1 class="cname"><b>${c.name}</b>${
-    og.tier ? `<span class="tierchip t-${og.tier}" title="${esc(TIER_NOTE[og.tier] || "")}">${TIER_LABEL[og.tier]}</span>` : ""
-  }</h1>${c.city}${
-    c.district ? `, District ${c.district}` : ", district unresolved"
-  }${c.cotd ? `<span class="auto">Audited autonomously by StreetCred on ${c.cotd}</span>` : ""}</div>
+  <div class="hctl">
+    ${LOGO}
+    <div class="mark">Street<span>Cred</span></div>
+    <nav class="switcher" aria-label="Choose a corner">
+      ${Object.values(CORNERS)
+        .map(
+          (k) =>
+            `<a href="/c/${k.slug}"${k.slug === c.slug ? ' class="on" aria-current="page"' : ""}>${k.short}</a>`,
+        )
+        .join("")}
+    </nav>
+    <form class="find" id="find" role="search">
+      <input id="q" type="search" placeholder="Try 24th and Valencia" autocomplete="off"
+        aria-label="Check any San Francisco corner">
+      <button type="submit" id="findgo">Check</button>
+      <div class="findmsg" id="findmsg" role="status" hidden></div>
+    </form>
+    <button class="share ghost" id="watch" type="button">Watch the run</button>
+    <button class="share" id="share" type="button">Share corner</button>
+  </div>
+  <div class="corner">
+    <div class="ctitle">
+      <h1 class="cname">${c.name}</h1>${
+        og.tier ? `<span class="tierchip t-${og.tier}" id="tierchip" title="${esc(TIER_NOTE[og.tier] || "")}">${TIER_LABEL[og.tier]}</span>` : ""
+      }
+    </div>
+    <div class="cmeta">${c.city}${
+      c.district ? `, District ${c.district}` : ", district unresolved"
+    }</div>${c.cotd ? `<span class="auto">Audited autonomously by StreetCred on ${c.cotd}</span>` : ""}
+  </div>
 </header>
 <main>
 
@@ -685,7 +717,9 @@ ${BASE_CSS}
 
 <div class="sticky" id="sticky" hidden>
   <span class="sg" id="stickyg" aria-hidden="true"></span>
-  <span class="sn">${c.short || c.name}</span>
+  <span class="sname"><span class="sn">${c.short || c.name}</span>${
+    og.tier ? `<span class="tierchip t-${og.tier}" id="stickytier">${TIER_LABEL[og.tier]}</span>` : ""
+  }</span>
   <a class="sgo" href="#letterpanel" id="stickygo">Get the letter</a>
   <button class="sx" id="stickyx" type="button" aria-label="Dismiss this bar">&times;</button>
 </div>
@@ -822,8 +856,8 @@ ${BASE_CSS}
   <div class="pbody">
   <div class="stack">
     <div><span class="lg"><img src="/logos/gemini.svg" alt="Google Gemini" width="24" height="24" loading="lazy"><b>Gemini</b></span>Audits the real Street View frame for hazards, renders the fix, writes the letter</div>
-    <div><span class="lg"><img src="/logos/exa.svg" alt="Exa" width="77" height="24" loading="lazy"></span>Finds current press coverage of this intersection, cited</div>
-    <div><span class="lg"><img src="/logos/apify.svg" alt="Apify" width="87" height="24" loading="lazy"></span>Scrapes what residents say on Reddit and Google Maps</div>
+    <div><span class="lg"><img src="/logos/exa.svg" alt="Exa" width="77" height="24" loading="lazy"><b>Exa</b></span>Finds current press coverage of this intersection, cited</div>
+    <div><span class="lg"><img src="/logos/apify.svg" alt="Apify" width="87" height="24" loading="lazy"><b>Apify</b></span>Scrapes what residents say on Reddit and Google Maps</div>
     <div><span class="lg"><img src="/logos/googlemaps.svg" alt="Google Maps" width="24" height="24" loading="lazy"><b>Google Maps</b></span>Street View frames, the corner thumbnail, and the city map</div>
     <div><span class="lg"><img src="/logos/cloudflare.svg" alt="Cloudflare" width="52" height="24" loading="lazy"><b>Cloudflare</b></span>Workers serve the page, KV holds corners, imagery and grades</div>
     <div><span class="lg"><b>DataSF</b></span>Collisions and 311, queried by radius around the corner</div>
@@ -1324,17 +1358,19 @@ function paintVerdict(){
 // page loaded with; a swapped-in corner can be in a different tier, and this
 // derives it from the lanes that already landed rather than asking again.
 function paintTier(){
-  const chip = document.querySelector(".tierchip");
-  if(!chip) return;
+  const chips = [el("tierchip"), el("stickytier")].filter(Boolean);
+  if(!chips.length) return;
   let t = TIER;
   if(V.score && V.score.source === "sweep") t = "scored";
   else if(IMG && IMG.status === "ready") t = "audited";
   else if(IMG && IMG.status) t = "enriched";
-  if(!t){ chip.hidden = true; return; }
-  TIER = t;
-  chip.hidden = false;
-  chip.textContent = t.toUpperCase();
-  chip.className = "tierchip t-" + t;
+  chips.forEach(function(chip){
+    if(!t){ chip.hidden = true; return; }
+    chip.hidden = false;
+    chip.textContent = t.toUpperCase();
+    chip.className = "tierchip t-" + t;
+  });
+  if(t) TIER = t;
 }
 
 LANE_LOADERS.score = () => fetch("/api/score" + X).then(r => r.json()).then(d => {
@@ -1823,7 +1859,7 @@ function swapCorner(info, push){
   X = "?x=" + info.slug;
   if(push !== false) history.pushState({ corner: info }, "", "/c/" + info.slug);
   document.title = info.name + ", graded - StreetCred";
-  const h = document.querySelector(".cname b"); if(h) h.textContent = info.name;
+  const h = el("cname") || document.querySelector(".cname"); if(h) h.textContent = info.name;
   const sn = document.querySelector(".sn"); if(sn) sn.textContent = info.name;
   resetTransient();
   runLanes();

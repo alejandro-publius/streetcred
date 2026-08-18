@@ -257,6 +257,20 @@ export async function commissionVoices(env, c) {
   await putVoiceRun(env, c.slug, rec);
   const pending = await getVoicePending(env);
   await putVoicePending(env, [c.slug, ...pending.filter((s) => s !== c.slug)]);
+
+  // The ledger records the commission, not just the invoice. A run in flight is
+  // money already committed, and a ledger that only shows finished runs cannot
+  // answer "what is this thing spending right now", which is the question
+  // somebody asks when an autonomous system is running unattended.
+  await appendActorCost(env, {
+    slug: c.slug,
+    name: c.name,
+    at: rec.commissionedAt,
+    event: "commissioned",
+    runs: started.map((r) => ({ actor: r.actor, id: r.id, datasetId: r.datasetId })),
+    costUsd: null,
+  }).catch(() => {});
+
   return { ok: true, ...rec };
 }
 
@@ -331,6 +345,8 @@ export async function ingestVoices(env, cornerFor, max = 3) {
       slug,
       name: rec.name,
       at: new Date().toISOString(),
+      event: "ingested",
+      commissionedAt: rec.commissionedAt,
       runs: statuses.map((s) => ({ actor: s.actor, status: s.status, usd: s.usageTotalUsd ?? null })),
       costUsd: Math.round(costUsd * 10000) / 10000,
       candidates: candidates.length,

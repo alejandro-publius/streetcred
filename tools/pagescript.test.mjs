@@ -87,3 +87,36 @@ test("the tier chip renders its label", () => {
     assert.match(html, new RegExp(`tierchip t-${tier}`), `${tier} chip missing`);
   }
 });
+
+// Structural guard for a bug that was invisible in review and obvious in a
+// browser: the chip lived inside the h1 whose only child was a block element,
+// so the two boxes overlapped and every corner read "Market StreetAUDITED".
+// The chip is a sibling of the name now, and the flex gap owns the spacing.
+// Box metrics live outside CI (they need a real engine); this pins the shape.
+test("the tier chip is a sibling of the name, never inside the h1", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  const h1 = html.match(/<h1 class="cname">([\s\S]*?)<\/h1>/);
+  assert.ok(h1, "the corner name should still be an h1");
+  assert.ok(!h1[1].includes("tierchip"), "the chip must not be inside the h1");
+  assert.match(html, /<div class="ctitle">/, "name and chip need a flex row to share");
+  assert.match(html, /<div class="cmeta">/, "the district line needs its own element to be spaced");
+});
+
+// The header is two rows on purpose: one row cannot keep a 24px clear gap
+// between the title block and the nearest control at the longest warmed corner
+// name, measured at every width from 360 to 1600.
+test("the header separates its controls from the title block", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  assert.match(html, /<div class="hctl">/, "controls need their own row");
+  const header = html.match(/<header>([\s\S]*?)<\/header>/);
+  assert.ok(header, "header present");
+  assert.ok(header[1].indexOf('class="hctl"') < header[1].indexOf('class="corner"'), "controls come first");
+});
+
+// Every other row in the Powered by strip names its tool in bold.
+test("the powered by strip names Exa and Apify", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  for (const name of ["Gemini", "Exa", "Apify", "Google Maps", "Cloudflare", "DataSF"]) {
+    assert.match(html, new RegExp(`<b>${name}</b>`), `${name} label missing`);
+  }
+});

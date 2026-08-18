@@ -125,11 +125,17 @@ ${
 <div class="srow"><span class="ep">Apify actor runs, ${esc(spend.apify.month)}</span>
   <span class="ms">${spend.apify.used} of ${spend.apify.cap} &middot; $${spend.apifyUsd.toFixed(3)}</span></div>
 ${(spend.costs || [])
-  .slice(0, 6)
+  .slice(0, 8)
   .map(
     (c) => `<div class="srow"><span class="ep"><a href="/c/${esc(c.slug)}">${esc(c.name || c.slug)}</a>
-  ${c.kept} voice${c.kept === 1 ? "" : "s"} kept from ${c.candidates}</span>
-  <span class="ms">${esc(String(c.at || "").slice(0, 10))} &middot; $${Number(c.costUsd || 0).toFixed(4)}</span></div>`,
+  ${
+    c.event === "commissioned"
+      ? `${(c.runs || []).length} run${(c.runs || []).length === 1 ? "" : "s"} commissioned, in flight`
+      : `${c.kept ?? 0} voice${c.kept === 1 ? "" : "s"} kept from ${c.candidates ?? 0}`
+  }</span>
+  <span class="ms">${esc(String(c.at || "").slice(0, 10))} &middot; ${
+    c.costUsd == null ? "pending" : `$${Number(c.costUsd).toFixed(4)}`
+  }</span></div>`,
   )
   .join("")}`
     : `<p class="note">Ledger unavailable.</p>`
