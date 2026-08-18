@@ -418,6 +418,26 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .stack .lg b{font-size:14px;color:var(--ink);font-weight:600;white-space:nowrap;letter-spacing:-.01em}
 @media(max-width:860px){.stack .lg{width:auto}}
 .cname{display:inline;font-size:inherit;font-weight:inherit;margin:0;letter-spacing:inherit}
+/* Projected outcome. Corroboration-chip scale, under the fix caption, shown
+   only on the fix state. The not-a-promise label is the header, permanently. */
+.impact{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.ihead{font-size:12px;font-weight:700;letter-spacing:.02em;margin-bottom:8px}
+.inote{display:block;font-weight:400;font-size:11px;color:var(--dim);margin-top:2px;line-height:1.5}
+.irow{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:12px;padding:5px 0;
+  border-bottom:1px solid var(--line);line-height:1.5}
+.irow .iname{font-weight:600;min-width:150px}
+.irow .ibasis{color:var(--dim)}
+.irow a{color:var(--dim);text-decoration:none;border-bottom:1px dashed var(--line2)}
+.irow a:hover{color:var(--ink)}
+.irow .irange{font-weight:600}
+.irow.nofactor span{color:var(--dim)}
+.icombined{font-size:11.5px;color:var(--dim);line-height:1.6;margin:9px 0 0}
+.pfoot{font-size:11px;color:var(--dim);margin:10px 0 0}
+.prow{padding:9px 0;border-bottom:1px solid var(--line);font-size:12.5px;line-height:1.55}
+.prow b{display:block;font-size:13px}
+.prow .pw{color:var(--dim);font-size:11.5px}
+.prow .po{margin-top:3px}
+.prow a{color:var(--dim);font-size:11px;text-decoration:none;border-bottom:1px dashed var(--line2)}
 footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
 footer a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
 footer a:hover{color:var(--ink)}
@@ -557,6 +577,13 @@ ${BASE_CSS}
       <div id="handle" role="separator" tabindex="0" aria-label="Comparison slider, arrow keys move it" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
     </div>
     <p class="cap" aria-live="polite"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
+    <div class="impact" id="impact" hidden>
+      <div class="ihead">Projected outcome
+        <span class="inote">Projections from published national research (FHWA CMF Clearinghouse). Not a promise about this corner.</span>
+      </div>
+      <div id="impactrows"></div>
+      <p class="icombined" id="impactcombined"></p>
+    </div>
     <div class="hz" id="hz" hidden></div>
   </div>
 </div>
@@ -636,6 +663,13 @@ ${BASE_CSS}
         <div class="letter" id="letter"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
         <div class="lfoot"><button id="copy">Copy letter</button><span class="tag" id="lettertag">drafted</span><span>by Gemini</span></div>
         <p class="vnote">Every figure in this letter is checked against the source records before it is shown. A draft that states something the records do not support is rejected and rewritten.</p>
+      </div>
+    </div>
+    <div class="panel" id="precedents" hidden>
+      <div class="phs"><h2>This works in San Francisco</h2><span class="tag">official source</span></div>
+      <div class="pbody">
+        <div id="precrows"></div>
+        <p class="pfoot">Outcomes as reported by SFMTA's own evaluations.</p>
       </div>
     </div>
   </div>
@@ -751,6 +785,10 @@ function render(){
   }
   el("capk").textContent = CAPS[state][0];
   el("capv").textContent = CAPS[state][1] + (state === "today" && IMG.note ? " " + IMG.note : "");
+  // The projected outcome belongs to the fix state alone: it describes the
+  // proposal, not the photograph.
+  const ib = el("impact");
+  if(ib) ib.hidden = !(state === "fix" && window.__impactReady);
 }
 let split = 50;
 function setSplit(pct){
@@ -1269,6 +1307,37 @@ fetch("/api/voices" + X).then(r => r.json()).then(d => {
     esc(String(v.source).replace("_"," ")) + (v.stars ? " &middot; " + v.stars + "&#9733;" : "") +
     (v.when ? " &middot; " + esc(v.when) : "") + '</div></div>').join("");
 });
+
+fetch("/api/impact" + X).then(r => r.json()).then(d => {
+  const box = el("impact");
+  if(!d || d.source === "empty" || !d.rows){ window.__impactReady = false; return; }
+  el("impactrows").innerHTML = d.rows.map(r => {
+    if(!r.hasFactor){
+      return '<div class="irow nofactor"><span class="iname">' + esc(r.intervention) + '</span>' +
+        '<span>no high-quality published factor</span>' +
+        ' <a href="' + esc(r.cmfUrl) + '" target="_blank" rel="noopener">clearinghouse</a></div>';
+    }
+    return '<div class="irow"><span class="iname">' + esc(r.intervention) + '</span>' +
+      '<span class="ibasis">' + esc(r.basis) + '</span>' +
+      '<a href="' + esc(r.cmfUrl) + '" target="_blank" rel="noopener">' + esc(r.factorText) + '</a>' +
+      '<span class="irange">' + esc(r.projectedRange) + '</span></div>';
+  }).join("");
+  el("impactcombined").textContent = d.combined ? d.combined.sentence : "";
+  window.__impactReady = true;
+  if(state === "fix") box.hidden = false;
+}).catch(() => {});
+
+fetch("/data/precedents.json").then(r => r.json()).then(d => {
+  const rows = (d.projects || []);
+  if(!rows.length) return;
+  el("precrows").innerHTML = rows.slice(0, 3).map(p =>
+    '<div class="prow"><b>' + esc(p.name) + '</b>' +
+    '<span class="pw">' + esc(p.what) + ' &middot; ' + esc(p.completed) + '</span>' +
+    '<div class="po">' + esc(p.outcome) + '</div>' +
+    '<a href="' + esc(p.sourceUrl) + '" target="_blank" rel="noopener">read the evaluation</a></div>'
+  ).join("");
+  el("precedents").hidden = false;
+}).catch(() => {});
 
 fetch("/api/letter" + X).then(r => r.json()).then(d => {
   mark("lettertag", d.source);
