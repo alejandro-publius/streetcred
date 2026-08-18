@@ -4,7 +4,7 @@ import {
 } from "./data.js";
 import { PAGE, NOT_FOUND } from "./page.js";
 import { HOME, staticMapPath, fitView } from "./home.js";
-import { parseQuery, locate, districtFor, soql } from "./resolve.js";
+import { parseQuery, locate, districtFor, soql, soqlUrl } from "./resolve.js";
 import {
   getCorner, putCorner, getImage, rateLimit, getScore, putScore, getHazards, putHazards,
   getCredCached, putCredCached, getShareCard, getHinList, getRun, putRun, getApifyCounts, getLetterRun, putLetterRun,
@@ -35,7 +35,7 @@ const GEMINI_TEXT_MODEL = "gemini-3.7-flash";
 // served from a cache holding the old ones. The edge cache is per-colo, so
 // without this a correction lands unevenly across data centers and some
 // visitors keep reading the old numbers for the life of the TTL.
-const CACHE_VERSION = "v10";
+const CACHE_VERSION = "v11";
 
 // The letter embeds live figures, press headlines, and the Danger Index, so it
 // goes stale in more ways than any other lane and it is the one artifact a
@@ -154,22 +154,29 @@ async function getStats(c) {
   const crashSince = new Date(Date.now() - 5 * 365 * 24 * 3600 * 1000).toISOString().slice(0, 19);
   const crashWhere = `${circle} AND collision_datetime > '${crashSince}'`;
   const services = SERVICE_NAMES.map((s) => `'${s}'`).join(",");
+  // The exact queries, kept as objects so the receipt URLs below are built
+  // from the same values the fetches use. Provenance that paraphrases is not
+  // provenance.
+  const qCrashes = { "$select": "count(*)", "$where": crashWhere };
+  const qFatal = { "$select": "sum(number_killed)", "$where": crashWhere };
+  const qReports = {
+    "$select": "count(*)",
+    "$where": `${circle} AND requested_datetime > '${since}' AND service_name in(${services})`,
+  };
+  const qDistrict = {
+    "$select": "supervisor_district,count(*)",
+    "$where": circle,
+    "$group": "supervisor_district",
+  };
   const [crashes, fatal, reports, dist] = await Promise.all([
-    soql(DS_CRASHES, { "$select": "count(*)", "$where": crashWhere }),
-    soql(DS_CRASHES, { "$select": "sum(number_killed)", "$where": crashWhere }).catch(() => []),
-    soql(DS_311, {
-      "$select": "count(*)",
-      "$where": `${circle} AND requested_datetime > '${since}' AND service_name in(${services})`,
-    }),
+    soql(DS_CRASHES, qCrashes),
+    soql(DS_CRASHES, qFatal).catch(() => []),
+    soql(DS_311, qReports),
     // Grouped, not $limit 1. A major street is often a district boundary: within
     // 150m of 6th and Market, DataSF holds 242 rows in District 6 and 114 in
     // District 5, so a single arbitrary row picks the wrong Supervisor. The
     // corner's configured district wins; this is corroboration and a fallback.
-    soql(DS_CRASHES, {
-      "$select": "supervisor_district,count(*)",
-      "$where": circle,
-      "$group": "supervisor_district",
-    }).catch(() => []),
+    soql(DS_CRASHES, qDistrict).catch(() => []),
   ]);
   // Landmine: crashes return "11" but 311 returns "9.00000". Always parseInt.
   const majority = (dist || [])
@@ -185,6 +192,14 @@ async function getStats(c) {
     // Null rather than a guess. A corner on a district line with no clear
     // majority is addressed citywide instead of to a Supervisor picked at random.
     district: Number.isFinite(resolved) && resolved > 0 ? resolved : null,
+    // Receipts. Each URL is the exact query the figure above came from, built
+    // by the same soqlUrl the fetch went through. One click re-runs the count.
+    urls: {
+      crashes: soqlUrl(DS_CRASHES, qCrashes),
+      fatal: soqlUrl(DS_CRASHES, qFatal),
+      reports311: soqlUrl(DS_311, qReports),
+      district: soqlUrl(DS_CRASHES, qDistrict),
+    },
   };
 }
 
@@ -444,6 +459,7 @@ async function getNews(c, env) {
   return {
     source: "live",
     precise,
+    fetchedAt: new Date().toISOString(),
     heading: precise ? "Press coverage" : "Coverage of this corridor",
     // Carried on the payload so the run manifest can report what Exa actually
     // returned rather than only what survived. These are the two numbers that

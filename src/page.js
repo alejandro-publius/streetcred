@@ -275,6 +275,13 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
   transition:transform 150ms ease-out,box-shadow 150ms ease-out}
 .stat .n{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--accent)}
 .stat .l{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.45}
+/* Provenance links. Same size, same color as the bare number, so trust is one
+   hover away without turning the page into a link farm. */
+a.src{color:inherit;text-decoration:none}
+a.src:hover .n,a.src:focus-visible .n{text-decoration:underline;text-underline-offset:4px}
+a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:6px}
+.srcq{color:var(--dim);text-decoration:none;border-bottom:1px dashed var(--line2)}
+.srcq:hover{color:var(--ink)}
 /* Footprint labels. The grade counts an 80m core and the tiles count 150m;
    both are deliberate and neither used to say so, which left the letter
    citing two different collision counts in one paragraph. */
@@ -880,10 +887,20 @@ fetch("/api/stats" + X).then(r => r.json()).then(d => {
   const vals = [d.crashes, d.reports311, d.district];
   const l = ["Injury collisions, last 5 years" + (d.fatal ? ", including " + d.fatal + " fatal" : ""),
              "Street-condition 311 reports, 3 years","Supervisor district"];
-  el("stats").innerHTML = vals.map((v,i) =>
-    '<div class="stat"><div class="n" data-to="' + (v === null || v === undefined ? "" : v) + '">' +
-    (v === null || v === undefined ? "n/a" : "0") + '</div><div class="l">' + l[i] +
-    (d.source === "sample" && i === 0 ? ' <span class="tag sample">sample</span>' : '') + '</div></div>').join("");
+  // Each figure is a quiet link to the exact Socrata query it came from, same
+  // size and color as the plain number, underline on hover only. The reader who
+  // clicks re-runs the count on data.sfgov.org; everyone else sees a number.
+  const urls = [d.urls && d.urls.crashes, d.urls && d.urls.reports311, d.urls && d.urls.district];
+  el("stats").innerHTML = vals.map((v,i) => {
+    const num = '<div class="n" data-to="' + (v === null || v === undefined ? "" : v) + '">' +
+      (v === null || v === undefined ? "n/a" : "0") + '</div>';
+    const linked = urls[i] && v !== null && v !== undefined
+      ? '<a class="src" href="' + urls[i] + '" target="_blank" rel="noopener" ' +
+        'aria-label="' + l[i].replace(/"/g, "") + ': opens source query on data.sfgov.org">' + num + '</a>'
+      : num;
+    return '<div class="stat">' + linked + '<div class="l">' + l[i] +
+      (d.source === "sample" && i === 0 ? ' <span class="tag sample">sample</span>' : '') + '</div></div>';
+  }).join("");
   onFirstView(el("stats"), () => {
     el("stats").querySelectorAll(".n").forEach(node => {
       const to = node.getAttribute("data-to");
@@ -946,18 +963,31 @@ fetch("/api/score" + X).then(r => r.json()).then(d => {
     ? parts.filter(([,,v]) => v).map(([k,,v]) =>
         '<i class="' + k + '" style="width:' + (100*v/total) + '%"></i>').join("")
     : '';
-  el("sevkey").innerHTML = parts.filter(([,,v]) => v)
+  const sevKeyHtml = parts.filter(([,,v]) => v)
     .map(([,label,v]) => '<span><b>' + v + '</b> ' + label + '</span>').join("")
     || '<span>No injury collisions recorded in 5 years</span>';
-  el("scorecav").textContent = d.caveat || "";
+  // The severity mix is one grouped query; link the whole key to it rather
+  // than pretending each slice came from somewhere different.
+  el("sevkey").innerHTML = d.urls && d.urls.severity
+    ? '<a class="src" href="' + d.urls.severity + '" target="_blank" rel="noopener" aria-label="Severity mix: opens source query on data.sfgov.org">' + sevKeyHtml + '</a>'
+    : sevKeyHtml;
+  const cav = el("scorecav");
+  cav.innerHTML = esc(d.caveat || "") +
+    ' <a class="srcq" href="/methodology" aria-label="How the index and its frozen census distribution are computed">How this is computed</a>';
 });
 
 fetch("/api/news" + X).then(r => r.json()).then(d => {
   mark("newstag", d.source);
   // Do not claim corner-level precision the result set does not support.
   if (d.heading) el("newshead").textContent = d.heading;
+  // Retrieval date on hover: when this page actually fetched the citation,
+  // distinct from when the outlet published it. d.fetchedAt is stamped by the
+  // Worker at fetch time; a cached payload keeps the stamp of the fetch that
+  // produced it, which is the honest reading of "retrieved".
+  const got = d.fetchedAt ? new Date(d.fetchedAt).toISOString().slice(0,10) : null;
   el("news").innerHTML = (d.items||[]).map(x =>
-    '<a href="' + esc(x.url) + '" target="_blank" rel="noopener"><div class="t">' + esc(x.title) +
+    '<a href="' + esc(x.url) + '" target="_blank" rel="noopener"' +
+    (got ? ' title="Retrieved by StreetCred on ' + got + '"' : '') + '><div class="t">' + esc(x.title) +
     // An agency page is the record, not reporting on the record. Tagged so it
     // reads as a primary source rather than as press coverage.
     (x.official ? ' <span class="osrc">official source</span>' : '') +

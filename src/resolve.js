@@ -24,10 +24,19 @@ export const inSF = (lat, lon) =>
   lat >= SF_BOUNDS.minLat && lat <= SF_BOUNDS.maxLat &&
   lon >= SF_BOUNDS.minLon && lon <= SF_BOUNDS.maxLon;
 
-export async function soql(dataset, params) {
+// One builder for both the fetch and the receipt. soqlUrl is what provenance
+// links hand to a reader: the exact query the page ran, openable in a browser,
+// so "check the math" is one click rather than an act of faith. If a future
+// query is ever built any other way, its link would describe a query the page
+// did not run, which is the precise lie this file exists to make impossible.
+export function soqlUrl(dataset, params) {
   const u = new URL(`https://data.sfgov.org/resource/${dataset}.json`);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-  const r = await fetch(u, { headers: { accept: "application/json" } });
+  return u.toString();
+}
+
+export async function soql(dataset, params) {
+  const r = await fetch(soqlUrl(dataset, params), { headers: { accept: "application/json" } });
   if (!r.ok) throw new Error(`datasf ${dataset} ${r.status}`);
   return r.json();
 }

@@ -2,7 +2,7 @@
 // over two public datasets, and every input is a number a person can look up.
 // That is the point. A score nobody can audit is worth less than no score.
 
-import { soql } from "./resolve.js";
+import { soql, soqlUrl } from "./resolve.js";
 import { SERVICE_NAMES } from "./data.js";
 
 const DS_CRASHES = "ubvf-ztfx";
@@ -89,33 +89,42 @@ const yearsAgo = (n) =>
 // distribution runs the exact same queries against the exact same windows. If
 // these ever drift apart, every corner is scored against a yardstick measured
 // with a different ruler.
-export async function countsFor(lat, lon) {
+export function scoreQueries(lat, lon) {
   const circle = `within_circle(point, ${lat}, ${lon}, ${SCORE_RADIUS})`;
   const since5 = yearsAgo(5);
   const since1 = yearsAgo(1);
   const services = SERVICE_NAMES.map((s) => `'${s}'`).join(",");
-
-  // All four in one parallel batch, so the score costs one round trip in wall
-  // clock rather than four.
-  const [sev, ped, r311] = await Promise.all([
-    soql(DS_CRASHES, {
+  return {
+    severity: {
       "$select": "collision_severity,count(*)",
       "$where": `${circle} AND collision_datetime > '${since5}'`,
       "$group": "collision_severity",
-    }).catch(() => []),
-    soql(DS_CRASHES, {
+    },
+    ped: {
       "$select": "count(*)",
       "$where":
         `${circle} AND collision_datetime > '${since5}' ` +
         "AND ped_action not in('No Pedestrian Involved','Not Stated')",
-    }).catch(() => []),
+    },
     // Explicit allow list, never a substring match on "Street": that sweeps in
     // Street and Sidewalk Cleaning, a 3.4M row sanitation queue, and inflates
     // this input roughly 24 times.
-    soql(DS_311, {
+    reports: {
       "$select": "count(*)",
       "$where": `${circle} AND requested_datetime > '${since1}' AND service_name in(${services})`,
-    }).catch(() => []),
+    },
+  };
+}
+
+export async function countsFor(lat, lon) {
+  const q = scoreQueries(lat, lon);
+
+  // All in one parallel batch, so the score costs one round trip in wall
+  // clock rather than four.
+  const [sev, ped, r311] = await Promise.all([
+    soql(DS_CRASHES, q.severity).catch(() => []),
+    soql(DS_CRASHES, q.ped).catch(() => []),
+    soql(DS_311, q.reports).catch(() => []),
   ]);
 
   const bySeverity = Object.fromEntries(
@@ -135,8 +144,14 @@ export async function computeScore(c) {
   const counts = await countsFor(c.lat, c.lon);
   const { collisionPoints, maintenanceSignal, points } = pointsFor(counts);
   const index = percentileOf(points);
+  const q = scoreQueries(c.lat, c.lon);
 
   return {
+    urls: {
+      severity: soqlUrl(DS_CRASHES, q.severity),
+      ped: soqlUrl(DS_CRASHES, q.ped),
+      reports: soqlUrl(DS_311, q.reports),
+    },
     source: "live",
     version: SCORE_VERSION,
     index,
