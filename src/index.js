@@ -1298,7 +1298,7 @@ async function cornerOfTheDay(env, ctx, origin) {
     return conn;
   });
 
-  // The citywide watchlist, refreshed. Six semantic searches, and the only
+  // The citywide watchlist, refreshed. Seven semantic searches, and the only
   // lane here that is not about today's corner at all.
   const watchlist = await lane("press watchlist", async () => {
     const meta = await getCityMeta(env);

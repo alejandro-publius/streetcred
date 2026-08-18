@@ -309,7 +309,7 @@ export async function ingestVoices(env, cornerFor, max = 3) {
         continue;
       }
       try {
-        const rows = await datasetItems(env, s.datasetId || s.datasetId);
+        const rows = await datasetItems(env, s.datasetId);
         candidates.push(...(s.actor === "google_maps" ? fromGmaps(rows, tokens) : fromReddit(rows, tokens)));
       } catch (e) {
         problems.push({ slug, actor: s.actor, status: "READ_FAILED", error: String(e.message || e).slice(0, 90) });
