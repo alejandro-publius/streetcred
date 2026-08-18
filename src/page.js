@@ -418,6 +418,30 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .stack .lg b{font-size:14px;color:var(--ink);font-weight:600;white-space:nowrap;letter-spacing:-.01em}
 @media(max-width:860px){.stack .lg{width:auto}}
 .cname{display:inline;font-size:inherit;font-weight:inherit;margin:0;letter-spacing:inherit}
+/* The verdict block. The page's conclusion, stated first: the grade, the
+   percentile sentence that must never travel without it, one thesis sentence
+   from the same payloads every panel below re-derives, and the door to the
+   letter. Everything below it remains the receipt. */
+.verdict{display:flex;align-items:center;gap:18px;background:var(--panel);
+  border:1.5px solid var(--line3);border-top:3px solid var(--ink);border-radius:12px;
+  padding:18px 22px;margin:0 0 20px;box-shadow:0 1px 3px rgba(20,27,45,.06);flex-wrap:wrap}
+.vg{font-size:30px;font-weight:700;min-width:56px;height:56px;border-radius:14px;display:grid;
+  place-items:center;color:#fff;background:var(--dimline);flex:0 0 auto}
+.vg.gA{background:var(--green)} .vg.gB{background:#a3b088} .vg.gC{background:var(--blue)}
+.vg.gD{background:#e89a5f} .vg.gF{background:var(--accent)}
+.vmain{flex:1;min-width:240px}
+.vline{font-size:15.5px;font-weight:600;margin:0;line-height:1.45}
+.vthesis{font-size:13px;color:var(--dim);margin:4px 0 0;line-height:1.55}
+.vcred{display:flex;align-items:center;gap:6px;margin:8px 0 0;font-size:11px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.vcred i{width:9px;height:9px;border-radius:50%;background:var(--line2);display:inline-block}
+.vcred i.on{background:var(--green)}
+.vgo{font-size:13.5px;font-weight:600;color:#fff;background:var(--ink);border-radius:999px;
+  padding:12px 22px;text-decoration:none;white-space:nowrap;flex:0 0 auto}
+.vgo:hover{background:#000}
+.vgo:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.panel.lit{box-shadow:0 0 0 3px rgba(240,126,38,.35), 0 6px 16px rgba(20,27,45,.10)}
+@media (prefers-reduced-motion: reduce){.panel.lit{box-shadow:0 0 0 3px rgba(240,126,38,.35)}}
 /* Preview badge. Only the preview environment renders the element at all, so
    production carries neither the node nor the style burden of hiding it. */
 .pvw{position:fixed;right:14px;bottom:14px;z-index:80;font-size:10px;font-weight:700;
@@ -535,6 +559,16 @@ ${BASE_CSS}
 
 <p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
 
+<section class="verdict" id="verdict" hidden aria-label="The verdict for this corner">
+  <span class="vg" id="vg" aria-hidden="true"></span>
+  <div class="vmain">
+    <p class="vline" id="vline"></p>
+    <p class="vthesis" id="vthesis"></p>
+    <p class="vcred" id="vcred"></p>
+  </div>
+  <a class="vgo" id="vgo" href="#letterpanel">Get the letter</a>
+</section>
+
 <section class="replay" id="replay" hidden aria-label="Replay of this corner's pipeline run">
   <div class="rhead">
     <span class="rttl">Replay of the actual run from <b id="rdate">this corner</b></span>
@@ -629,7 +663,7 @@ ${BASE_CSS}
     </div>
   </div>
   <div>
-    <div class="panel lane-ask">
+    <div class="panel lane-ask" id="letterpanel">
       <div class="phs"><h2>The ask</h2><span class="draft">DRAFT ONLY</span></div>
       <div class="pbody">
         <div class="fixrow">
@@ -766,6 +800,16 @@ function setSplit(pct){
   h.style.left = split + "%";
   h.setAttribute("aria-valuenow", String(Math.round(split)));
 }
+el("vgo") && el("vgo").addEventListener("click", (e) => {
+  const t = el("letterpanel");
+  if(!t) return;
+  e.preventDefault();
+  t.scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"});
+  t.classList.add("lit");
+  setTimeout(() => t.classList.remove("lit"), 1600);
+  history.replaceState(null, "", "#letterpanel");
+});
+
 document.querySelectorAll(".toggle button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll(".toggle button").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
   state = b.dataset.state; split = 50; render();
@@ -934,6 +978,7 @@ function upgradeMap(){
 }
 
 fetch("/api/stats" + X).then(r => r.json()).then(d => {
+  V.stats = d; paintVerdict();
   // A null district means no clear majority, which prints as "n/a" rather than
   // as the 0 that Number(null) would quietly produce.
   const vals = [d.crashes, d.reports311, d.district];
@@ -965,6 +1010,7 @@ fetch("/api/stats" + X).then(r => r.json()).then(d => {
 // Detail sits in the title attribute, which is hover on a pointer and long
 // press on touch, and keeps the strip to one line.
 fetch("/api/cred" + X).then(r => r.json()).then(d => {
+  V.cred = d; paintVerdict();
   if(!d || !d.lanes) return;
   el("cred").hidden = false;
   el("cred").innerHTML = d.lanes.map(l =>
@@ -996,8 +1042,35 @@ fetch("/api/hazards" + X).then(r => r.json()).then(d => {
 
 // The Danger Index. Every number here came out of DataSF arithmetic, so the
 // caveat travels with it on the page rather than being buried in the README.
+// The verdict block assembles from the same three payloads the panels below
+// render, so it can never disagree with its own receipts. Each fetch feeds it
+// as it lands; the block shows once the grade is in.
+const V = { score: null, stats: null, cred: null };
+function paintVerdict(){
+  if(!V.score) return;
+  const v = el("verdict");
+  const g = el("vg");
+  g.textContent = V.score.grade;
+  g.className = "vg g" + V.score.grade;
+  el("vline").textContent = V.score.grade + " \u00b7 worse than " + V.score.index + "% of San Francisco intersections";
+  if(V.stats){
+    const f = V.stats.fatal ? ", " + V.stats.fatal + " fatal" : "";
+    // The corroboration clause only when the Cred Check actually corroborates:
+    // a score-tier corner with no audit yet gets the numbers and no chorus.
+    const agree = V.cred && V.cred.score >= 3 ? ", and the evidence agrees" : "";
+    el("vthesis").textContent = V.stats.crashes + " injury collisions in 5 years" + f + agree + ".";
+  }
+  if(V.cred && V.cred.lanes){
+    el("vcred").innerHTML = V.cred.lanes.map(l =>
+      '<i class="' + (l.hit ? "on" : "") + '" title="' + esc(l.label) + '"></i>').join("") +
+      '<span>' + esc(V.cred.verdict) + '</span>';
+  }
+  v.hidden = false;
+}
+
 fetch("/api/score" + X).then(r => r.json()).then(d => {
   if(!d || typeof d.index !== "number") return;
+  V.score = d; paintVerdict();
   el("scorewrap").hidden = false;
   el("scoren").innerHTML = d.index + '<small>/100</small>';
   const g = el("scoreg");
