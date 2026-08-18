@@ -29,6 +29,13 @@ function corner(url) {
   return CORNERS[slug] || CORNERS[DEFAULT_SLUG];
 }
 
+// Static assets must be read through the ASSETS binding. A Worker fetching its
+// own origin is a self-subrequest, which Cloudflare rejects with error 1042 in
+// production even though it works under `wrangler dev`.
+function asset(env, origin, path) {
+  return env.ASSETS.fetch(new Request(new URL(path, origin)));
+}
+
 async function soql(dataset, params) {
   const u = new URL(`https://data.sfgov.org/resource/${dataset}.json`);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
@@ -100,7 +107,7 @@ async function getNews(c, env) {
 // reads the baked file, never a live actor run: runs take minutes and a demo
 // cannot wait on one.
 async function getVoices(c, env, origin) {
-  const r = await fetch(new URL(`/data/voices-${c.slug}.json`, origin));
+  const r = await asset(env, origin, `/data/voices-${c.slug}.json`);
   if (!r.ok) throw new Error(`voices asset ${r.status}`);
   const d = await r.json();
   if (!d.items?.length) throw new Error("voices empty");
@@ -110,9 +117,9 @@ async function getVoices(c, env, origin) {
 // ---------------------------------------------------------------- imagery
 // Three states, all generated at build time by tools/generate_imagery.py and
 // served as static assets. Nothing is generated during a demo.
-async function getImagery(c, origin) {
+async function getImagery(c, env, origin) {
   const base = `/img/${c.slug}`;
-  const head = await fetch(new URL(`${base}-fix.jpg`, origin), { method: "HEAD" });
+  const head = await asset(env, origin, `${base}-fix.jpg`);
   return {
     source: head.ok ? "cache" : "sample",
     today: `${base}-today.jpg`,
@@ -128,7 +135,11 @@ async function getLetter(c, env, ctx) {
     .slice(0, 2)
     .map((n) => `"${n.title}" (${n.domain}${n.date ? ", " + n.date : ""})`)
     .join("; ");
-  const quote = (ctx.voices.items || [])[0]?.text || "";
+  // Only feed the letter a resident quote that is actually about the street. The
+  // scrape at this corner returns plenty of transit-station commentary, and a
+  // letter quoting a review of the escalators would weaken the ask.
+  const ONTOPIC = /crosswalk|crossing|pedestrian|sidewalk|driver|traffic|curb|intersection|corner/i;
+  const quote = (ctx.voices.items || []).map((v) => v.text).find((t) => t && ONTOPIC.test(t));
   const prompt = `Write a respectful one-page letter from a resident to San Francisco Supervisor ${supervisor} about the intersection of ${c.name} in District ${ctx.stats.district}.
 
 Use these facts and cite them plainly:
@@ -136,7 +147,7 @@ Use these facts and cite them plainly:
 - ${ctx.stats.reports311} street-related 311 reports at this location in the last three years.
 - Recent press coverage: ${headlines || "local reporting on Mission Street pedestrian safety"}.
 - An automated visual audit of the intersection identified sub-standard, faded crosswalk markings and vehicle turning conflict zones where drivers cross the pedestrian path.
-- A resident said: ${quote}
+${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident testimony."}
 - The request: fund ${c.fix.name}, estimated ${c.fix.cost}, through the ${c.fix.grant}.
 
 Rules: plain civic English. Under 220 words. Address only Supervisor ${supervisor}. Include the sentence about the automated visual audit, it is the central finding. No em dashes anywhere. No placeholders in brackets. Sign off as "A resident of District ${ctx.stats.district}". Return only the letter text.`;
@@ -230,11 +241,11 @@ async function health(env, origin) {
       if (d.status !== "OK") throw new Error(d.status);
     }),
     ping("imagery", async () => {
-      const r = await fetch(new URL(`/img/${c.slug}-fix.jpg`, origin), { method: "HEAD" });
+      const r = await asset(env, origin, `/img/${c.slug}-fix.jpg`);
       if (!r.ok) throw new Error(`missing ${r.status}`);
     }),
     ping("voices", async () => {
-      const r = await fetch(new URL(`/data/voices-${c.slug}.json`, origin));
+      const r = await asset(env, origin, `/data/voices-${c.slug}.json`);
       if (!r.ok) throw new Error(`missing ${r.status}`);
     }),
   ]);
@@ -280,7 +291,7 @@ export default {
       }
 
       if (p === "/api/imagery") {
-        return json(await getImagery(c, origin));
+        return json(await getImagery(c, env, origin));
       }
 
       if (p === "/api/letter") {
