@@ -15,6 +15,8 @@ import {
   countAgentReject, getAgentRejects,
   getVerifiedLetter, putVerifiedLetter, appendTrustIncident, getTrustIncidents,
   getScoreRaw, appendChange, getChanges,
+  getWatchlist, putWatchlist, getConnections, putConnections,
+  getVoicesStored, exaBudget, actorRunBudget, getActorCosts,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import {
@@ -34,6 +36,9 @@ import { handleAgentReport, journalStats, JOURNAL_CAP } from "./agent.js";
 import { WATCHDOG } from "./watchdog.js";
 import { projectImpact } from "./impact.js";
 import { METHODOLOGY } from "./methodology.js";
+import { WATCHLIST_PAGE } from "./watchlistpage.js";
+import { buildWatchlist, buildConnections, reciprocal, WATCHLIST_VERSION, CONNECTIONS_VERSION } from "./press.js";
+import { commissionVoices, ingestVoices } from "./voices.js";
 import { CHANGES } from "./changes.js";
 import { STATUS } from "./status.js";
 
@@ -524,7 +529,18 @@ async function getNews(c, env) {
 // variables, which is the wrong way for a data path to change. Removed rather
 // than left dormant; the audit trail is in git.
 async function getVoices(c, env, origin) {
-  return bakedVoices(c, env, origin);
+  // Voices the cron commissioned and ingested live in KV. The baked assets
+  // predate that path and stay authoritative for the two corners that were
+  // scraped by hand before the demo.
+  const stored = await getVoicesStored(env, c.slug).catch(() => null);
+  if (stored?.items?.length) return { ...stored, source: "cache" };
+  const baked = await bakedVoices(c, env, origin);
+  if (baked.items?.length) return baked;
+  // A commissioned run that came back with nothing is a real result and says
+  // so, rather than falling back to the generic empty state that means nobody
+  // has ever looked.
+  if (stored) return { ...stored, source: "empty" };
+  return baked;
 }
 
 
@@ -1125,6 +1141,15 @@ async function cornerOfTheDay(env, ctx, origin) {
     return { ok: true, skipped: "already ran today", date: today, entry: already };
   }
 
+  // Yesterday's commissioned scrapes, picked up before anything else runs. An
+  // actor takes minutes and this handler must never wait on one, so the run
+  // that starts a scrape is never the run that reads it.
+  const ingest = await ingestVoices(env, (slug) => cornerBySlug(env, slug)).catch((e) => ({
+    checked: 0,
+    ingested: [],
+    failed: String(e.message || e).slice(0, 90),
+  }));
+
   let queue = await getQueue(env);
   if (!queue) {
     queue = [...COTD_SEED];
@@ -1247,6 +1272,43 @@ async function cornerOfTheDay(env, ctx, origin) {
   // Generation runs in the background, so the status captured at the start of
   // the run is almost always "pending". By now the slower lanes have taken long
   // enough that it has usually settled: report where it actually landed.
+  // Commission tomorrow's resident voices for this corner. Two actor runs,
+  // started and not awaited, against a hard monthly ceiling. The next cycle
+  // reads them.
+  const commissioned = await lane("voices commission", () => commissionVoices(env, corner));
+
+  // The press, connected. findSimilar on this corner's best story, every
+  // crossing named in the related coverage put through the same verification
+  // the watchlist uses, and the surviving link written to BOTH corners so the
+  // claim reads the same from either page.
+  const connected = await lane("press connections", async () => {
+    const seed = (news.items || []).find((x) => !x.official) || null;
+    if (!seed) return { source: "empty", reason: "no press seed at this corner" };
+    const conn = await buildConnections(env, corner, seed);
+    if (conn.source !== "live") return conn;
+    await putConnections(env, corner.slug, conn);
+    const self = { slug: corner.slug, name: corner.short || corner.name, grade: score?.grade ?? null, index: score?.index ?? null };
+    for (const link of conn.links) {
+      const existing = await getConnections(env, link.slug).catch(() => null);
+      // Never overwrite a corner's own findSimilar record with a reciprocal
+      // one: the corner that ran the search owns its page's version.
+      if (existing && !existing.reciprocal) continue;
+      await putConnections(env, link.slug, reciprocal(self, link));
+    }
+    return conn;
+  });
+
+  // The citywide watchlist, refreshed. Six semantic searches, and the only
+  // lane here that is not about today's corner at all.
+  const watchlist = await lane("press watchlist", async () => {
+    const meta = await getCityMeta(env);
+    const skip = new Set([...(meta?.audited || []), corner.slug]);
+    const w = await buildWatchlist(env, { skip });
+    if (w.source === "unavailable") return w;
+    await putWatchlist(env, w);
+    return w;
+  });
+
   const settled = await getImageryStatus(env, corner.slug).catch(() => null);
 
   // Move this corner between the city's tier rosters. The homepage counter
@@ -1286,6 +1348,20 @@ async function cornerOfTheDay(env, ctx, origin) {
     grade: score?.grade ?? null,
     index: score?.index ?? null,
     imagery: settled?.status ?? imagery?.status ?? "unavailable",
+    // What this run commissioned and what the last one produced, so the record
+    // of an unattended morning includes the money it spent on the reader's
+    // behalf and the work it queued for tomorrow.
+    voices: {
+      commissioned: commissioned?.ok ? commissioned.runs.length : 0,
+      ...(commissioned?.failed?.length ? { failed: commissioned.failed.map((f) => `${f.actor}: ${f.reason}`) } : {}),
+      ingested: (ingest?.ingested || []).map((i) => ({ slug: i.slug, kept: i.kept, usd: Math.round((i.costUsd || 0) * 10000) / 10000 })),
+      pending: (ingest?.stillPending || []).length,
+    },
+    press: {
+      connections: connected?.links?.length ?? 0,
+      watchlist: watchlist?.entries?.length ?? 0,
+      watchlistRejected: watchlist?.rejected ?? 0,
+    },
     status: notes.length ? "partial" : "ok",
     ...(notes.length ? { reason: notes.join("; ") } : {}),
     ...(skipped.length ? { skipped } : {}),
@@ -1471,6 +1547,28 @@ export default {
         });
       }
 
+      // The Press Watchlist. Read only: the pass that builds it runs on the
+      // cron, because six semantic searches is not something a page load
+      // should start.
+      if (p === "/watchlist" || p === "/watchlist/" || p === "/api/watchlist") {
+        const w = await getWatchlist(env, WATCHLIST_VERSION).catch(() => null);
+        if (p === "/api/watchlist") {
+          return json(w || { source: "empty", reason: "the watchlist has not been built yet" });
+        }
+        return new Response(WATCHLIST_PAGE(w, origin), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+
+      // What the press connects this corner to. One KV read, no external call,
+      // so it costs a scored corner nothing to answer.
+      if (p === "/api/connections") {
+        const slug = canonicalSlug(url.searchParams.get("x") || "");
+        if (!slug) return json({ source: "empty", links: [] });
+        const rec = await getConnections(env, slug).catch(() => null);
+        return json(rec || { source: "empty", slug, links: [] });
+      }
+
       if (p === "/methodology" || p === "/methodology/") {
         return new Response(METHODOLOGY(origin), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
@@ -1487,14 +1585,20 @@ export default {
       }
 
       if (p === "/status" || p === "/status/") {
-        const [synthRaw, incidents, changes] = await Promise.all([
+        const [synthRaw, incidents, changes, exa, apify, costs] = await Promise.all([
           env.STORE?.get("synth:log").catch(() => null),
           getTrustIncidents(env).catch(() => []),
           getChanges(env).catch(() => []),
+          exaBudget(env).catch(() => null),
+          actorRunBudget(env).catch(() => null),
+          getActorCosts(env).catch(() => []),
         ]);
         let synth = [];
         try { synth = synthRaw ? JSON.parse(synthRaw) : []; } catch { synth = []; }
-        return new Response(STATUS(synth, incidents, changes, origin), {
+        const spend = exa && apify
+          ? { exa, apify, costs, apifyUsd: costs.reduce((n, c) => n + (Number(c.costUsd) || 0), 0) }
+          : null;
+        return new Response(STATUS(synth, incidents, changes, origin, spend), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1543,7 +1647,7 @@ export default {
         if (legacy) {
           return Response.redirect(`${origin}/c/${canonicalSlug(legacy)}`, 301);
         }
-        const [corners, cotdLog, suggestion, meta, rank0, queue] = await Promise.all([
+        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist] = await Promise.all([
           getHinList(env),
           getCotdLog(env).catch(() => []),
           // Read only. The homepage must never wait on a findSimilar call, so
@@ -1554,6 +1658,7 @@ export default {
           // in the HTML rather than arriving after a round trip.
           getRankPage(env, 0).catch(() => null),
           getQueue(env).catch(() => null),
+          getWatchlist(env, WATCHLIST_VERSION).catch(() => null),
         ]);
         const city = meta
           ? {
@@ -1562,7 +1667,7 @@ export default {
               queueLength: Array.isArray(queue) ? queue.length : 0,
             }
           : null;
-        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city), {
+        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }

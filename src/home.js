@@ -100,7 +100,7 @@ function severityLine(c) {
   return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
 
-export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null) => {
+export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null) => {
   // A corner without finite geometry poisons every pin: fitView produces a NaN
   // center and every overlay lands at left:NaN%. One bad row on the board must
   // cost that row its pin, not the whole map its anchors. It happened: a board
@@ -346,7 +346,9 @@ ${
 }
 
 ${
-  suggestion && suggestion.slug
+  watchlist?.entries?.length
+    ? `<p class="lead"><b>On the press watchlist</b> ${esc(watchlist.entries[0].name)}, graded ${esc(watchlist.entries[0].grade)}. Named in ${esc(watchlist.entries[0].article.domain)} coverage and confirmed against the city index${watchlist.entries.length > 1 ? `, with ${watchlist.entries.length - 1} more` : ""}. These are leads, not audits: nothing has been run on them. <a class="leadgo" href="/watchlist">See the watchlist</a></p>`
+    : suggestion && suggestion.slug
     ? `<p class="lead"><b>Worth auditing next</b> ${esc(suggestion.name)}. Exa found it in coverage related to <a href="${esc(suggestion.seed.url)}" target="_blank" rel="noopener">${esc(suggestion.seed.domain)}</a>, and the city's intersection table confirms the crossing exists. This is a suggestion, not an audit: nothing has been run on it. <a class="leadgo" href="/c/${esc(suggestion.slug)}">Audit it</a></p>`
     : ""
 }
@@ -397,7 +399,7 @@ ${
 </main>
 ${preview ? '<div class="pvw">Preview</div>' : ''}
 <footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
-Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
+Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/watchlist">Press watchlist</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
 </div>
 
 <script>

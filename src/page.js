@@ -317,6 +317,15 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
    six places rather than six things. */
 .lanenote{margin:10px 0 0;font-size:12px;color:var(--dim);line-height:1.55;
   padding-left:10px;border-left:2px solid var(--line3)}
+/* What the press connects this corner to. Not a finding about the corner: a
+   finding about the coverage, so it sits under the coverage. */
+.pconn{margin:14px 0 0;padding:12px 14px;background:var(--card);border:1px solid var(--line);
+  border-radius:10px;font-size:12.5px;line-height:1.55}
+.pconn b{font-weight:600}
+.pconn a{color:var(--accent);text-decoration:none;font-weight:600}
+.pconn a:hover{text-decoration:underline}
+.pconn .pcw{display:block;color:var(--dim);margin-top:4px}
+.pcauto{margin:8px 0 0;font-size:11.5px;color:var(--dim);line-height:1.5}
 .gated{margin:10px 0 0;font-size:12.5px;color:var(--dim);line-height:1.55}
 .gated b{color:var(--ink);font-weight:600}
 button.offer[disabled]{opacity:.55;cursor:not-allowed}
@@ -772,6 +781,7 @@ ${BASE_CSS}
           <p class="tlpop" id="tlpop"></p>
         </div>
         <div class="news" id="news"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+        <div class="pconn" id="pconn" hidden></div>
       </div>
     </div>
     <div class="panel lane-voices">
@@ -825,7 +835,7 @@ ${BASE_CSS}
 </main>
 ${og.preview ? '<div class="pvw">Preview</div>' : ''}
 <footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
-Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
+Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/watchlist">Press watchlist</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
 </div>
 
 <script>
@@ -1616,9 +1626,36 @@ fetch("/api/run" + X).then(r => r.json()).then(m => {
   n.hidden = false;
 }).catch(() => {});
 
+// What the press connects this corner to. One KV read behind the endpoint, so
+// it costs a scored corner nothing, and it renders on both ends of a
+// connection: the corner that ran the search and the corner it found.
+LANE_LOADERS.connections = () => fetch("/api/connections" + X).then(r => r.json()).then(d => {
+  const box = el("pconn");
+  if(!box) return;
+  const links = (d && d.links) || [];
+  if(!links.length){ box.hidden = true; box.innerHTML = ""; return; }
+  box.innerHTML = links.map(function(l){
+    return '<div><b>The press links this corner to <a href="/c/' + esc(l.slug) + '">' + esc(l.name) + '</a></b>' +
+      (l.grade ? ' <span class="tag">' + esc(l.grade) + (typeof l.index === "number" ? " \u00b7 " + l.index : "") + '</span>' : '') +
+      '<span class="pcw">' + esc(l.article.title) + '<br>' +
+      '<a href="' + esc(l.article.url) + '" target="_blank" rel="noopener">' + esc(l.article.domain) + '</a>' +
+      (l.article.date ? " \u00b7 " + esc(l.article.date) : "") + '</span></div>';
+  }).join("") +
+    '<p class="pcauto">Found by asking Exa what else is written in the same breath as this corner\u2019s own coverage, then checking every crossing named in the result against the city index. Nothing fuzzy is shown.</p>';
+  box.hidden = false;
+}).catch(() => {});
+
 LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d => {
   const items = d.items || [];
   const tag = el("voicestag");
+  if (d.commissioned && !items.length) {
+    tag.textContent = "none on topic"; tag.classList.add("pending");
+    el("voices").innerHTML =
+      '<p class="empty">The scrapers ran here and found no account that describes the street itself.</p>' +
+      '<p class="pcauto">Commissioned autonomously on ' + esc(String(d.commissionedAt || "").slice(0,10)) +
+      ', ' + esc(d.candidates || 0) + ' accounts read. An empty lane that actually ran is worth more than a full one that guessed.</p>';
+    return;
+  }
   if (d.note && !items.length) {
     tag.textContent = "not yet checked"; tag.classList.add("pending");
     el("voices").innerHTML = '<p class="empty">Resident accounts have not been scraped at this corner yet.</p>' +
@@ -1650,7 +1687,14 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
   el("voices").innerHTML = items.map(v =>
     '<div class="voice"><p>&ldquo;' + esc(v.text) + '&rdquo;</p><div class="m">' +
     esc(String(v.source).replace("_"," ")) + (v.stars ? " &middot; " + v.stars + "&#9733;" : "") +
-    (v.when ? " &middot; " + esc(v.when) : "") + '</div></div>').join("");
+    (v.when ? " &middot; " + esc(v.when) : "") + '</div></div>').join("") +
+    // Said out loud, because it is the unusual part: nobody asked for this
+    // scrape and nobody was present when it ran.
+    (d.commissioned
+      ? '<p class="pcauto">Resident voices commissioned autonomously: the morning run started both scrapers for this corner on ' +
+        esc(String(d.commissionedAt || "").slice(0,10)) + ' and the next run ingested ' +
+        esc(d.candidates || 0) + ' accounts, of which these survived the relevance filter.</p>'
+      : '');
 });
 
 LANE_LOADERS.impact = () => fetch("/api/impact" + X).then(r => r.json()).then(d => {

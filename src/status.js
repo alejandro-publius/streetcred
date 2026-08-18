@@ -21,7 +21,7 @@ const when = (ts) => {
   }
 };
 
-export const STATUS = (synth = [], incidents = [], changes = [], origin = "") => {
+export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null) => {
   const runs = Array.isArray(synth) ? synth : [];
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
   const week = runs.filter((r) => new Date(r.ts).getTime() > weekAgo);
@@ -112,6 +112,28 @@ ${(latest.results || [])
       : `No incidents on record. Every served letter has passed verification against its corner's own
       records; a draft that fails twice is never shown, and would be counted here.`
   }</p>
+
+<h2>What the autonomous run spends</h2>
+<p class="note">The morning run commissions two Apify actor runs per corner and seven Exa searches for
+the citywide watchlist, unattended, against real credit. Both ledgers are written from the numbers the
+providers themselves report, because an autonomous system spending money without a ledger is the thing
+nobody should ship.</p>
+${
+  spend
+    ? `<div class="srow"><span class="ep">Exa searches, batch lanes</span>
+  <span class="ms">${spend.exa.calls} of ${spend.exa.cap} &middot; $${spend.exa.spendUsd.toFixed(3)}</span></div>
+<div class="srow"><span class="ep">Apify actor runs, ${esc(spend.apify.month)}</span>
+  <span class="ms">${spend.apify.used} of ${spend.apify.cap} &middot; $${spend.apifyUsd.toFixed(3)}</span></div>
+${(spend.costs || [])
+  .slice(0, 6)
+  .map(
+    (c) => `<div class="srow"><span class="ep"><a href="/c/${esc(c.slug)}">${esc(c.name || c.slug)}</a>
+  ${c.kept} voice${c.kept === 1 ? "" : "s"} kept from ${c.candidates}</span>
+  <span class="ms">${esc(String(c.at || "").slice(0, 10))} &middot; $${Number(c.costUsd || 0).toFixed(4)}</span></div>`,
+  )
+  .join("")}`
+    : `<p class="note">Ledger unavailable.</p>`
+}
 
 <h2>Recent grade changes</h2>
 ${
