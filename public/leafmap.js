@@ -78,6 +78,47 @@
     );
   }
 
+  // Zoom at which a census dot stops being decoration and becomes a target.
+  // Below this the dots are a texture across the whole city and tapping one
+  // would be tapping a neighbourhood; at 15 and above a dot is a crossing you
+  // can see the shape of.
+  var TAP_ZOOM = 15;
+
+  // Name the nearest real crossing to a point, then let the reader decide.
+  // The first tap is a read: one keyless lookup against the city's own
+  // intersection table. Only the second, explicit tap resolves the corner,
+  // through the same guards as typing its name. Map browsing never spends.
+  function nearestPopup(map, at) {
+    return fetch("/api/nearest?lat=" + at.lat.toFixed(6) + "&lon=" + at.lng.toFixed(6))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var html;
+        if (d.ok) {
+          html =
+            "<div class='lpop'><b>" + esc(d.name) + "</b>" +
+            "<br><span class='lpop-s'>" + d.distanceM + "m from your tap.</span>" +
+            "<br><a href='#' data-q='" + esc(d.query) + "' class='lpop-go'>View this corner</a></div>";
+        } else {
+          html = "<div class='lpop'><span class='lpop-s'>No crossing within 120m of that tap.</span></div>";
+        }
+        var pop = window.L.popup().setLatLng(at).setContent(html).openOn(map);
+        var go = pop.getElement() && pop.getElement().querySelector(".lpop-go");
+        if (!go) return;
+        go.addEventListener("click", function (ev) {
+          ev.preventDefault();
+          go.textContent = "Resolving";
+          fetch("/api/resolve?q=" + encodeURIComponent(go.getAttribute("data-q")))
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+              if (res.ok && res.slug) location.href = "/c/" + res.slug;
+              else go.textContent = res.error || "Could not resolve this corner";
+            })
+            .catch(function () { go.textContent = "Could not resolve this corner"; });
+        });
+      })
+      .catch(function () {});
+  }
+
   // opts: {center:[lat,lon], zoom, audited:[], scored:[], heatUrl, focus:{lat,lon,name},
   //        onReady(map), interactiveCaption(el->update attribution text)}
   function mount(container, opts) {
@@ -119,11 +160,22 @@
           .bindPopup(popupHtml(Object.assign({ audited: false }, c)));
       });
 
-      // heat: every nonzero crossing, canvas renderer, only past zoom 13.
-      // Not clickable on purpose: a dot is context, not a destination.
+      // heat: every graded crossing in the census, canvas renderer, only past
+      // zoom 13. Citywide it is texture and stays untouchable, because a tap
+      // on it at that scale is a tap on a neighbourhood. From zoom 15 each dot
+      // is a crossing and becomes a target, through the same two-tap confirm
+      // flow as tapping the map itself: naming a corner is free, resolving it
+      // is the reader's second, explicit tap.
       if (opts.heatUrl) {
         var heatLayer = null;
+        var heatDots = [];
         var heatLoaded = false;
+        var setTappable = function () {
+          var on = map.getZoom() >= TAP_ZOOM;
+          // options.interactive is read at click time by the canvas renderer,
+          // so flipping it costs a loop and no redraw.
+          for (var i = 0; i < heatDots.length; i++) heatDots[i].options.interactive = on;
+        };
         var maybeHeat = function () {
           var want = map.getZoom() >= 13;
           if (want && !heatLoaded) {
@@ -132,24 +184,30 @@
               .then(function (r) { return r.json(); })
               .then(function (dots) {
                 var canvas = L.canvas({ padding: 0.3 });
-                var group = [];
-                dots.forEach(function (d) {
-                  group.push(
-                    L.circleMarker([d[0], d[1]], {
-                      renderer: canvas,
-                      radius: 2,
-                      stroke: false,
-                      fillColor: GRADE[GRADE_BY_INDEX[d[2]]] || "#8a867c",
-                      fillOpacity: 0.35,
-                      interactive: false,
-                    }),
-                  );
+                heatDots = dots.map(function (d) {
+                  return L.circleMarker([d[0], d[1]], {
+                    renderer: canvas,
+                    radius: 3,
+                    stroke: false,
+                    fillColor: GRADE[GRADE_BY_INDEX[d[2]]] || "#8a867c",
+                    fillOpacity: 0.35,
+                    interactive: false,
+                  });
                 });
-                heatLayer = L.layerGroup(group);
+                // A feature group, not a layer group: child events propagate to
+                // the parent, so one handler covers every dot in the city
+                // rather than seven thousand closures.
+                heatLayer = L.featureGroup(heatDots);
+                heatLayer.on("click", function (e) {
+                  if (map.getZoom() < TAP_ZOOM) return;
+                  nearestPopup(map, e.latlng);
+                });
+                setTappable();
                 if (map.getZoom() >= 13) heatLayer.addTo(map);
               })
               .catch(function () { heatLoaded = false; });
           } else if (heatLayer) {
+            setTappable();
             if (want && !map.hasLayer(heatLayer)) heatLayer.addTo(map);
             if (!want && map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
           }
@@ -176,36 +234,7 @@
       // same guards as typing its name. Map browsing must never bill anyone.
       if (opts.tapAnywhere) {
         map.on("click", function (e) {
-          var at = e.latlng;
-          fetch("/api/nearest?lat=" + at.lat.toFixed(6) + "&lon=" + at.lng.toFixed(6))
-            .then(function (r) { return r.json(); })
-            .then(function (d) {
-              var html;
-              if (d.ok) {
-                html =
-                  "<div class='lpop'><b>" + esc(d.name) + "</b>" +
-                  "<br><span class='lpop-s'>" + d.distanceM + "m from your tap.</span>" +
-                  "<br><a href='#' data-q='" + esc(d.query) + "' class='lpop-go'>View this corner</a></div>";
-              } else {
-                html = "<div class='lpop'><span class='lpop-s'>No crossing within 120m of that tap.</span></div>";
-              }
-              var pop = window.L.popup().setLatLng(at).setContent(html).openOn(map);
-              var go = pop.getElement() && pop.getElement().querySelector(".lpop-go");
-              if (go) {
-                go.addEventListener("click", function (ev) {
-                  ev.preventDefault();
-                  go.textContent = "Resolving";
-                  fetch("/api/resolve?q=" + encodeURIComponent(go.getAttribute("data-q")))
-                    .then(function (r) { return r.json(); })
-                    .then(function (res) {
-                      if (res.ok && res.slug) location.href = "/c/" + res.slug;
-                      else go.textContent = res.error || "Could not resolve this corner";
-                    })
-                    .catch(function () { go.textContent = "Could not resolve this corner"; });
-                });
-              }
-            })
-            .catch(function () {});
+          nearestPopup(map, e.latlng);
         });
       }
 

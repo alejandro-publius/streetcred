@@ -1170,7 +1170,7 @@ function upgradeMap(){
         const scored = (tier.corners||[]).filter(c => !auditedSlugs.has(c.slug) && c.slug !== CORNER_SLUG);
         StreetMap.upgrade(wrap, {
           center: [CORNER_GEO.lat, CORNER_GEO.lon], zoom: 16,
-          audited, scored, heatUrl: "/data/heat.json",
+          audited, scored, heatUrl: "/data/city/dots.json",
           tapAnywhere: true,
           focus: CORNER_GEO,
           onReady: () => {

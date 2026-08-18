@@ -137,6 +137,9 @@ for (let i = 0; i < ranked.length; i += RANK_PAGE_SIZE) {
       district: r.district,
       lat: r.lat,
       lon: r.lon,
+      // The severity line under each board row is built from these, so the
+      // citywide leaderboard reads the same way the audited one always has.
+      counts: r.counts,
     })),
   );
 }

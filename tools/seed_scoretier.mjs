@@ -86,15 +86,10 @@ writeFileSync(
 );
 log("wrote public/data/scoretier.json");
 
-// Every nonzero sweep corner as [lat, lon, gradeIndex] for the heat layer.
-// gradeIndex maps A..F to 0..4; the client owns the palette.
-const gi = { A: 0, B: 1, C: 2, D: 3, F: 4 };
-const heat = sweep.corners.map((c) => {
-  const { points } = pointsFor(c.counts);
-  return [c.lat, c.lon, gi[gradeFor(percentileOf(points))]];
-});
-writeFileSync(join(ROOT, "public", "data", "heat.json"), JSON.stringify(heat));
-log(`wrote public/data/heat.json (${heat.length} dots)`);
+// The heat dots used to be written here as well. They are now written by
+// tools/build_city_shards.mjs to public/data/city/dots.json, from the same
+// sweep and the same grade function, because two tools writing the same file
+// is one tool too many.
 
 if (DRY) {
   log("dry run, no KV writes");

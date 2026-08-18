@@ -20,7 +20,7 @@ import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import {
   cityCornerFor, getCityMeta, getRankPage, cityStats, cityScore, cityCred,
   cityNews, cityVoices, cityTimeline, cityRun, cityHazards, cityLetter,
-  TIERS, TIER_LABEL, tierOf, RANK_PAGE_SIZE,
+  TIERS, TIER_LABEL, tierOf, RANK_PAGE_SIZE, tagTiers,
 } from "./city.js";
 import { imageryFor } from "./imagery.js";
 import { corroborate, HAZARD_VERSION } from "./hazards.js";
@@ -1333,6 +1333,33 @@ export default {
         });
       }
 
+      // The leaderboard at city scale. The order was computed once when the
+      // city was built, so a page of it is one KV read: sorting 7,000 rows
+      // inside the Worker would mean reading every shard on every page.
+      if (p === "/api/city") {
+        const meta = await getCityMeta(env);
+        if (!meta) return json({ source: "empty", reason: "the city has not been built yet" });
+        const size = 50;
+        const pages = Math.max(1, Math.ceil(meta.totalScored / size));
+        const page = Math.min(Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1), pages);
+        const offset = (page - 1) * size;
+        // 50 divides the 100-row KV page exactly, so a leaderboard page never
+        // spans two reads. If RANK_PAGE_SIZE ever stops being a multiple of
+        // this, the second half of the city would silently go missing.
+        const kvPage = Math.floor(offset / RANK_PAGE_SIZE);
+        const stored = await getRankPage(env, kvPage);
+        const rows = (stored?.rows || []).slice(offset % RANK_PAGE_SIZE, (offset % RANK_PAGE_SIZE) + size);
+        return json({
+          source: "live",
+          page,
+          pages,
+          size,
+          total: meta.totalScored,
+          sweepDate: meta.sweepDate,
+          rows: tagTiers(rows, meta),
+        });
+      }
+
       // The nearest real crossing to a tapped point. One keyless SoQL query
       // against the city's own intersection table, 120m ceiling. This is the
       // read half of tap-anywhere; it never resolves, never warms, never
@@ -1468,14 +1495,26 @@ export default {
         if (legacy) {
           return Response.redirect(`${origin}/c/${canonicalSlug(legacy)}`, 301);
         }
-        const [corners, cotdLog, suggestion] = await Promise.all([
+        const [corners, cotdLog, suggestion, meta, rank0, queue] = await Promise.all([
           getHinList(env),
           getCotdLog(env).catch(() => []),
           // Read only. The homepage must never wait on a findSimilar call, so
           // a suggestion that has not been built yet simply does not render.
           getSuggestion(env, SUGGEST_VERSION).catch(() => null),
+          getCityMeta(env).catch(() => null),
+          // The first page of the citywide order, so the board's top rows are
+          // in the HTML rather than arriving after a round trip.
+          getRankPage(env, 0).catch(() => null),
+          getQueue(env).catch(() => null),
         ]);
-        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW)), {
+        const city = meta
+          ? {
+              meta,
+              top: tagTiers((rank0?.rows || []).slice(0, 25), meta),
+              queueLength: Array.isArray(queue) ? queue.length : 0,
+            }
+          : null;
+        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }

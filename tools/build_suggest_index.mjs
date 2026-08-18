@@ -10,10 +10,14 @@
 // its street names: "16 mis" finds 16th and Mission through the "16" shard,
 // "mis 16" finds it through the "mi" shard.
 //
-// Entries are compact arrays [name, slug, grade, tier], tier 2 = audited
-// (grade chip in the dropdown), 1 = score tier (grade dot), 0 = everything
-// else (no grade shown, because none has been computed and the dropdown must
-// not invent one).
+// Entries are compact arrays [name, slug, grade, tier]:
+//   3 audited   grade chip, every lane checked
+//   2 enriched  grade chip, records and index, no visual audit
+//   1 scored    grade dot, graded against the citywide census
+//   0 no grade  a real crossing the sweep found no reported harm at, so no
+//               grade is shown, because the dropdown must not invent one
+// Every corner in the city shards now carries its grade here, which is what
+// makes the whole city suggestible rather than the warmed 123.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -21,6 +25,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { parseQuery } from "../src/resolve.js";
 import { canonicalSlug } from "../src/data.js";
+import { pointsFor, percentileOf, gradeFor } from "../src/score.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const log = (m) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
@@ -37,9 +42,26 @@ for (const r of legs) {
 const title = (s) => s.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase());
 
 const board = await (await fetch("https://streetcred.thealexschroeder.workers.dev/api/board")).json();
-const tierList = JSON.parse(readFileSync(join(ROOT, "public", "data", "scoretier.json"), "utf8"));
 const auditedBySlug = new Map(board.corners.map((c) => [c.slug, c]));
-const scoredBySlug = new Map(tierList.corners.map((c) => [c.slug, c]));
+
+// Grades for the whole graded city, from the sweep through the same three
+// functions the Worker and the shard builder call. Not a second grade
+// implementation: a second caller of the one implementation.
+const sweep = JSON.parse(readFileSync(join(ROOT, "sweep-results.json"), "utf8"));
+const gradeBySlug = new Map();
+for (const c of sweep.corners) {
+  const parsed = parseQuery(c.name);
+  if (!parsed.ok) continue;
+  const { points } = pointsFor(c.counts);
+  gradeBySlug.set(canonicalSlug(parsed.slug), gradeFor(percentileOf(points)));
+}
+log(`${gradeBySlug.size} graded corners available to the typeahead`);
+
+// Which tier each warmed corner is in, read from the city meta the shard
+// builder wrote out of KV rather than guessed at here.
+const meta = JSON.parse(readFileSync(join(ROOT, "data", "city", "meta.json"), "utf8"));
+const auditedSet = new Set(meta.audited || []);
+const enrichedSet = new Set(meta.enriched || []);
 
 const seen = new Set();
 const entries = [];
@@ -55,13 +77,14 @@ for (const e of byCnn.values()) {
   if (seen.has(slug)) continue;
   seen.add(slug);
 
-  const audited = auditedBySlug.get(slug);
-  const scored = scoredBySlug.get(slug);
-  const grade = audited?.grade ?? scored?.grade ?? null;
-  const tier = audited ? 2 : scored ? 1 : 0;
+  // An audited corner's grade is its live one; everything else takes the
+  // swept grade, which is exactly what its page will show.
+  const grade = auditedBySlug.get(slug)?.grade ?? gradeBySlug.get(slug) ?? null;
+  const tier = auditedSet.has(slug) ? 3 : enrichedSet.has(slug) ? 2 : gradeBySlug.has(slug) ? 1 : 0;
   entries.push([parsed.name, slug, grade, tier]);
 }
-log(`${entries.length} distinct crossings indexed`);
+const byTier = entries.reduce((acc, e) => ((acc[e[3]] = (acc[e[3]] || 0) + 1), acc), {});
+log(`${entries.length} distinct crossings indexed: ${JSON.stringify(byTier)}`);
 
 // Shard by the first two characters of each street word that starts a name
 // half. "16th and Mission" shards under "16" and "mi".

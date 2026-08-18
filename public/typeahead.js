@@ -67,11 +67,14 @@
     }
     box.innerHTML = items
       .map(function (it, i) {
+        // 3 audited and 2 enriched carry a filled grade chip; 1 scored carries
+        // a grade dot, which is every other corner in the city; 0 has no grade
+        // to show and gets nothing rather than an invented one.
         var badge = "";
-        if (it.tier === 2 && it.grade) {
+        if (it.tier >= 2 && it.grade) {
           badge = '<span class="ta-g" style="background:' + (GRADE[it.grade] || "#8a867c") + '">' + esc(it.grade) + "</span>";
         } else if (it.tier === 1 && it.grade) {
-          badge = '<span class="ta-dot" style="border-color:' + (GRADE[it.grade] || "#8a867c") + '" title="scored, audit pending"></span>';
+          badge = '<span class="ta-dot" style="border-color:' + (GRADE[it.grade] || "#8a867c") + '" title="graded against the citywide census, audit pending"></span>';
         }
         return (
           '<li id="ta-' + i + '" role="option" data-i="' + i + '"' + (i === active ? ' aria-selected="true" class="on"' : "") + ">" +

@@ -129,9 +129,29 @@ export async function cityCornerFor(env, slug) {
   };
 }
 
+// Held in the isolate like the shards are. The homepage, the leaderboard and
+// every tier tag read it, it is a few kilobytes, and it changes when the city
+// is republished rather than between requests.
+let META_CACHE = null;
+
 export async function getCityMeta(env) {
+  if (META_CACHE && Date.now() - META_CACHE.at < SHARD_TTL_MS) return META_CACHE.value;
   if (!env?.STORE) return null;
-  return env.STORE.get("city:meta", "json").catch(() => null);
+  const value = await env.STORE.get("city:meta", "json").catch(() => null);
+  if (value) META_CACHE = { at: Date.now(), value };
+  return value;
+}
+
+// Tier tags for a list of rows, from the rosters in city:meta rather than from
+// one KV read per row. The corner page never trusts these: it reads the
+// corner's own record, which cannot be stale.
+export function tagTiers(rows, meta) {
+  const audited = new Set(meta?.audited || []);
+  const enriched = new Set(meta?.enriched || []);
+  return rows.map((r) => ({
+    ...r,
+    tier: audited.has(r.slug) ? TIERS.AUDITED : enriched.has(r.slug) ? TIERS.ENRICHED : TIERS.SCORED,
+  }));
 }
 
 export async function getRankPage(env, n) {

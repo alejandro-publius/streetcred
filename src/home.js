@@ -7,6 +7,7 @@
 // cost of a single image request.
 
 import { LOGO, FONT_LINK, BASE_CSS } from "./page.js";
+import { TIER_LABEL, TIER_NOTE } from "./city.js";
 
 const MAP_W = 640;
 const MAP_H = 520;
@@ -99,7 +100,7 @@ function severityLine(c) {
   return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
 
-export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false) => {
+export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null) => {
   // A corner without finite geometry poisons every pin: fitView produces a NaN
   // center and every overlay lands at left:NaN%. One bad row on the board must
   // cost that row its pin, not the whole map its anchors. It happened: a board
@@ -113,7 +114,20 @@ export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview
   const today = runs[0] || null;
   const view = ranked.length ? fitView(ranked) : { center: { lat: 37.7749, lon: -122.4194 }, zoom: 12 };
   const title = "StreetCred, the San Francisco corner scoreboard";
-  const desc = ranked.length
+  // The counter is the city's own count, read from city:meta, not a sum of
+  // whatever happens to be loaded on this page. A number the page derives from
+  // its own contents drifts the moment a layer fails to load.
+  const scored = city?.meta?.totalScored ?? 0;
+  const auditedCount = city?.meta?.totalAudited ?? ranked.length;
+  const n = (v) => Number(v).toLocaleString("en-US");
+  const scopeLine = scored
+    ? `${n(scored)} intersections graded citywide, ${n(auditedCount)} fully audited, one more every morning.`
+    : `${ranked.length} intersections fully audited, one more every morning.`;
+  const board = city?.top?.length ? city.top : ranked;
+  const boardIsCity = Boolean(city?.top?.length);
+  const desc = scored
+    ? `${n(scored)} San Francisco intersections graded on reported harm, worst first. Evidence traced to its source, letter drafted.`
+    : ranked.length
     ? `${ranked.length} San Francisco intersections graded on reported harm, worst first. Evidence traced to its source, letter drafted.`
     : "San Francisco intersections graded on reported harm, evidence traced to its source.";
 
@@ -187,6 +201,19 @@ ${BASE_CSS}
    severity mix on one unbroken line. */
 .rname{display:block;font-size:14.5px;font-weight:600;line-height:1.35}
 .rsev{display:block;font-size:11.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+/* Which tier each row is in. The board is the whole city now, so a row has to
+   say how much of it has actually been checked. */
+.rt{display:inline-block;margin-left:8px;font-size:9px;font-weight:700;letter-spacing:.11em;
+  padding:2px 6px;border-radius:999px;border:1px solid var(--line2);color:var(--dim);vertical-align:1px}
+.rt.t-audited{border-color:var(--ink);color:var(--ink)}
+.rt.t-scored{border-style:dashed}
+.boardmore{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 4px 0;margin:0 0 30px}
+.showall,.pbtn{font-size:12.5px;font-weight:600;color:var(--ink);background:var(--panel);
+  border:1.5px solid var(--line3);border-radius:999px;padding:8px 16px;cursor:pointer}
+.showall:hover,.pbtn:hover{border-color:var(--ink)}
+.pbtn[disabled]{opacity:.45;cursor:not-allowed}
+.pager{display:flex;align-items:center;gap:12px}
+.pnum{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
 .ridx{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .rg{font-size:13px;font-weight:700;min-width:28px;height:28px;border-radius:8px;display:grid;
   place-items:center;color:#fff;background:var(--dim)}
@@ -208,6 +235,7 @@ ${BASE_CSS}
 .cotdg{font-size:13px;font-weight:700;min-width:28px;height:28px;border-radius:8px;display:grid;
   place-items:center;color:#fff;background:var(--dim)}
 .cotdlog{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 26px}
+.cotdq{font-size:11.5px;color:var(--dim);margin:0 0 10px;padding-left:2px}
 .lpop{font-family:Poppins,system-ui,sans-serif;font-size:12.5px;line-height:1.5;color:var(--ink)}
 .lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
 .lpop-s{color:var(--dim);font-size:11.5px}
@@ -244,7 +272,7 @@ ${BASE_CSS}
 <header>
   ${LOGO}
   <div class="mark">Street<span>Cred</span></div>
-  <div class="corner"><b>San Francisco</b>${ranked.length} corners audited</div>
+  <div class="corner"><b>San Francisco</b>${scored ? `${n(scored)} corners graded` : `${ranked.length} corners audited`}</div>
 </header>
 <main>
 
@@ -256,7 +284,7 @@ ${BASE_CSS}
     <button type="submit" id="findgo">Check</button>
     <div class="findmsg" id="findmsg" role="status" hidden></div>
   </form>
-  <p class="scope" id="scope">${ranked.length} intersections fully audited, one more every morning.</p>
+  <p class="scope" id="scope">${scopeLine}</p>
 </section>
 
 ${
@@ -267,6 +295,7 @@ ${
   <span class="cotds">Audited autonomously this morning, ${esc(today.date)}${today.status === "partial" ? ", with some lanes degraded" : ""}</span>
   <span class="cotdg g${esc(today.grade || "A")}">${esc(today.grade || "?")}</span>
 </a>
+${city?.queueLength ? `<p class="cotdq">${n(city.queueLength)} corners in line, worst first.</p>` : ""}
 ${
   runs.length
     ? `<div class="cotdlog">${runs
@@ -300,8 +329,10 @@ ${
     .join("\n  ")}
 </div>
 <p class="mapfoot" id="maplegend" hidden>
-  <span class="key"><i style="background:none;border:2px solid var(--dim);width:7px;height:7px"></i>scored, audit pending</span>
-  <span>Dots show intersections with reported harm; unmarked intersections had none in the record.</span>
+  <span class="key"><i style="background:var(--dim)"></i>AUDITED, every lane checked</span>
+  <span class="key"><i style="background:none;border:2px solid var(--dim);width:7px;height:7px"></i>ENRICHED, records and index, no visual audit</span>
+  <span class="key"><i style="background:var(--dim);opacity:.4;width:5px;height:5px"></i>SCORED, graded against the census</span>
+  <span>Past zoom 15 the scored dots are tappable. Unmarked crossings had no reported harm in the record.</span>
 </p>
 <p class="mapfoot">
   <span class="key"><i style="background:var(--green)"></i>A</span>
@@ -321,19 +352,31 @@ ${
 }
 <div class="eyebrow"><span>The scoreboard</span><span class="tag">Danger Index, worst first</span></div>
 ${
-  ranked.length
-    ? `<div class="board">
-${ranked
+  board.length
+    ? `<div class="board" id="board">
+${board
   .map(
     (c, i) => `  <a class="row" href="/c/${esc(c.slug)}">
     <span class="rank">${i + 1}</span>
-    <span><span class="rname">${esc(c.name)}</span><span class="rsev">${esc(severityLine(c))}${c.verdict ? ` &middot; ${esc(c.verdict)}` : ""}</span></span>
+    <span><span class="rname">${esc(c.name)}${c.tier ? `<span class="rt t-${esc(c.tier)}" title="${esc(TIER_NOTE[c.tier] || "")}">${esc(TIER_LABEL[c.tier])}</span>` : ""}</span><span class="rsev">${esc(severityLine(c))}${c.verdict ? ` &middot; ${esc(c.verdict)}` : ""}</span></span>
     <span class="ridx">${c.index}</span>
     <span class="rg g${esc(c.grade)}" title="Worse than ${c.index}% of San Francisco intersections">${esc(c.grade)}</span>
   </a>`,
   )
   .join("\n")}
+</div>
+${
+  boardIsCity
+    ? `<div class="boardmore">
+  <button class="showall" id="showall" type="button">Show all ${n(scored)} graded corners</button>
+  <div class="pager" id="pager" hidden>
+    <button class="pbtn" id="pprev" type="button">Previous</button>
+    <span class="pnum" id="pnum" role="status"></span>
+    <button class="pbtn" id="pnext" type="button">Next</button>
+  </div>
 </div>`
+    : ""
+}`
     : `<p class="emptyboard">No corners have been warmed yet. Type an intersection above and it will be graded on the spot.</p>`
 }
 
@@ -384,14 +427,67 @@ var VIEW = {lat: ${view.center.lat}, lon: ${view.center.lon}, zoom: ${view.zoom}
 var AUDITED = ${JSON.stringify(
     ranked.map((c) => ({ slug: c.slug, name: c.name, lat: c.lat, lon: c.lon, grade: c.grade, index: c.index })),
   )};
-// Scope line: audited count is server-rendered truth; the scored-tier count
-// arrives from the same static asset the map's rings use.
-fetch("/data/scoretier.json").then(function(r){return r.ok?r.json():null;}).then(function(t){
-  if(!t || !t.corners) return;
-  var el = document.getElementById("scope");
-  if(el) el.textContent = (AUDITED.length + t.corners.length) + " intersections scored, " +
-    AUDITED.length + " fully audited, one more every morning.";
-}).catch(function(){});
+// The scope line is server-rendered from city:meta and is not touched here.
+// It used to be recomputed in the browser by adding two loaded layers
+// together, which meant the headline number described whichever assets
+// happened to arrive rather than what the city actually holds.
+
+// Show all: page through the whole graded city, 50 rows at a time, one KV
+// read per page behind /api/city. The top 25 are already in the HTML, so this
+// only runs if somebody asks for more.
+(function(){
+  var btn = document.getElementById("showall");
+  var board = document.getElementById("board");
+  if(!btn || !board) return;
+  var pager = document.getElementById("pager"), pnum = document.getElementById("pnum");
+  var prev = document.getElementById("pprev"), next = document.getElementById("pnext");
+  var page = 1, pages = 1, busy = false;
+  var GRADE_TITLE = "Worse than ";
+  function esc(t){ return String(t == null ? "" : t).replace(/[&<>"]/g, function(m){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]; }); }
+  function severity(c){
+    var k = c.counts || {}, bits = [];
+    if(k.fatal) bits.push(k.fatal + " fatal");
+    if(k.severe) bits.push(k.severe + " severe");
+    if(k.otherVisible) bits.push(k.otherVisible + " other visible");
+    if(k.pain) bits.push(k.pain + " complaint of pain");
+    return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
+  }
+  function draw(d){
+    var start = (d.page - 1) * d.size;
+    board.innerHTML = d.rows.map(function(c, i){
+      return '<a class="row" href="/c/' + esc(c.slug) + '">' +
+        '<span class="rank">' + (start + i + 1) + '</span>' +
+        '<span><span class="rname">' + esc(c.name) +
+        '<span class="rt t-' + esc(c.tier) + '">' + esc(String(c.tier).toUpperCase()) + '</span></span>' +
+        '<span class="rsev">' + esc(severity(c)) + '</span></span>' +
+        '<span class="ridx">' + c.index + '</span>' +
+        '<span class="rg g' + esc(c.grade) + '" title="' + GRADE_TITLE + c.index +
+        '% of San Francisco intersections">' + esc(c.grade) + '</span></a>';
+    }).join("");
+    page = d.page; pages = d.pages;
+    pnum.textContent = "Page " + d.page + " of " + d.pages + ", " + d.total.toLocaleString("en-US") + " corners";
+    prev.disabled = d.page <= 1;
+    next.disabled = d.page >= d.pages;
+  }
+  function load(n){
+    if(busy) return;
+    busy = true;
+    fetch("/api/city?page=" + n).then(function(r){ return r.json(); }).then(function(d){
+      busy = false;
+      if(!d || !d.rows) return;
+      draw(d);
+      board.scrollIntoView({behavior: "auto", block: "start"});
+    }).catch(function(){ busy = false; });
+  }
+  btn.addEventListener("click", function(){
+    btn.hidden = true;
+    pager.hidden = false;
+    load(1);
+  });
+  prev.addEventListener("click", function(){ if(page > 1) load(page - 1); });
+  next.addEventListener("click", function(){ if(page < pages) load(page + 1); });
+})();
 
 // Your corners: what this browser has checked, kept only in this browser.
 (function(){
@@ -438,7 +534,7 @@ fetch("/data/scoretier.json").then(function(r){return r.ok?r.json():null;}).then
         var scored = (tier.corners||[]).filter(function(c){return !auditedSlugs.has(c.slug);});
         StreetMap.upgrade(mapEl, {
           center: [VIEW.lat, VIEW.lon], zoom: VIEW.zoom,
-          audited: AUDITED, scored: scored, heatUrl: "/data/heat.json",
+          audited: AUDITED, scored: scored, heatUrl: "/data/city/dots.json",
           tapAnywhere: true,
           onReady: function(map){
             var md = document.getElementById("mapdata");
