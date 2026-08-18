@@ -2,10 +2,11 @@ import {
   CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, canonicalSlug, makeCorner, SERVICE_NAMES,
 } from "./data.js";
 import { PAGE } from "./page.js";
+import { HOME, staticMapPath, fitView } from "./home.js";
 import { parseQuery, locate, districtFor, soql } from "./resolve.js";
 import {
   getCorner, putCorner, getImage, rateLimit, getScore, putScore, getHazards, putHazards,
-  getCredCached, putCredCached, getShareCard,
+  getCredCached, putCredCached, getShareCard, getHinList,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import { imageryFor } from "./imagery.js";
@@ -654,6 +655,35 @@ async function handleResolve(url, request, env) {
   });
 }
 
+// ---------------------------------------------------------------- city map
+
+// The whole city in one Static Maps request, pins already drawn into the image.
+// Server side for the same reason the corner thumbnail is: the key must never
+// reach a browser. Cached hard, because the bytes are identical for everyone
+// until the corner set changes.
+async function cityMap(env, ctx) {
+  const key = new Request("https://streetcred.internal/citymap.jpg");
+  const hit = await caches.default.match(key);
+  if (hit) return hit;
+
+  const corners = await getHinList(env);
+  if (!corners.length) return new Response("no corners", { status: 404 });
+
+  const view = fitView(corners);
+  const url =
+    `https://maps.googleapis.com/maps/api/staticmap?${staticMapPath(corners, view)}` +
+    `&key=${env.GOOGLE_MAPS_API_KEY}`;
+  const r = await fetch(url);
+  const type = r.headers.get("content-type") || "";
+  if (!r.ok || !type.startsWith("image/")) return new Response("map unavailable", { status: 404 });
+
+  const out = new Response(r.body, {
+    headers: { "content-type": type, "cache-control": "public, max-age=86400" },
+  });
+  ctx.waitUntil(caches.default.put(key, out.clone()));
+  return out;
+}
+
 // ---------------------------------------------------------------- share card
 
 // Deliberately never the annotated or edited states. Those are modified Street
@@ -742,7 +772,24 @@ export default {
         return await mapImage(c, env, ctx);
       }
 
-      if (p === "/" || p === "/index.html" || /^\/c\/[A-Za-z0-9-]+\/?$/.test(p)) {
+      if (p === "/citymap.jpg") {
+        return await cityMap(env, ctx);
+      }
+
+      if (p === "/" || p === "/index.html") {
+        // An ?x= link predates /c/ and still exists in the wild. Send it to the
+        // canonical corner rather than silently showing the city instead.
+        const legacy = url.searchParams.get("x");
+        if (legacy) {
+          return Response.redirect(`${origin}/c/${canonicalSlug(legacy)}`, 301);
+        }
+        const corners = await getHinList(env);
+        return new Response(HOME(corners, origin), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+
+      if (/^\/c\/[A-Za-z0-9-]+\/?$/.test(p)) {
         const og = { ...(await ogFor(c, env)), origin };
         // A corner nobody has opened has no cached verdict yet, so warm it in
         // the background. The response never waits on it.

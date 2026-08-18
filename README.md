@@ -8,7 +8,7 @@ Pick a San Francisco intersection. StreetCred shows what the city's own data rec
 
 Built in a single 55 minute sprint at Build Club, "Moonlighting with Gemini + Exa", August 17 2026. The git log covers the whole product.
 
-Two corners are live: **16th Street and Mission Street** (District 9, Supervisor Fielder) and **6th Street and Market Street** (District 6, Supervisor Dorsey). A switcher in the header swaps the whole page, every lane and the letter with it.
+The homepage is the city: every warmed corner on one map, ranked by Danger Index, worst first. Any San Francisco intersection can be typed in and graded on the spot. Each corner lives at its own shareable URL.
 
 ## Why this exists
 
@@ -62,7 +62,7 @@ Two actors run against the corner, and getting each one to return anything usefu
 
 **Normalization.** The two output shapes have nothing in common: Google Maps nests `reviews[]` with `text`, `stars`, and `publishedAtDate`, while Reddit returns flat records with `title`, `body`, and `createdAt` and no rating at all. `tools/collect_voices.py` flattens both into one contract, `{source, stars, text, when}`, scoring each candidate on how directly it speaks to street safety and keeping both sources represented. Reviewer names are dropped on purpose, quotes are truncated, and HTML entities and Reddit's "submitted by" boilerplate are stripped.
 
-**Serving.** Scraping happens ahead of the demo, never during one: actor runs take minutes and a page load cannot wait on one. `/api/voices` reads the selected quotes from Upstash Redis under a per-corner key carried in the corner config (`voices:16th-and-mission` for the first corner), so refreshing the panel is a Redis write rather than a redeploy, and falls back to the normalized file baked into `public/data/` when Upstash is unreachable. `/api/health` reports the Upstash leg separately, so a missing key is visible rather than silently papered over.
+**Serving.** Scraping happens ahead of the demo, never during one: actor runs take minutes and a page load cannot wait on one. `/api/voices` serves the normalized file baked into `public/data/` for corners that were scraped ahead of time, and the honest empty state for every corner that was not. An Upstash path exists in the code and activates if those credentials are ever set, but nothing in the deployed product uses it: the store is Cloudflare KV.
 
 **Honest limit.** Reviews at this corner skew heavily toward the BART station: escalators, cleanliness, policing, rather than crossing conditions. The quotes shown are real scrape output and thinner on traffic safety than the other four lanes. The letter therefore only quotes a resident when the quote is actually about the street, and otherwise quotes no one rather than inventing testimony. The fix is better targeting, not more code.
 
@@ -100,16 +100,22 @@ The letter renders as a draft with a copy button. **Nothing is ever sent to any 
 One Cloudflare Worker, no build step, no framework.
 
 ```
-src/index.js   router, five data lanes, health, graceful degradation
-src/page.js    the entire front end as one HTML string
-src/data.js    corner registry, Supervisor roster, sample payloads
+src/index.js   router, every data lane, health, graceful degradation
+src/page.js    one corner, as one HTML string, plus the shared CSS
+src/home.js    the city map and the scoreboard
+src/data.js    corner registry, Supervisor roster, 311 allow list, samples
 src/resolve.js free text to a corner: normalizing, DataSF lookup, districts
-src/store.js   KV: resolved corners, generated imagery, budget, rate limiting
+src/score.js   the Danger Index, DataSF arithmetic only
+src/hazards.js the audit pass and the deterministic corroboration rule
+src/cred.js    four lanes to one verdict, no model
+src/store.js   KV: corners, scores, imagery, budget, rate limiting, leaderboard
 src/imagery.js on-demand Street View and Gemini generation, never blocking
-tools/         build-time pipelines: imagery generation, voices normalization
-public/        generated imagery, normalized voices, logo
+tools/         precompute, share cards, imagery, voices, two test files
+public/        logos and the wordmark
 docs/          the README screenshot
 ```
+
+**Imagery lives in KV, not in the repo.** Generated frames are 700 to 830KB each and there is no reason to carry them in git. Every corner, precomputed or typed, serves its three states from KV through the edge cache on one code path.
 
 **Caching, in two layers.** An in-process `Map` sits inside the Worker isolate, and a Cloudflare edge cache (`caches.default`) sits in front of it. The second layer is the one that matters: Worker isolates are short lived and per-colo, so warming the in-process map does nothing for the next visitor, who usually lands on a cold isolate and pays the full upstream cost again. With the edge cache in place every lane on both corners returns in under 0.26s, and the letter went from about 7s to 0.16s.
 
@@ -156,6 +162,34 @@ Type two cross streets and the whole page rebuilds around them. The registry is 
 
 A corner whose records lanes all come back empty never generates imagery either, since that is a strong signal the resolve was wrong.
 
+## The scoreboard
+
+The name promised a score. This is where it gets paid.
+
+**The Danger Index** is 0 to 100 with a letter grade, computed only from DataSF. No model touches the calculation, so every input is a number anyone can look up:
+
+```
+points = 10*fatal + 6*severe + 3*otherVisible + 1*pain + 2*pedInvolved + 0.5*safety311
+```
+
+all within 80 meters, collisions over five years, filtered 311 over twelve months. `REFERENCE_MAX` is **frozen at 142**, computed once against ten known-severe SF intersections; 16th and Mission set it at 142.0 points with 6th and Market second at 136.0. It must never float with whatever corners happen to be loaded, because a corner graded B on Tuesday that becomes a C on Friday with nothing changed on the ground is a grade nobody can cite, and people screenshot these. One caveat travels with the number everywhere it appears, on the page rather than buried here: there is no exposure normalization, so the index ranks reported harm, not risk per crossing.
+
+**Corroboration** is what makes the audit worth anything. A structured pass asks Gemini which of four fixed conditions it can actually see in that corner's frame and returns booleans. Everything after that is arithmetic: `label()` in `src/hazards.js` decides CONFIRMED, CANDIDATE or REPORTED from record counts alone, and `tools/label.test.mjs` covers all six branches without a network or a key.
+
+That immediately caught something this product had been getting wrong. The letter used to assert, at every corner, that "an automated visual audit identified sub-standard, faded crosswalk markings and vehicle turning conflict zones." It was a hardcoded sentence, not an audit result, and this README used to call it the strongest and most checkable claim in the letter. Asked to actually look, the model reports that 16th and Mission's markings are **not** faded, which matches the bright continental striping plainly visible in the screenshot at the top of this file. The product was making a specific, checkable, false claim to a named elected official. The letter is now built from the labels: CONFIRMED may be stated as documented, REPORTED is attributed to the record rather than the photograph, and CANDIDATE is an observation the letter is instructed never to present as fact.
+
+**The Cred Check** puts the whole thesis on one line. Four lanes, four booleans, one verdict: 4 of 4 CORROBORATED, 3 SUPPORTED, 2 PARTIAL, 1 or 0 REPORTED ONLY. Agency primary sources cannot light the press lane, since a police bulletin is the record rather than reporting on it. The resident token list is split between street nouns that count on their own and ambiguous words like "scary" that only count beside one, because without that split a review reading "Safe even though it's a scary movie outside" lights the resident lane at 16th and Mission.
+
+## Sharing and the city view
+
+Corners live at `/c/{slug}`. The older `?x=` form redirects rather than dying, because links already exist in the wild.
+
+Open Graph and Twitter tags render server side carrying the real index and the real verdict, and they read only what is already cached: a crawler can never trigger a score, a corroboration pass, or a paid image generation just by fetching a page.
+
+The 1200x630 share card is built by `tools/make_og.py` rather than in the Worker, because a Worker has no image library and the alternative was shipping a WASM codec to draw two lines of text. It composites on the **unedited** Street View frame, never the hazard overlay and never the generated fix, since those are modified Street View imagery and pushing them out as social preview assets is the redistribution question the risk review flagged as unsettled. The frame is cropped from the top so Google's watermark stays visible in the finished card.
+
+The homepage is one Static Maps image with every warmed corner drawn into it as a pin colored by grade, plus transparent anchors laid over it at positions computed with the same Web Mercator projection the server used to request the image. That buys a clickable map for the cost of a single image request and no map SDK at all. `tools/pin.test.mjs` checks the projection, including that north is up and east is right, which is the classic way to get this exactly backwards.
+
 ## Running it
 
 ```
@@ -172,7 +206,11 @@ wrangler dev
 - The hazard overlay is a model reading of a photograph. It marks zones, it does not measure them.
 - The proposed fix image is a visualization, not an engineering drawing, and the cost is an order-of-magnitude estimate.
 - 311 counts are filtered to street-related service types within 150 meters, which is a proxy for street complaints, not a precise one.
-- The voices lane is the thinnest of the five, and the reason is a finding rather than a bug. Both Apify actors ran and returned real data, but Google Maps reviews at this corner are overwhelmingly about the BART station (escalators, cleanliness, policing) and the Reddit search returned mostly off-corner noise. That is why selection moved out of the scrape and into Redis: the normalizer now scores quotes by how directly they speak to street safety rather than passing a flat keyword test, and the surviving set is curated into the key the Worker reads. Every quote shown is still real scrape output, never generated. The letter also only quotes a resident when the quote is actually about the street, and otherwise quotes no one rather than inventing testimony.
-- Any San Francisco intersection resolves, but the two precomputed corners are still the ones that look best. A typed corner takes the default panorama orientation, because the heading that puts the crosswalk in the foreground was chosen by hand for the precomputed pair and there is no way to pick it automatically. Expect a resolved corner to sometimes show the street rather than the crossing.
+- The voices lane is the thinnest of the five, and the reason is a finding rather than a bug. Both Apify actors ran and returned real data, but Google Maps reviews at this corner are overwhelmingly about the BART station (escalators, cleanliness, policing) and the Reddit search returned mostly off-corner noise. That is why selection moved out of the scrape and into the normalizer, which scores quotes by how directly they speak to street safety rather than passing a flat keyword test. Every quote shown is still real scrape output, never generated. The letter also only quotes a resident when the quote is actually about the street, and otherwise quotes no one rather than inventing testimony.
+- Any San Francisco intersection resolves, but the warmed corners are still the ones that look best. A typed corner takes the default panorama orientation, because the heading that puts the crosswalk in the foreground was chosen by hand for the precomputed pair and there is no way to pick it automatically. Expect a resolved corner to sometimes show the street rather than the crossing.
+- DataSF does not have an intersection node for every place two streets meet. Sunset and Sloat is a real junction near the zoo, but the city's dataset models it as a grade-separated interchange rather than a crossing, so the resolver correctly reports that both are San Francisco streets which do not intersect. That is accurate to the source and still not what a person typing it expects.
+- The Danger Index ranks reported harm, not risk. A corner nobody walks through cannot generate pedestrian collisions, so a quiet corner scores low for a reason that has nothing to do with whether crossing it is safe. There is no exposure normalization anywhere in the formula, and the caveat sits on the page for that reason.
+- The index is bounded by a frozen reference, so a corner can exceed it. 16th and Mission already computes above 142 points as newer collisions land, and it caps at 100. Everything at the top of the board is therefore compressed, and a corner scoring 100 is not necessarily worse than one scoring 96.
+- The visual audit reports on one Street View frame, taken on one day, facing one direction. It cannot see the other three approaches to an intersection, and a corner photographed in bright midday sun will not show a lighting problem that only exists at night. CANDIDATE means the model saw something the record has not caught up with; it does not mean the model is right.
+- The Cred Check verdict is a count of lanes, not a weighting of them. Four weak agreements read the same as four strong ones.
 - The resident voices lane only exists for corners that were scraped ahead of time. A typed corner shows the honest empty state, because an Apify actor run takes minutes and a page load cannot wait on one.
-- Nothing on the page is scored yet. StreetCred currently displays the evidence and traces each claim to its source; it does not grade a corner or rank it against any other. The name is a promise the product has not finished keeping.

@@ -1,62 +1,19 @@
 import { CORNERS } from "./data.js";
 
-const LOGO = `<svg viewBox="0 0 64 64" width="38" height="38" aria-hidden="true">
+export const LOGO = `<svg viewBox="0 0 64 64" width="38" height="38" aria-hidden="true">
   <rect width="64" height="64" rx="14" fill="#141B2D"/>
   <path d="M32 12v40M12 32h40" stroke="#F07E26" stroke-width="7" stroke-linecap="round"/>
   <circle cx="32" cy="32" r="6.5" fill="#faf9f5"/>
   <circle cx="32" cy="32" r="3" fill="#F07E26"/>
 </svg>`;
 
-export const PAGE = (c, og = {}) => {
-  const idx = og.score?.index;
-  const grade = og.score?.grade;
-  const verdict = og.cred?.verdict;
-  const records = og.cred?.lanes?.find((l) => l.key === "records");
-  // Falls back to the plain product line when a corner has not been scored yet,
-  // rather than shipping a title with a hole in it.
-  const ogTitle = Number.isFinite(idx)
-    ? `${c.name} scores ${idx}/100 on StreetCred`
-    : `${c.name} on StreetCred`;
-  const ogDesc = [
-    records?.detail,
-    verdict,
-    "Evidence graded and traced, letter drafted.",
-  ]
-    .filter(Boolean)
-    .join(". ")
-    .replace(/\.\./g, ".");
-  // Absolute, because crawlers do not resolve relative og:url or og:image.
-  const base = og.origin || "";
-  const url = `${base}/c/${c.slug}`;
-  const img = `${base}/og.jpg?x=${c.slug}`;
-  const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>StreetCred, ${c.short}</title>
-<link rel="icon" href="/logo.svg">
-<link rel="canonical" href="${url}">
-<meta name="description" content="${esc(ogDesc)}">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="StreetCred">
-<meta property="og:title" content="${esc(ogTitle)}">
-<meta property="og:description" content="${esc(ogDesc)}">
-<meta property="og:url" content="${url}">
-<meta property="og:image" content="${img}">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Street View photograph of ${esc(c.name)}">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${esc(ogTitle)}">
-<meta name="twitter:description" content="${esc(ogDesc)}">
-<meta name="twitter:image" content="${img}">
-<link rel="preconnect" href="https://fonts.googleapis.com">
+// Shared with the city view in home.js, so the two pages cannot drift apart
+// on type, palette, or spacing.
+export const FONT_LINK = `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Lora:ital@0;1&display=swap" rel="stylesheet">
-<style>
-:root{
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Lora:ital@0;1&display=swap" rel="stylesheet">`;
+
+export const BASE_CSS = `:root{
   --bg:#faf9f5; --panel:#fff; --card:#f4f2ec; --line:#e8e6dc;
   /* One step darker than --line, for panel edges that need to hold their own
      against the page rather than disappear into it. */
@@ -255,7 +212,56 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 
 @media(max-width:860px){.cols,.stack{grid-template-columns:1fr}}
 @media(max-width:600px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:400px){.stats{grid-template-columns:1fr}}
+@media(max-width:400px){.stats{grid-template-columns:1fr}}`;
+
+export const PAGE = (c, og = {}) => {
+  const idx = og.score?.index;
+  const grade = og.score?.grade;
+  const verdict = og.cred?.verdict;
+  const records = og.cred?.lanes?.find((l) => l.key === "records");
+  // Falls back to the plain product line when a corner has not been scored yet,
+  // rather than shipping a title with a hole in it.
+  const ogTitle = Number.isFinite(idx)
+    ? `${c.name} scores ${idx}/100 on StreetCred`
+    : `${c.name} on StreetCred`;
+  const ogDesc = [
+    records?.detail,
+    verdict,
+    "Evidence graded and traced, letter drafted.",
+  ]
+    .filter(Boolean)
+    .join(". ")
+    .replace(/\.\./g, ".");
+  // Absolute, because crawlers do not resolve relative og:url or og:image.
+  const base = og.origin || "";
+  const url = `${base}/c/${c.slug}`;
+  const img = `${base}/og.jpg?x=${c.slug}`;
+  const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StreetCred, ${c.short}</title>
+<link rel="icon" href="/logo.svg">
+<link rel="canonical" href="${url}">
+<meta name="description" content="${esc(ogDesc)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="StreetCred">
+<meta property="og:title" content="${esc(ogTitle)}">
+<meta property="og:description" content="${esc(ogDesc)}">
+<meta property="og:url" content="${url}">
+<meta property="og:image" content="${img}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Street View photograph of ${esc(c.name)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(ogTitle)}">
+<meta name="twitter:description" content="${esc(ogDesc)}">
+<meta name="twitter:image" content="${img}">
+${FONT_LINK}
+<style>
+${BASE_CSS}
 </style>
 </head>
 <body>
@@ -511,16 +517,28 @@ loadImagery();
   if(!btn) return;
   btn.addEventListener("click", () => {
     const link = location.origin + "/c/" + CORNER_SLUG;
-    const done = () => {
-      btn.textContent = "Link copied";
-      setTimeout(() => btn.textContent = "Share corner", 1600);
+    const done = (label) => {
+      btn.textContent = label;
+      setTimeout(() => btn.textContent = "Share corner", 2200);
+    };
+    // Never prompt(). A modal blocks the whole page, and a share button is not
+    // worth freezing a page over. The fallback selects the link instead.
+    const fallback = () => {
+      const t = document.createElement("input");
+      t.value = link;
+      t.setAttribute("readonly", "");
+      t.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+      document.body.appendChild(t);
+      t.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch { ok = false; }
+      document.body.removeChild(t);
+      done(ok ? "Link copied" : link);
     };
     if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(link).then(done).catch(() => {
-        prompt("Copy this corner link", link);
-      });
+      navigator.clipboard.writeText(link).then(() => done("Link copied")).catch(fallback);
     } else {
-      prompt("Copy this corner link", link);
+      fallback();
     }
   });
 })();
