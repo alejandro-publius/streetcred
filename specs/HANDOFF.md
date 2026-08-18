@@ -10,6 +10,10 @@ The whole city ships. Before this run 123 corners had pages and the other
 intersection in San Francisco has one.
 
 ```
+6d40905 cron commissions voices   apify actors started and ingested by the morning run
+716dfbb press connections         findSimilar links corners, both ends, verified
+68b47fb press watchlist           entity discovery over citywide coverage, rejects published
+f067f17 city scale handoff        cron keeps the tier rosters current
 b4d6e97 city scale honesty        /methodology section, grade share cards, city contract test
 1310d81 city scale surfaces       homepage counter, citywide board, tappable dots, typeahead, queue
 52afa33 composed corners          resolver reads shards first, three tiers, honest lanes
@@ -96,6 +100,41 @@ Key #2 is still free-tier: 20 text calls a day, zero image generations, zero
 Pro. `specs/BILLING_QUEUE.md` is unchanged and still correct, in order. This
 entire run made zero model calls of any kind.
 
+## The press and voices layer, added last
+
+**Press Watchlist** (`src/press.js`, `/watchlist`). Seven citywide semantic Exa
+searches, every crossing name extracted, three bars before anything surfaces:
+both names are SF streets (against the 2,219-name `city:streets` index), the
+pair is an exact match in the graded-city index, and the coverage is confirmed
+to be about safety there. Rejects published with reasons; phrases naming no
+street are counted and discarded. Rebuild with
+`node tools/build_watchlist.mjs [--dry]`. The cron refreshes it every morning.
+
+**Press connections** (`src/press.js`, `/api/connections`). findSimilar per
+audited corner, same extractor, same index, plus two extra bars: the connecting
+article must be dated with a real path and must be recent. Written to BOTH
+corners; a corner that ran its own search owns its record and is never
+overwritten by a reciprocal one. Rebuild with
+`node tools/build_connections.mjs [--dry] [--limit N]`.
+
+**Autonomous voices** (`src/voices.js`). The cron commissions both Apify actors
+for the corner it promotes and ingests them on the NEXT cycle. Hard ceiling of
+70 actor runs a month; per-run cost ledger at `/status`. Operator path:
+`node tools/commission_voices.mjs "24th and Valencia" --dry` prints the exact
+inputs and spends nothing, without `--dry` it commissions, `--ingest` picks up
+what finished.
+
+**Budgets, both real and both published at /status.** Exa: cumulative
+`exa:calls` against `EXA_CALL_BUDGET` 1500, plus `exa:spend` in dollars taken
+from Exa's own `costDollars` field. Currently 103 calls, $0.85. Apify:
+`apifyruns:{YYYY-MM}` against `MONTHLY_ACTOR_RUN_CAP` 70, plus the `apify:costs`
+ledger. Currently 0 runs, $0. The Apify account is FREE plan with a $105 cycle
+limit and about $104 left, cycle ending 2026-09-16.
+
+**New KV keys.** `press:watchlist`, `press:conn:{slug}`, `city:streets`,
+`exa:calls`, `exa:spend`, `apifyruns:{month}`, `apify:costs`, `voicerun:{slug}`,
+`voicerun:pending`, `voices:{slug}`.
+
 ## Gotchas a fresh session must not rediscover
 
 The first twelve are inherited and all still true. 13 onward are new.
@@ -174,6 +213,33 @@ The first twelve are inherited and all still true. 13 onward are new.
     Storing one would promote a corner to the warmed fleet just because
     somebody looked at it, and the fleet is what the daily audit works through.
 
+21. **No Apify actor run has been paid for yet.** The wiring is deployed and
+    the inputs are verified against the actors' published input schemas, but no
+    live run has been started: the sandbox blocked the billable call, so the
+    first spend was left as a deliberate human action. Until one succeeds, the
+    honest claim is "it runs tomorrow morning", not "it has been running". Both
+    actors are PAY_PER_EVENT at $0.004 a unit on the free tier, so a corner is
+    roughly fifteen cents at the configured caps.
+22. **A verification bar that reads its own data per candidate can switch
+    itself off.** The street-name check was read once per candidate; one failed
+    KV read cached a null for the process and the bar silently stopped running,
+    with no symptom except a reject log filling with navigation menus. It is
+    loaded once per build now and `tools/lib/kvenv.mjs` never caches a failed
+    read. Any new bar should follow the same shape.
+23. **The connections recency bar is load bearing, not tidiness.** Without it
+    findSimilar returns the archive and a 2007 signal-timing post links 19th and
+    Dolores to three corners on 19th Avenue, which share a slug token and
+    nothing else, because `normalizeStreet` strips street types and cannot tell
+    19th Street from 19th Avenue anywhere in this product.
+24. **A headline-mention bar was tried and reverted.** Local reporting names the
+    corner in the body and the neighborhood in the headline, so requiring the
+    headline killed every real connection and kept only the corridor artifact.
+    If precision needs raising again, raise it somewhere else.
+25. **`tools/lib/kvenv.mjs` lets src modules run in Node** by shelling out to
+    wrangler for KV. That is what makes the batch tools share the Worker's code
+    instead of forking it. It is read-heavy and slow by design; do not use it
+    for anything that would issue hundreds of writes.
+
 ## Open items for the human
 
 Unchanged from the morning report, minus nothing:
@@ -189,6 +255,11 @@ Unchanged from the morning report, minus nothing:
   page) rather than by clicking a real map. The Leaflet plumbing itself is the
   one thing on this page not exercised end to end by a machine.
 - **Watchdog GCP preconditions** before Aug 25.
+- **The first Apify run is yours to start**, see gotcha 21 and
+  `specs/MAKE_THEM_KNOW.md`.
+- **`specs/MAKE_THEM_KNOW.md` is a human checklist**: one LinkedIn post tagging
+  both tools, two WhatsApp messages. Nothing in it has been done, and nothing
+  in it should be done by a builder session.
 
 One new one worth a decision: **the 25 worst corners in San Francisco are all
 ENRICHED and none are audited.** The board now says so out loud on the
