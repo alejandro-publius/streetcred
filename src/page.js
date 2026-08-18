@@ -47,10 +47,16 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px}
 .cap{display:flex;gap:10px;align-items:baseline;margin:12px 0 30px;font-size:13.5px;color:var(--dim);line-height:1.55}
 .cap b{color:var(--ink);font-weight:600;white-space:nowrap}
 
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:30px}
-.stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
-.stat .n{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:30px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;min-width:0}
+.stat .n{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--accent)}
 .stat .l{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.45}
+
+/* Lane eyebrow: the page is one long column, so each lane gets a small label
+   and a hairline to separate it from the one above. */
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--dim);margin:0 0 13px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.lane[hidden]{display:none}
 
 #mappanel[hidden]{display:none}
 #mappanel{padding:18px 18px 14px}
@@ -91,7 +97,11 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 
 .sk{background:linear-gradient(90deg,var(--card) 25%,#eeece4 50%,var(--card) 75%);background-size:200% 100%;animation:sh 1.3s infinite;border-radius:6px;height:13px;margin:9px 0}
 @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
-@media(max-width:860px){.cols,.stats,.stack{grid-template-columns:1fr}}
+/* The stat row holds three across well past the point the two-column body has to
+   collapse, so it breaks on its own, later: 3 across, then 2+1, then stacked. */
+@media(max-width:860px){.cols,.stack{grid-template-columns:1fr}}
+@media(max-width:600px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:400px){.stats{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -117,30 +127,37 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 </div>
 <p class="cap"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
 
+<div class="eyebrow">Official record</div>
 <div class="stats" id="stats">
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Collisions on record within 150m</div></div>
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-related 311 reports, 3 years</div></div>
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>
 </div>
 
-<div class="panel" id="mappanel" hidden>
-  <div class="ph"><h2>The corner</h2></div>
-  <img id="mapimg" class="mapimg" alt="Roadmap showing the location of ${c.name}, ${c.city}">
-  <p class="mapfoot">${c.name}, District ${c.district}. Map data: Google.</p>
-</div>
+<section class="lane" id="maplane" hidden>
+  <div class="eyebrow">The corner</div>
+  <div class="panel" id="mappanel">
+    <div class="ph"><h2>The corner</h2></div>
+    <img id="mapimg" class="mapimg" alt="Roadmap showing the location of ${c.name}, ${c.city}">
+    <p class="mapfoot">${c.name}, District ${c.district}. Map data: Google.</p>
+  </div>
+</section>
 
 <div class="cols">
   <div>
+    <div class="eyebrow">Press coverage</div>
     <div class="panel">
       <div class="ph"><h2>Press coverage</h2><span class="tag" id="newstag">found live, cited</span></div>
       <div class="news" id="news"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
     </div>
+    <div class="eyebrow">Resident voices</div>
     <div class="panel">
       <div class="ph"><h2>Resident voices</h2><span class="tag" id="voicestag">scraped</span></div>
       <div id="voices"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
     </div>
   </div>
   <div>
+    <div class="eyebrow">The ask</div>
     <div class="panel">
       <div class="ph"><h2>The ask</h2><span class="tag" id="lettertag">drafted</span></div>
       <div class="fixrow">
@@ -218,8 +235,8 @@ fetch("/api/imagery").then(r => r.json()).then(d => { IMG = d; render(); });
 // A failed Static Maps request removes it rather than leaving a broken image.
 (function(){
   const img = el("mapimg");
-  img.addEventListener("load", () => el("mappanel").hidden = false);
-  img.addEventListener("error", () => el("mappanel").remove());
+  img.addEventListener("load", () => el("maplane").hidden = false);
+  img.addEventListener("error", () => el("maplane").remove());
   img.src = "/map.jpg";
 })();
 
