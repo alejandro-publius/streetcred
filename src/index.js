@@ -103,10 +103,45 @@ async function getNews(c, env) {
 }
 
 // ---------------------------------------------------------------- voices
-// Scraped by Apify at build time and normalized into a static asset. The panel
-// reads the baked file, never a live actor run: runs take minutes and a demo
-// cannot wait on one.
+// Real resident quotes, scraped once and parked in Upstash Redis. The panel
+// reads that key directly: an Apify actor run takes minutes and a demo cannot
+// wait on one. The baked asset stays behind it as a fallback.
 async function getVoices(c, env, origin) {
+  if (env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN) {
+    try {
+      return await redisVoices(c, env);
+    } catch {
+      // Fall through to the baked asset rather than showing the panel empty.
+    }
+  }
+  return bakedVoices(c, env, origin);
+}
+
+async function redisVoices(c, env) {
+  const key = c.voicesKey || `voices:${c.slug}`;
+  const r = await fetch(`${env.UPSTASH_REDIS_REST_URL}/get/${encodeURIComponent(key)}`, {
+    headers: { authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
+  });
+  if (!r.ok) throw new Error(`upstash ${r.status}`);
+  // Upstash wraps every reply as {"result": ...}, and the value stored under this
+  // key is itself a JSON string, so it needs a second parse.
+  const { result } = await r.json();
+  if (!result) throw new Error("upstash key empty");
+  const parsed = typeof result === "string" ? JSON.parse(result) : result;
+  const items = (Array.isArray(parsed) ? parsed : parsed.items || [])
+    .filter((v) => v && v.text)
+    .map((v) => ({
+      source: v.source || "web",
+      stars: v.stars ?? null,
+      text: String(v.text).trim(),
+      when: v.when || null,
+    }))
+    .slice(0, 5);
+  if (!items.length) throw new Error("upstash no usable quotes");
+  return { source: "live", items };
+}
+
+async function bakedVoices(c, env, origin) {
   const r = await asset(env, origin, `/data/voices-${c.slug}.json`);
   if (!r.ok) throw new Error(`voices asset ${r.status}`);
   const d = await r.json();
@@ -243,6 +278,11 @@ async function health(env, origin) {
     ping("imagery", async () => {
       const r = await asset(env, origin, `/img/${c.slug}-fix.jpg`);
       if (!r.ok) throw new Error(`missing ${r.status}`);
+    }),
+    ping("upstash", async () => {
+      if (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN)
+        throw new Error("not configured");
+      await redisVoices(c, env);
     }),
     ping("voices", async () => {
       const r = await asset(env, origin, `/data/voices-${c.slug}.json`);

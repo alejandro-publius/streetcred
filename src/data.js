@@ -12,6 +12,8 @@ export const CORNERS = {
     pitch: 0,
     radiusMeters: 150,
     district: 9,
+    // Upstash key holding the scraped resident quotes for this corner.
+    voicesKey: "voices:16th-and-mission",
     fix: {
       name: "Continental crosswalks, corner curb extension, and a protected bike lane",
       cost: "$265,000 estimated",

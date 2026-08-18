@@ -10,21 +10,25 @@ Reviewer names are deliberately dropped. Only text that mentions the street
 environment is kept, so the panel shows what people say about the corner rather
 than what they say about a burrito.
 
-Usage: python3 tools/collect_voices.py <gmaps_run_id> <reddit_run_id>
+Usage: python3 tools/collect_voices.py <gmaps_dataset_id> <reddit_dataset_id>
 """
-import json, pathlib, re, subprocess, sys, datetime
+import html, json, pathlib, re, subprocess, sys, datetime
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "public" / "data"
 SLUG = "16th-mission"
+CORNER_TOKENS = ("16th", "mission", "sixteenth")
 
-RELEVANT = re.compile(
-    r"\b(crosswalk|cross the|crossing|traffic|pedestrian|sidewalk|street|corner|"
-    r"intersection|car|cars|driver|drivers|bike|walk|walking|dangerous|unsafe|"
-    r"safety|speeding|hit by|jaywalk|light|signal|curb)\b",
-    re.I,
-)
-BLOCK = re.compile(r"\b(fuck|shit|bitch|cunt|nigg|retard)\b", re.I)
+# Weighted, because relevance here is not binary. A post about a pedestrian being
+# killed at this corner is worth more than a review that happens to say "street".
+STRONG = re.compile(
+    r"\b(pedestrian|crosswalk|crossing|struck|hit by|run over|killed|collision|"
+    r"crash|jaywalk|speeding|curb ramp)\b", re.I)
+WEAK = re.compile(
+    r"\b(traffic|sidewalk|corner|intersection|driver|drivers|car|cars|bike|"
+    r"walk|walking|dangerous|unsafe|safety|signal|curb|plaza)\b", re.I)
+BLOCK = re.compile(r"\b(fuck|shit|bitch|cunt|nigg|retard|junkie)\b", re.I)
+BOILER = re.compile(r"submitted by.*$|\[link\]|\[comments\]|&#\d+;|https?://\S+", re.I)
 
 
 def token():
@@ -34,26 +38,34 @@ def token():
     sys.exit("no APIFY_TOKEN")
 
 
-def items(run_id, tok):
+def items(dataset_id, tok):
     out = subprocess.run(
-        ["curl", "-sS", f"https://api.apify.com/v2/actor-runs/{run_id}/dataset/items?token={tok}&limit=200"],
+        ["curl", "-sS", f"https://api.apify.com/v2/datasets/{dataset_id}/items?token={tok}&limit=200"],
         capture_output=True, text=True, check=True)
     try:
-        return json.loads(out.stdout)
+        d = json.loads(out.stdout)
+        return d if isinstance(d, list) else []
     except json.JSONDecodeError:
         return []
 
 
 def clean(text):
-    t = " ".join(str(text or "").split())
+    t = html.unescape(str(text or ""))
+    t = BOILER.sub(" ", t)
+    t = " ".join(t.split())
     if len(t) > 240:
-        cut = t[:240].rsplit(" ", 1)[0]
-        t = cut + "..."
+        t = t[:240].rsplit(" ", 1)[0] + "..."
     return t
 
 
-def keep(text):
-    return text and len(text) > 40 and RELEVANT.search(text) and not BLOCK.search(text)
+def score(text):
+    """0 means drop it. Higher means it speaks more directly to street safety."""
+    if not text or len(text) < 40 or BLOCK.search(text):
+        return 0
+    s = 3 * len(STRONG.findall(text)) + len(WEAK.findall(text))
+    if any(t in text.lower() for t in CORNER_TOKENS):
+        s += 2
+    return s
 
 
 def from_gmaps(rows):
@@ -61,14 +73,15 @@ def from_gmaps(rows):
     for place in rows:
         for r in place.get("reviews") or []:
             text = clean(r.get("text") or r.get("textTranslated"))
-            if not keep(text):
+            s = score(text)
+            if not s:
                 continue
             out.append({
                 "source": "google_maps",
                 "stars": r.get("stars") or r.get("rating"),
                 "text": text,
                 "when": (r.get("publishedAtDate") or "")[:10] or None,
-                "_score": len(RELEVANT.findall(text)),
+                "_score": s,
             })
     return out
 
@@ -76,8 +89,13 @@ def from_gmaps(rows):
 def from_reddit(rows):
     out = []
     for p in rows:
-        text = clean(p.get("body") or p.get("text") or p.get("selftext") or p.get("title"))
-        if not keep(text):
+        # Reddit splits the point across title and body, and either can carry it.
+        title = clean(p.get("title"))
+        body = clean(p.get("body") or p.get("text") or p.get("selftext"))
+        text = title if not body else (title + ". " + body if title else body)
+        text = clean(text)
+        s = score(text)
+        if not s:
             continue
         when = p.get("createdAt") or p.get("created") or p.get("date") or ""
         out.append({
@@ -85,7 +103,7 @@ def from_reddit(rows):
             "stars": None,
             "text": text,
             "when": str(when)[:10] or None,
-            "_score": len(RELEVANT.findall(text)),
+            "_score": s,
         })
     return out
 
