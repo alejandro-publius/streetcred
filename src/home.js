@@ -99,8 +99,11 @@ function severityLine(c) {
   return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
 
-export const HOME = (corners, origin = "") => {
+export const HOME = (corners, origin = "", cotd = []) => {
   const ranked = [...corners].sort((a, b) => b.index - a.index);
+  // Newest first. The log is append only, so the last entry is this morning's.
+  const runs = [...cotd].filter((e) => e && e.slug).reverse();
+  const today = runs[0] || null;
   const view = ranked.length ? fitView(ranked) : { center: { lat: 37.7749, lon: -122.4194 }, zoom: 12 };
   const title = "StreetCred, the San Francisco corner scoreboard";
   const desc = ranked.length
@@ -156,6 +159,29 @@ ${BASE_CSS}
 .rg.gC{background:var(--blue)}
 .rg.gD{background:rgba(240,126,38,.7)}
 .rg.gF{background:var(--accent)}
+/* Corner of the day. The one part of this page that changes while nobody is
+   watching, so it says which morning it ran and by what. */
+.cotd{display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit;
+  background:var(--panel);border:1.5px solid var(--line3);border-top:3px solid var(--accent);
+  border-radius:12px;padding:15px 18px;margin:0 0 10px;box-shadow:0 1px 3px rgba(20,27,45,.06);
+  transition:transform 150ms ease-out,box-shadow 150ms ease-out;flex-wrap:wrap}
+.cotd:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(20,27,45,.10)}
+.cotdk{font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--accent)}
+.cotdn{font-size:16px;font-weight:600}
+.cotds{font-size:11.5px;color:var(--dim);flex:1;min-width:180px}
+.cotdg{font-size:13px;font-weight:700;min-width:28px;height:28px;border-radius:8px;display:grid;
+  place-items:center;color:#fff;background:var(--dim)}
+.cotdlog{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 26px}
+.cotdi{display:inline-flex;align-items:center;gap:5px;text-decoration:none;color:var(--dim);
+  font-size:10.5px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
+.cotdi:hover{color:var(--ink);border-color:var(--line3)}
+.cotdi i{width:7px;height:7px;border-radius:50%;display:block;background:var(--dim)}
+.cotdc{font-size:10.5px;color:var(--dim);letter-spacing:.03em}
+.gA{background:var(--green)}
+.gB{background:rgba(120,140,93,.62)}
+.gC{background:var(--blue)}
+.gD{background:rgba(240,126,38,.7)}
+.gF{background:var(--accent)}
 .emptyboard{font-size:13.5px;color:var(--dim);line-height:1.6;padding:22px 0}
 @media(max-width:600px){
   .row{grid-template-columns:26px 1fr auto;gap:10px}
@@ -178,6 +204,28 @@ ${BASE_CSS}
 </header>
 
 <p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
+
+${
+  today
+    ? `<a class="cotd" href="/c/${esc(today.slug)}">
+  <span class="cotdk">Corner of the day</span>
+  <span class="cotdn">${esc(today.name || today.slug)}</span>
+  <span class="cotds">Audited autonomously this morning, ${esc(today.date)}${today.status === "partial" ? ", with some lanes degraded" : ""}</span>
+  <span class="cotdg g${esc(today.grade || "A")}">${esc(today.grade || "?")}</span>
+</a>
+${
+  runs.length
+    ? `<div class="cotdlog">${runs
+        .slice(0, 14)
+        .map(
+          (e) =>
+            `<a class="cotdi" href="/c/${esc(e.slug)}" title="${esc(e.name || e.slug)}, ${esc(e.date)}"><i class="g${esc(e.grade || "A")}"></i><span>${esc(String(e.date).slice(5))}</span></a>`,
+        )
+        .join("")}<span class="cotdc">${runs.length} audited without a human so far</span></div>`
+    : ""
+}`
+    : ""
+}
 
 ${
   ranked.length

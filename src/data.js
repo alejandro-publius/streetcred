@@ -107,6 +107,24 @@ export function makeCorner({ slug, name, lat, lon, district, cnn }) {
 
 // Names only. No email addresses anywhere in this product: nothing here is ever
 // sent to a real official.
+// The runway for the daily autonomous audit. Drawn from the SF Vision Zero High
+// Injury Network and roughly ordered by expected severity, so the corners that
+// matter most are audited first if the queue is ever cut short. None of these
+// are warmed yet: that is the point, since the feature only means anything if
+// the corner is new on the morning it appears.
+//
+// Seeded into KV under cotd:queue by tools/seed_cotd.js and consumed from the
+// front. Anything that fails to resolve is logged and skipped rather than
+// retried forever, so one bad entry cannot stall the queue.
+export const COTD_SEED = [
+  "19th and Mission", "24th and Mission", "Franklin and Geary", "Gough and Fell",
+  "Cesar Chavez and Mission", "Masonic and Geary", "Divisadero and Oak",
+  "Turk and Larkin", "Bayshore and Silver", "3rd and Evans",
+  "Post and Leavenworth", "Ellis and Jones", "Fell and Masonic",
+  "Ocean and Phelan", "Persia and Mission", "Lincoln and 19th",
+  "Sloat and 19th", "Portola and Woodside",
+];
+
 export const SUPERVISORS = {
   1: "Connie Chan",
   3: "Danny Sauter",

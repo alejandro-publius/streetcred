@@ -112,6 +112,11 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 }
 .corner{margin-left:auto;text-align:right;font-size:13px;color:var(--dim);line-height:1.5}
 .corner b{display:block;font-size:15px;color:var(--ink);font-weight:600}
+/* Only present on a corner the scheduled handler audited by itself. It is a
+   claim about the product rather than about the corner, so it appears only when
+   the run record says so and never as decoration. */
+.corner .auto{display:block;font-size:10.5px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--accent);margin-top:3px}
 .lede{font-size:15px;color:var(--dim);max-width:660px;margin:0 0 26px;line-height:1.6}
 .nudge{font-family:inherit;font-size:inherit;color:var(--accent);background:none;border:0;padding:0;
   cursor:pointer;text-decoration:underline;text-underline-offset:3px}
@@ -428,7 +433,7 @@ ${BASE_CSS}
   <button class="share" id="share" type="button">Share corner</button>
   <div class="corner"><b>${c.name}</b>${c.city}${
     c.district ? `, District ${c.district}` : ", district unresolved"
-  }</div>
+  }${c.cotd ? `<span class="auto">Audited autonomously by StreetCred on ${c.cotd}</span>` : ""}</div>
 </header>
 
 <p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>

@@ -17,6 +17,12 @@
       "id": "6918c07a1e1540f0ac9b6c499c5917b7"
     }
   ],
+  // One corner audited by itself every morning. Cloudflare crons are UTC only,
+  // so 13:10 UTC is 06:10 Pacific during daylight time and 05:10 once it ends.
+  // The handler records the Pacific date, because the claim is about mornings.
+  "triggers": {
+    "crons": ["10 13 * * *"]
+  },
   "observability": {
     "enabled": true
   }

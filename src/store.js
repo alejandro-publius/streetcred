@@ -140,6 +140,47 @@ export async function getHinList(env) {
   }
 }
 
+// ---------------------------------------------------------------- corner of the day
+
+// The queue the scheduled handler eats from, and the log of what it has done.
+// Both are plain KV lists rather than anything cleverer, because the whole
+// feature is one corner a day and the interesting property is that it keeps
+// happening without anyone present.
+export async function getQueue(env) {
+  const raw = await rawGet(env, "cotd:queue");
+  if (!raw) return null;
+  try {
+    const q = JSON.parse(raw);
+    return Array.isArray(q) ? q : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putQueue(env, queue) {
+  await rawPut(env, "cotd:queue", JSON.stringify(queue));
+}
+
+export async function getCotdLog(env) {
+  const raw = await rawGet(env, "cotd:log");
+  if (!raw) return [];
+  try {
+    const l = JSON.parse(raw);
+    return Array.isArray(l) ? l : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function appendCotdLog(env, entry) {
+  const log = await getCotdLog(env);
+  log.push(entry);
+  // Newest last, trimmed to a season. A streak nobody can see is not a streak,
+  // but neither is one that needs a scrollbar.
+  await rawPut(env, "cotd:log", JSON.stringify(log.slice(-120)));
+  return log;
+}
+
 // ---------------------------------------------------------------- timeline
 
 // Ceiling on newly built press timelines per day. Each one costs about a dozen
@@ -231,6 +272,12 @@ export async function getApifyCounts(env, slug) {
   } catch {
     return null;
   }
+}
+
+// Written by the cron when it audits a corner overnight, so the board is
+// current by morning without a human running the precompute tool.
+export async function putHinList(env, corners) {
+  await rawPut(env, "hin:list", JSON.stringify({ built: new Date().toISOString(), corners }));
 }
 
 // ---------------------------------------------------------------- share card

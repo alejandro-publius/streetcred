@@ -1,5 +1,6 @@
 import {
   CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, canonicalSlug, makeCorner, SERVICE_NAMES,
+  COTD_SEED,
 } from "./data.js";
 import { PAGE } from "./page.js";
 import { HOME, staticMapPath, fitView } from "./home.js";
@@ -8,6 +9,7 @@ import {
   getCorner, putCorner, getImage, rateLimit, getScore, putScore, getHazards, putHazards,
   getCredCached, putCredCached, getShareCard, getHinList, getRun, putRun, getApifyCounts, getLetterRun, putLetterRun,
   getTimeline, putTimeline, reserveTimeline, timelineBudget,
+  getQueue, putQueue, getCotdLog, appendCotdLog, putHinList, getImageryStatus,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import { imageryFor } from "./imagery.js";
@@ -429,9 +431,14 @@ async function redisVoices(c, env) {
 
 async function bakedVoices(c, env, origin) {
   const r = await asset(env, origin, `/data/voices-${c.slug}.json`);
+  // No committed scrape for this corner is an answer, not an error. Almost every
+  // corner is in that state, including every corner the cron audits, and
+  // throwing here made a normal empty lane look like a broken one in the run
+  // log. A real failure to read or parse still throws.
+  if (r.status === 404) return emptyVoices();
   if (!r.ok) throw new Error(`voices asset ${r.status}`);
   const d = await r.json();
-  if (!d.items?.length) throw new Error("voices empty");
+  if (!d.items?.length) return emptyVoices();
   return { source: "cache", items: d.items.slice(0, 5), collected: d.collected || null };
 }
 
@@ -494,8 +501,8 @@ async function mapImage(c, env, ctx) {
 
 // ---------------------------------------------------------------- letter
 async function getLetter(c, env, ctx) {
-  const supervisor = supervisorFor(ctx.stats.district);
-  const headlines = (ctx.news.items || [])
+  const supervisor = supervisorFor(ctx.stats?.district);
+  const headlines = (ctx.news?.items || [])
     .slice(0, 2)
     .map((n) => `"${n.title}" (${n.domain}${n.date ? ", " + n.date : ""})`)
     .join("; ");
@@ -503,10 +510,10 @@ async function getLetter(c, env, ctx) {
   // scrape at this corner returns plenty of transit-station commentary, and a
   // letter quoting a review of the escalators would weaken the ask.
   const ONTOPIC = /crosswalk|crossing|pedestrian|sidewalk|driver|traffic|curb|intersection|corner/i;
-  const quote = (ctx.voices.items || []).map((v) => v.text).find((t) => t && ONTOPIC.test(t));
+  const quote = (ctx.voices?.items || []).map((v) => v.text).find((t) => t && ONTOPIC.test(t));
   // With no clear district majority the addressee is the citywide official, and
   // the letter must not invent a district number to sound authoritative.
-  const dist = ctx.stats.district;
+  const dist = ctx.stats?.district;
   const addressee = dist ? `Supervisor ${supervisor}` : supervisor;
   const where = dist ? ` in District ${dist}` : " in San Francisco";
   const signoff = dist ? `A resident of District ${dist}` : "A resident of San Francisco";
@@ -551,8 +558,8 @@ async function getLetter(c, env, ctx) {
   const prompt = `Write a respectful one-page letter from a resident to San Francisco ${addressee} about the intersection of ${c.name}${where}.
 
 Use these facts and cite them plainly:
-- ${ctx.stats.crashes} injury collisions recorded by the city within 150 meters of this intersection in the last five years${ctx.stats.fatal ? `, ${ctx.stats.fatal} of them fatal` : ""}. Do not describe this figure as covering any longer period.
-- ${ctx.stats.reports311} street-condition 311 reports at this location in the last three years, counting street defects, sidewalk and curb, signs, streetlights and blocked sidewalks only.
+- ${ctx.stats?.crashes ?? 0} injury collisions recorded by the city within 150 meters of this intersection in the last five years${ctx.stats?.fatal ? `, ${ctx.stats.fatal} of them fatal` : ""}. Do not describe this figure as covering any longer period.
+- ${ctx.stats?.reports311 ?? 0} street-condition 311 reports at this location in the last three years, counting street defects, sidewalk and curb, signs, streetlights and blocked sidewalks only.
 ${headlines ? `- Recent press coverage: ${headlines}.` : "- No press coverage was found for this corner. Do not cite or invent any news reporting."}
 ${scoreLine}${longevityLine}${hazardLines}
 ${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident testimony."}
@@ -696,48 +703,25 @@ const titleCase = (s) => String(s).replace(/\b([a-z])/g, (m) => m.toUpperCase())
 // Free text to a corner. Everything cheap and local happens before anything
 // billable: rate limit, then parse, then the alias table, then the KV cache, and
 // only then a network lookup. A nonsense query never leaves the Worker.
-async function handleResolve(url, request, env) {
-  const q = url.searchParams.get("q") || "";
-
-  const ip = request.headers.get("CF-Connecting-IP") || request.headers.get("x-real-ip");
-  const rl = await rateLimit(env, ip);
-  if (!rl.allowed) {
-    return json(
-      {
-        ok: false,
-        reason: "rate limited",
-        message: "Too many lookups from this connection. Try again in a few minutes.",
-      },
-      429,
-    );
-  }
-
+// Free text to a stored corner, with no HTTP in it. The scheduled handler and
+// the search box both go through here, so an autonomously audited corner is
+// created by exactly the same code that creates one somebody typed. Anything
+// else would mean the cron was testing a path visitors never take.
+async function resolveCorner(q, env) {
   const parsed = parseQuery(q);
   if (!parsed.ok) {
-    return json({
+    return {
       ok: false,
       reason: parsed.reason,
       message: 'Type two cross streets, like "24th and Valencia" or "Turk & Taylor".',
-    });
+    };
   }
 
   const slug = canonicalSlug(parsed.slug);
-
-  if (CORNERS[slug]) {
-    const c = CORNERS[slug];
-    return json({
-      ok: true, slug: c.slug, name: c.name, district: c.district,
-      lat: c.lat, lon: c.lon, heading: c.heading ?? 0, source: "precomputed",
-    });
-  }
+  if (CORNERS[slug]) return { ok: true, corner: CORNERS[slug], source: "precomputed" };
 
   const cached = await getCorner(env, slug);
-  if (cached) {
-    return json({
-      ok: true, slug: cached.slug, name: cached.name, district: cached.district,
-      lat: cached.lat, lon: cached.lon, heading: cached.heading ?? 0, source: "cache",
-    });
-  }
+  if (cached) return { ok: true, corner: cached, source: "cache" };
 
   const loc = await locate(parsed);
   if (!loc.ok) {
@@ -755,23 +739,37 @@ async function handleResolve(url, request, env) {
     } else {
       message = `No San Francisco intersection found at ${parsed.name}. Try two cross streets, like "24th and Valencia".`;
     }
-    return json({ ok: false, reason: loc.reason, message });
+    return { ok: false, reason: loc.reason, message };
   }
 
   const district = await districtFor(loc.lat, loc.lon).catch(() => null);
-  const c = makeCorner({
-    slug,
-    name: parsed.name,
-    lat: loc.lat,
-    lon: loc.lon,
-    district,
-    cnn: loc.cnn,
-  });
+  const c = makeCorner({ slug, name: parsed.name, lat: loc.lat, lon: loc.lon, district, cnn: loc.cnn });
   await putCorner(env, c);
+  return { ok: true, corner: c, source: loc.source };
+}
 
+async function handleResolve(url, request, env) {
+  const q = url.searchParams.get("q") || "";
+
+  const ip = request.headers.get("CF-Connecting-IP") || request.headers.get("x-real-ip");
+  const rl = await rateLimit(env, ip);
+  if (!rl.allowed) {
+    return json(
+      {
+        ok: false,
+        reason: "rate limited",
+        message: "Too many lookups from this connection. Try again in a few minutes.",
+      },
+      429,
+    );
+  }
+
+  const res = await resolveCorner(q, env);
+  if (!res.ok) return json({ ok: false, reason: res.reason, message: res.message });
+  const c = res.corner;
   return json({
-    ok: true, slug: c.slug, name: c.name, district,
-    lat: c.lat, lon: c.lon, heading: c.heading ?? 0, source: loc.source,
+    ok: true, slug: c.slug, name: c.name, district: c.district ?? null,
+    lat: c.lat, lon: c.lon, heading: c.heading ?? 0, source: res.source,
   });
 }
 
@@ -872,7 +870,173 @@ async function generatedImage(pathname, env, ctx) {
 }
 
 // ---------------------------------------------------------------- router
+// ---------------------------------------------------------------- corner of the day
+
+// Cloudflare crons fire in UTC with no timezone support, so the schedule in
+// wrangler.jsonc is 13:10 UTC, which is 06:10 Pacific while daylight time is in
+// force and 05:10 once it ends. Pacific is what the log records, because the
+// claim being made is "a new corner every morning" and mornings are local.
+const PT_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Los_Angeles",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const pacificDay = (d = new Date()) => PT_DAY.format(d);
+
+// Cost, stated plainly because it is billed and recurring: a fully warmed
+// corner is two Gemini image generations, roughly 8 to 14 cents, plus about a
+// dozen Exa searches for the press history and one text call for the letter.
+// The cron counts against the same daily generation cap as everybody else and
+// never bypasses it. If image quota runs out, or sponsor credits expire, the
+// run publishes with the records lanes and honest pending-free imagery, and
+// says so in the log. A records-only audit is still a daily autonomous audit.
+async function cornerOfTheDay(env, ctx, origin) {
+  const today = pacificDay();
+  const log = await getCotdLog(env);
+
+  // Idempotent by date, not by invocation. A redeploy, a retry, or a manual
+  // trigger on a day that already ran must not audit a second corner and must
+  // not spend a second pair of image generations.
+  const already = log.find((e) => e.date === today);
+  if (already) {
+    return { ok: true, skipped: "already ran today", date: today, entry: already };
+  }
+
+  let queue = await getQueue(env);
+  if (!queue) {
+    queue = [...COTD_SEED];
+    await putQueue(env, queue);
+  }
+  if (!queue.length) {
+    const entry = { date: today, slug: null, status: "failed", reason: "the queue is empty" };
+    await appendCotdLog(env, entry);
+    return { ok: false, ...entry };
+  }
+
+  // A resolver failure is the only thing that skips to the next entry, and only
+  // a few times, so one run cannot drain a fortnight of runway on bad input.
+  let corner = null;
+  const skipped = [];
+  for (let tries = 0; tries < 4 && queue.length; tries++) {
+    const query = queue.shift();
+    const res = await resolveCorner(query, env).catch((e) => ({
+      ok: false,
+      reason: String(e.message || e).slice(0, 80),
+    }));
+    if (res.ok) {
+      corner = res.corner;
+      break;
+    }
+    skipped.push({ query, reason: res.reason });
+  }
+  await putQueue(env, queue);
+
+  if (!corner) {
+    const entry = {
+      date: today,
+      slug: null,
+      status: "failed",
+      reason: `no queue entry resolved: ${skipped.map((s) => `${s.query} (${s.reason})`).join("; ")}`,
+    };
+    await appendCotdLog(env, entry);
+    return { ok: false, ...entry };
+  }
+
+  // Every lane is allowed to fail on its own. A failed lane publishes in its
+  // labelled degraded state rather than taking the corner down with it, which
+  // is the same rule the page has always followed for a visitor.
+  const notes = [];
+  const lane = async (name, fn) => {
+    try {
+      return await fn();
+    } catch (e) {
+      notes.push(`${name}: ${String(e.message || e).slice(0, 60)}`);
+      return null;
+    }
+  };
+
+  const stats = await lane("stats", () => getStats(corner));
+  const score = await lane("index", () => getScoreFor(corner, env));
+  const imagery = await lane("imagery", () => imageryFor(corner, env, ctx));
+  if (imagery && imagery.status !== "ready" && imagery.status !== "pending") {
+    notes.push(`imagery: ${imagery.status}`);
+  }
+  await lane("timeline", () => getTimelineFor(corner, env));
+  const news = (await lane("press", () => getNews(corner, env))) || { source: "empty", items: [] };
+  const hazards = await lane("audit", () => getHazardsFor(corner, env, origin));
+  // A corner with no committed scrape has no baked voices asset, which is the
+  // normal case for anything the cron audits. That is an empty lane, not a
+  // failure, and it must not be reported as one.
+  const voices = (await lane("voices", () => getVoices(corner, env, origin))) || emptyVoices();
+
+  await lane("cred", async () => {
+    const fresh = credCheck({ stats, news, voices, hazards });
+    await putCredCached(env, corner.slug, fresh);
+    return fresh;
+  });
+
+  await lane("letter", async () => {
+    const timeline = await getTimeline(env, corner.slug, TIMELINE_VERSION).catch(() => null);
+    return getLetter(corner, env, { stats, news, voices, score, hazards, timeline });
+  });
+
+  // Stamped on the corner itself so its page can say so without consulting the
+  // log. This is the whole story in one line: nobody was here when this ran.
+  await putCorner(env, { ...corner, cotd: today });
+  await lane("manifest", () => runManifest(corner, env, origin, "cron", true));
+
+  // The leaderboard is the front door, so a corner audited overnight has to be
+  // on it by morning or the streak is invisible.
+  await lane("leaderboard", async () => {
+    const list = await getHinList(env);
+    const row = {
+      slug: corner.slug,
+      name: corner.name,
+      lat: corner.lat,
+      lon: corner.lon,
+      district: stats?.district ?? corner.district ?? null,
+      index: score?.index ?? 0,
+      grade: score?.grade ?? "A",
+      counts: score?.counts ?? {},
+      points: score?.points ?? 0,
+      collisions: stats?.crashes ?? 0,
+      fatal: stats?.fatal ?? 0,
+      cotd: today,
+    };
+    const merged = [...list.filter((c) => c.slug !== corner.slug), row].sort(
+      (a, b) => b.index - a.index || (b.points || 0) - (a.points || 0),
+    );
+    await putHinList(env, merged);
+  });
+
+  // Generation runs in the background, so the status captured at the start of
+  // the run is almost always "pending". By now the slower lanes have taken long
+  // enough that it has usually settled: report where it actually landed.
+  const settled = await getImageryStatus(env, corner.slug).catch(() => null);
+
+  const entry = {
+    date: today,
+    slug: corner.slug,
+    name: corner.name,
+    grade: score?.grade ?? null,
+    index: score?.index ?? null,
+    imagery: settled?.status ?? imagery?.status ?? "unavailable",
+    status: notes.length ? "partial" : "ok",
+    ...(notes.length ? { reason: notes.join("; ") } : {}),
+    ...(skipped.length ? { skipped } : {}),
+  };
+  await appendCotdLog(env, entry);
+  return { ok: true, ...entry };
+}
+
 export default {
+  // The cron. Everything it does happens inside waitUntil so a slow lane cannot
+  // be cut off when the handler returns.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(cornerOfTheDay(env, ctx, "https://streetcred.thealexschroeder.workers.dev"));
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const origin = url.origin;
@@ -911,8 +1075,11 @@ export default {
         if (legacy) {
           return Response.redirect(`${origin}/c/${canonicalSlug(legacy)}`, 301);
         }
-        const corners = await getHinList(env);
-        return new Response(HOME(corners, origin), {
+        const [corners, cotdLog] = await Promise.all([
+          getHinList(env),
+          getCotdLog(env).catch(() => []),
+        ]);
+        return new Response(HOME(corners, origin, cotdLog), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
