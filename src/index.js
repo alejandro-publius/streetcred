@@ -11,6 +11,8 @@ import {
   getTimeline, putTimeline, reserveTimeline, timelineBudget,
   getQueue, putQueue, getCotdLog, appendCotdLog, putHinList, getImageryStatus,
   getSuggestion, putSuggestion,
+  getJournal, appendJournal, putAgentRescore, putAgentLetter, putAgentFlag,
+  countAgentReject, getAgentRejects,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import { imageryFor } from "./imagery.js";
@@ -20,6 +22,8 @@ import { buildManifest, PUBLIC_TRIGGERS } from "./manifest.js";
 import { classify, streetTokens, domainOf, searchQuery } from "./newsfilter.js";
 import { buildTimeline, TIMELINE_VERSION } from "./timeline.js";
 import { buildSuggestion, SUGGEST_VERSION } from "./suggest.js";
+import { handleAgentReport, journalStats, JOURNAL_CAP } from "./agent.js";
+import { WATCHDOG } from "./watchdog.js";
 
 // DataSF open datasets, keyless.
 const DS_CRASHES = "ubvf-ztfx";
@@ -105,6 +109,18 @@ async function corner(url, env) {
   if (CORNERS[slug]) return CORNERS[slug];
   const stored = await getCorner(env, slug);
   return stored || CORNERS[DEFAULT_SLUG];
+}
+
+// Strict lookup, null when the corner is unknown. The forgiving version above
+// falls back to the default corner, which is right for a browser following a
+// dead link and catastrophic for the agent ingest: a letter posted for a slug
+// this instance has never resolved would otherwise be verified against 16th and
+// Mission's collision record and stored as truthful.
+async function cornerBySlug(env, raw) {
+  const slug = canonicalSlug(String(raw || ""));
+  if (!slug) return null;
+  if (CORNERS[slug]) return CORNERS[slug];
+  return (await getCorner(env, slug)) || null;
 }
 
 // Static assets must be read through the ASSETS binding. A Worker fetching its
@@ -1087,6 +1103,52 @@ export default {
       // cache sits in front so a corner's bytes are read from KV once per colo.
       if (p.startsWith("/gen/")) {
         return await generatedImage(p, env, ctx);
+      }
+
+      // The watchdog surface. Deliberately above the corner lookup: none of
+      // these are corner-scoped, and routing them through it would resolve a
+      // default corner they have no use for.
+      if (p === "/api/agent/report") {
+        const out = await handleAgentReport(request, env, {
+          countReject: countAgentReject,
+          appendJournal: (envRef, record) => appendJournal(envRef, record, JOURNAL_CAP),
+          putAgentRescore,
+          putAgentLetter,
+          putAgentFlag,
+          cornerFor: (slug) => cornerBySlug(env, slug),
+          statsFor: async (slug) => {
+            const target = await cornerBySlug(env, slug);
+            return target ? getStats(target) : null;
+          },
+          scoreFor: async (slug) => {
+            const target = await cornerBySlug(env, slug);
+            return target ? getScoreFor(target, env) : null;
+          },
+          timelineFor: (slug) => getTimeline(env, slug, TIMELINE_VERSION),
+        });
+        return json(out.body, out.status);
+      }
+
+      // Public, unauthenticated, and the reason the diary's numbers are worth
+      // anything: every figure on /watchdog can be recounted from this.
+      if (p === "/api/agent/journal") {
+        const journal = await getJournal(env).catch(() => []);
+        return json({
+          source: "live",
+          stats: journalStats(journal),
+          rejected: await getAgentRejects(env).catch(() => 0),
+          entries: journal,
+        });
+      }
+
+      if (p === "/watchdog" || p === "/watchdog/") {
+        const [journal, rejects] = await Promise.all([
+          getJournal(env).catch(() => []),
+          getAgentRejects(env).catch(() => 0),
+        ]);
+        return new Response(WATCHDOG(journal, rejects, origin), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
       }
 
       const c = await corner(url, env);

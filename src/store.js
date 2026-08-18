@@ -362,6 +362,85 @@ export async function reserveGeneration(env) {
   return true;
 }
 
+// ---------------------------------------------------------------- watchdog
+
+// Everything the Corner Watchdog writes lives under agent:, so the whole
+// surface an outside system can touch is one prefix and can be listed, audited
+// or dropped in one operation. Nothing here shares a key with a lane the site
+// computes for itself: an agent must never be able to overwrite StreetCred's
+// own score, letter or imagery, only to publish its parallel claim beside them.
+
+export async function getJournal(env) {
+  const raw = await rawGet(env, "agent:journal");
+  if (!raw) return [];
+  try {
+    const l = JSON.parse(raw);
+    return Array.isArray(l) ? l : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function appendJournal(env, entry, cap = 300) {
+  const log = await getJournal(env);
+  // Newest first, because the diary is read from the top and the interesting
+  // entry is always this morning's.
+  log.unshift(entry);
+  const trimmed = log.slice(0, cap);
+  await rawPut(env, "agent:journal", JSON.stringify(trimmed));
+  return { count: trimmed.length };
+}
+
+export async function putAgentRescore(env, rec) {
+  await rawPut(env, `agent:rescore:${rec.slug}`, JSON.stringify(rec));
+}
+
+export async function getAgentRescore(env, slug) {
+  const raw = await rawGet(env, `agent:rescore:${slug}`);
+  try {
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putAgentLetter(env, rec) {
+  await rawPut(env, `agent:letter:${rec.slug}`, JSON.stringify(rec));
+}
+
+export async function getAgentLetter(env, slug) {
+  const raw = await rawGet(env, `agent:letter:${slug}`);
+  try {
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putAgentFlag(env, rec) {
+  await rawPut(env, `agent:flag:${rec.slug}`, JSON.stringify(rec));
+}
+
+export async function getAgentFlag(env, slug) {
+  const raw = await rawGet(env, `agent:flag:${slug}`);
+  try {
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// The only thing a failed authentication is allowed to leave behind. Counted so
+// the page can say "N rejected" without recording who, when or with what.
+export async function countAgentReject(env) {
+  const used = parseInt((await rawGet(env, "agent:rejects")) || "0", 10) || 0;
+  await rawPut(env, "agent:rejects", String(used + 1));
+}
+
+export async function getAgentRejects(env) {
+  return parseInt((await rawGet(env, "agent:rejects")) || "0", 10) || 0;
+}
+
 // ---------------------------------------------------------------- rate limit
 
 export async function rateLimit(env, ip) {
