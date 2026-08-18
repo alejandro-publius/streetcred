@@ -163,6 +163,45 @@ async function getImagery(c, env, origin) {
   };
 }
 
+// ---------------------------------------------------------------- map
+// A Static Maps thumbnail, fetched server side for the same reason the Street
+// View frame is: the key must never reach the browser. Static image only, no
+// Maps JS. The bytes are identical for every visitor, so the response is parked
+// in the edge cache and Google is hit once per corner per day.
+function staticMapUrl(c, env) {
+  const q = new URLSearchParams({
+    center: `${c.lat},${c.lon}`,
+    zoom: "17",
+    size: "640x400",
+    maptype: "roadmap",
+    markers: `color:0xF07E26|${c.lat},${c.lon}`,
+    key: env.GOOGLE_MAPS_API_KEY,
+  });
+  return `https://maps.googleapis.com/maps/api/staticmap?${q}`;
+}
+
+const mapCacheKey = (c) => new Request(`https://streetcred.internal/map/${c.slug}.jpg`);
+
+async function mapImage(c, env, ctx) {
+  const cache = caches.default;
+  const key = mapCacheKey(c);
+  const hit = await cache.match(key);
+  if (hit) return hit;
+
+  const r = await fetch(staticMapUrl(c, env));
+  const type = r.headers.get("content-type") || "";
+  // A bad key or a blown quota comes back as text, not an image. Fail with a 404
+  // so the page drops the panel instead of rendering a broken thumbnail.
+  if (!r.ok || !type.startsWith("image/")) {
+    return new Response("map unavailable", { status: 404 });
+  }
+  const out = new Response(r.body, {
+    headers: { "content-type": type, "cache-control": "public, max-age=86400" },
+  });
+  ctx.waitUntil(cache.put(key, out.clone()));
+  return out;
+}
+
 // ---------------------------------------------------------------- letter
 async function getLetter(c, env, ctx) {
   const supervisor = supervisorFor(ctx.stats.district);
@@ -279,6 +318,13 @@ async function health(env, origin) {
       const r = await asset(env, origin, `/img/${c.slug}-fix.jpg`);
       if (!r.ok) throw new Error(`missing ${r.status}`);
     }),
+    ping("staticmap", async () => {
+      // Cache first, so a health check does not spend a Static Maps request.
+      if (await caches.default.match(mapCacheKey(c))) return;
+      const r = await fetch(staticMapUrl(c, env));
+      if (!r.ok || !(r.headers.get("content-type") || "").startsWith("image/"))
+        throw new Error(`http ${r.status}`);
+    }),
     ping("upstash", async () => {
       if (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN)
         throw new Error("not configured");
@@ -295,13 +341,17 @@ async function health(env, origin) {
 
 // ---------------------------------------------------------------- router
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const origin = url.origin;
     const c = corner(url);
     const p = url.pathname;
 
     try {
+      if (p === "/map.jpg") {
+        return await mapImage(c, env, ctx);
+      }
+
       if (p === "/" || p === "/index.html") {
         return new Response(PAGE(c), {
           headers: { "content-type": "text/html; charset=utf-8" },

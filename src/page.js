@@ -52,6 +52,11 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px}
 .stat .n{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
 .stat .l{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.45}
 
+#mappanel[hidden]{display:none}
+#mappanel{padding:18px 18px 14px}
+.mapimg{display:block;width:100%;max-height:230px;object-fit:cover;object-position:center;border-radius:10px;border:1px solid var(--line)}
+.mapfoot{font-size:11.5px;color:var(--dim);margin:9px 0 0}
+
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:18px}
 .ph{display:flex;align-items:center;gap:10px;margin-bottom:16px}
@@ -116,6 +121,12 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Collisions on record within 150m</div></div>
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-related 311 reports, 3 years</div></div>
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>
+</div>
+
+<div class="panel" id="mappanel" hidden>
+  <div class="ph"><h2>The corner</h2></div>
+  <img id="mapimg" class="mapimg" alt="Roadmap showing the location of ${c.name}, ${c.city}">
+  <p class="mapfoot">${c.name}, District ${c.district}. Map data: Google.</p>
 </div>
 
 <div class="cols">
@@ -202,6 +213,15 @@ document.querySelectorAll(".toggle button").forEach(b => b.addEventListener("cli
 })();
 
 fetch("/api/imagery").then(r => r.json()).then(d => { IMG = d; render(); });
+
+// The map panel stays out of the document until the thumbnail actually decodes.
+// A failed Static Maps request removes it rather than leaving a broken image.
+(function(){
+  const img = el("mapimg");
+  img.addEventListener("load", () => el("mappanel").hidden = false);
+  img.addEventListener("error", () => el("mappanel").remove());
+  img.src = "/map.jpg";
+})();
 
 fetch("/api/stats").then(r => r.json()).then(d => {
   const n = [d.crashes, d.reports311, d.district].map(v => Number(v).toLocaleString());
