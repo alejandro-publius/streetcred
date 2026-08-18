@@ -230,6 +230,12 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .news a:hover .t{color:var(--accent)}
 .news .m{font-size:11.5px;color:var(--dim);margin-top:5px}
 
+/* The scrape funnel. Three quotes look like a thin result until you know how
+   many accounts were read to find them, and the volume is the part of this lane
+   that is actually hard. Renders only from real counts, never estimated. */
+.funnel{font-size:11.5px;color:var(--dim);line-height:1.55;margin:0 0 14px;
+  padding-bottom:12px;border-bottom:1px solid var(--line)}
+.funnel b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
 .voice{background:var(--card);border-radius:11px;padding:15px 17px;margin-bottom:11px}
 .voice p{margin:0;font-family:Lora,Georgia,serif;font-style:italic;font-size:14.5px;line-height:1.6}
 .voice .m{font-size:11.5px;color:var(--dim);margin-top:9px;text-transform:capitalize}
@@ -431,6 +437,7 @@ ${BASE_CSS}
     <div class="panel lane-voices">
       <div class="phs"><h2>Resident voices</h2><span class="tag" id="voicestag">scraped</span></div>
       <div class="pbody">
+        <p class="funnel" id="voicefunnel" hidden></p>
         <div id="voices"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
       </div>
     </div>
@@ -761,6 +768,26 @@ fetch("/api/news" + X).then(r => r.json()).then(d => {
     '</div><div class="m">' + esc(x.domain) + (x.date ? " &middot; " + esc(x.date) : "") + '</div></a>').join("")
     || '<div class="m">No coverage found.</div>';
 });
+
+// The scrape funnel, drawn from the run manifest. It renders only when real
+// counts exist for this corner: a corner with no backfilled scrape shows no
+// line at all rather than a row of zeroes that reads like a result.
+fetch("/api/run" + X).then(r => r.json()).then(m => {
+  const a = m && m.stages && m.stages.apify;
+  if(!a || !a.ran) return;
+  const n = el("voicefunnel");
+  if(a.countsUnavailable){
+    n.textContent = "Scrape counts are no longer retrievable from Apify for this corner.";
+    n.hidden = false;
+    return;
+  }
+  if(!a.itemsRead) return;
+  const num = v => '<b>' + v + '</b>';
+  n.innerHTML = num(a.itemsRead) + ' accounts read, ' + num(a.aboutCorner) +
+    ' about this corner, ' + num(a.streetRelevant) + ' describe the street itself. Showing ' +
+    num(a.kept) + '.';
+  n.hidden = false;
+}).catch(() => {});
 
 fetch("/api/voices" + X).then(r => r.json()).then(d => {
   const items = d.items || [];

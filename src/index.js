@@ -6,12 +6,13 @@ import { HOME, staticMapPath, fitView } from "./home.js";
 import { parseQuery, locate, districtFor, soql } from "./resolve.js";
 import {
   getCorner, putCorner, getImage, rateLimit, getScore, putScore, getHazards, putHazards,
-  getCredCached, putCredCached, getShareCard, getHinList,
+  getCredCached, putCredCached, getShareCard, getHinList, getRun, putRun, getApifyCounts, getLetterRun, putLetterRun,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import { imageryFor } from "./imagery.js";
 import { corroborate, HAZARD_VERSION } from "./hazards.js";
 import { credCheck, isSafetyCoverage, CRED_VERSION } from "./cred.js";
+import { buildManifest, PUBLIC_TRIGGERS } from "./manifest.js";
 
 // DataSF open datasets, keyless.
 const DS_CRASHES = "ubvf-ztfx";
@@ -186,6 +187,7 @@ async function getHazardsFor(c, env, origin) {
       source: "live",
       version: HAZARD_VERSION,
       audited: false,
+      skipped: "this corner was warmed for its records only, so no visual audit was run",
       items: [],
       confirmed: 0,
       candidates: 0,
@@ -196,6 +198,62 @@ async function getHazardsFor(c, env, origin) {
   const fresh = await corroborate(c, today, env);
   await putHazards(env, c.slug, fresh);
   return fresh;
+}
+
+// ---------------------------------------------------------------- run manifest
+
+// One unfiltered 311 count, run only when a manifest is built rather than on
+// every page load. It exists so the manifest can show the filtered figure next
+// to the raw one, because the gap between them is this product's most expensive
+// past mistake: substring matching on "Street" swept in a 3.4M row sanitation
+// queue and inflated one corner roughly twenty four times.
+async function raw311(c) {
+  const since = new Date(Date.now() - 3 * 365 * 24 * 3600 * 1000).toISOString().slice(0, 19);
+  const rows = await soql(DS_311, {
+    "$select": "count(*)",
+    "$where": `within_circle(point, ${c.lat}, ${c.lon}, ${c.radiusMeters}) AND requested_datetime > '${since}'`,
+  });
+  return parseInt(rows?.[0]?.count ?? 0, 10);
+}
+
+// Assembled from lanes that are already computed and cached, so a manifest
+// costs nothing beyond the one raw 311 count above. Stored without a TTL: it
+// records what happened, not something recomputable.
+async function runManifest(c, env, origin, trigger, refresh) {
+  if (!refresh) {
+    const hit = await getRun(env, c.slug);
+    if (hit) return hit;
+  }
+
+  const [stats, news, voices, hazards, score, letterRun, apify, rawReports] = await Promise.all([
+    getStats(c).catch(() => null),
+    // The failure text is kept, not swallowed. "exa no on-topic results" is a
+    // real finding about a quiet corner and it belongs in the record.
+    cached(`news:${c.slug}`, 600e3, () => getNews(c, env)).catch((e) => ({
+      failed: String(e.message || e).slice(0, 120),
+    })),
+    getVoices(c, env, origin).catch(() => null),
+    getHazardsFor(c, env, origin).catch(() => null),
+    getScoreFor(c, env).catch(() => null),
+    getLetterRun(env, c.slug).catch(() => null),
+    getApifyCounts(env, c.slug).catch(() => null),
+    raw311(c).catch(() => null),
+  ]);
+
+  const manifest = buildManifest({
+    slug: c.slug,
+    trigger,
+    stats: stats ? { ...stats, reports311Raw: rawReports } : null,
+    news,
+    voices,
+    apify,
+    hazards,
+    score,
+    letterRun,
+    supervisor: supervisorFor(stats?.district ?? c.district),
+  });
+  await putRun(env, c.slug, manifest);
+  return manifest;
 }
 
 // ---------------------------------------------------------------- cred check
@@ -322,6 +380,12 @@ async function getNews(c, env) {
     source: "live",
     precise,
     heading: precise ? "Press coverage" : "Coverage of this corridor",
+    // Carried on the payload so the run manifest can report what Exa actually
+    // returned rather than only what survived. These are the two numbers that
+    // show the filter doing work: without them the panel looks like a search
+    // box that happened to return five things.
+    found: (d.results || []).length,
+    afterFilters: chosen.length,
     items,
   };
 }
@@ -504,9 +568,22 @@ Rules: plain civic English. Under 220 words. Address only ${addressee}. Distingu
     .join("")
     .trim();
   if (!text) throw new Error("gemini empty letter");
+
+  // Which lanes actually reached the prompt, recorded from the prompt itself
+  // rather than from what was available. A letter written with no press
+  // coverage must never be described as having cited press.
+  const inputs = ["stats"];
+  if (headlines) inputs.push("press");
+  if (quote) inputs.push("voices");
+  if (hz.length) inputs.push("audit");
+  if (ctx.score) inputs.push("index");
+  const generatedAt = new Date().toISOString();
+  await putLetterRun(env, c.slug, { generatedAt, supervisor, inputs, model: GEMINI_TEXT_MODEL });
+
   return {
     source: "live",
     supervisor,
+    generatedAt,
     text: text.replace(/—/g, ", "),
     fix: c.fix.name,
     cost: c.fix.cost,
@@ -865,6 +942,12 @@ export default {
         return await edgeCached(ctx, `hazards-${c.slug}`, 24 * 3600, () =>
           getHazardsFor(c, env, origin).catch(() => ({ source: "empty", items: [] })),
         );
+      }
+
+      if (p === "/api/run") {
+        const asked = url.searchParams.get("trigger");
+        const trigger = PUBLIC_TRIGGERS.has(asked) ? asked : "user";
+        return json(await runManifest(c, env, origin, trigger, url.searchParams.has("refresh")));
       }
 
       if (p === "/api/score") {

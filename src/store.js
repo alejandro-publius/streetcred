@@ -140,6 +140,57 @@ export async function getHinList(env) {
   }
 }
 
+// ---------------------------------------------------------------- run manifest
+
+// What each tool actually did on this corner's last run. No TTL: it is a record
+// of an event that happened, not a cache of something recomputable, and it is
+// what the replay animates. Overwritten only by a later real run.
+export async function getRun(env, slug) {
+  const raw = await rawGet(env, `run:${slug}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function putRun(env, slug, manifest) {
+  await rawPut(env, `run:${slug}`, JSON.stringify(manifest));
+}
+
+// Written at the moment a letter is actually drafted, which is the only moment
+// anything truthful can be said about it. The Worker cannot fetch its own
+// endpoints, and regenerating a letter to find out when it was generated would
+// cost a billed model call to answer a question about the past.
+export async function getLetterRun(env, slug) {
+  const raw = await rawGet(env, `letterrun:${slug}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function putLetterRun(env, slug, record) {
+  await rawPut(env, `letterrun:${slug}`, JSON.stringify(record));
+}
+
+// Apify counts are backfilled offline by tools/backfill_apify.js reading the
+// stored datasets, never by the Worker at request time. A scrape takes minutes
+// and a page load cannot wait on one, and re-scraping to count what was already
+// scraped would be spending money to learn something already on disk.
+export async function getApifyCounts(env, slug) {
+  const raw = await rawGet(env, `apify:${slug}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------- share card
 
 // The 1200x630 preview, composited offline and uploaded, because a Worker has

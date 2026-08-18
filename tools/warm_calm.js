@@ -87,6 +87,11 @@ for (const q of QUERIES) {
   log(`  letter: ${letter.source}, to ${letter.supervisor}`);
 
   const cred = await getJSON(`/api/cred?x=${slug}`);
+
+  // Record what this run actually did, labelled as a precompute rather than
+  // as a visit, so the replay says who drove it.
+  const run = await getJSON(`/api/run?x=${slug}&trigger=precompute&refresh=1`).catch(() => null);
+  log(`  manifest: ${run ? Object.keys(run.stages).filter((k) => run.stages[k].ran).length + " stages ran" : "FAILED"}`);
   log(`  cred: ${cred.verdict} ${cred.score}`);
 
   warmed.push({
