@@ -25,7 +25,22 @@ const LIST = join(ROOT, ".hin-list.json");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (m) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
 
-const prior = JSON.parse(readFileSync(LIST, "utf8"));
+// The deployed board is the source of truth for WHICH corners exist, because
+// the cron adds a corner every morning and the local file goes stale the same
+// day. Rescoring from the stale file once dropped the corner of the day off the
+// production board. Fetch the live list, fall back to the file only if the
+// fetch fails.
+let prior;
+try {
+  const live = await (await fetch(`${BASE}/api/board`)).json();
+  if (!live?.corners?.length) throw new Error("empty board");
+  const localById = new Map(
+    (JSON.parse(readFileSync(LIST, "utf8")).corners || []).map((c) => [c.slug, c]),
+  );
+  prior = { corners: live.corners.map((c) => ({ ...localById.get(c.slug), ...c })) };
+} catch {
+  prior = JSON.parse(readFileSync(LIST, "utf8"));
+}
 log(`${prior.corners.length} warmed corners, base=${BASE}`);
 
 const rows = [];

@@ -15,7 +15,8 @@ export const SCORE_RADIUS = 80;
 // Bump to invalidate every stored score. Any change to the weights, the radius,
 // the time windows, or the frozen distribution must bump this or corners will
 // keep serving grades computed under the old rules.
-export const SCORE_VERSION = "v2";
+// v3: the 600-sample distribution was replaced by the full census, 2026-08-18.
+export const SCORE_VERSION = "v3";
 
 // Harm only. A 311 report is paperwork and must never outweigh a person.
 const WEIGHTS = { fatal: 10, severe: 6, otherVisible: 3, pain: 1, ped: 2 };
@@ -44,84 +45,14 @@ export function pointsFor(counts) {
   };
 }
 
-// FROZEN CITYWIDE DISTRIBUTION. Computed 2026-08-18 by tools/calibrate_score.js,
-// which draws 600 intersections from the 8,254 real crossings in DataSF
-// gmfx-8h6i using a committed seed, then runs the points formula above against
-// each one. Sorted ascending. Rerunning the script reproduces this array exactly.
-//
-// Points over a fixed reference maximum was the wrong shape for this data.
-// Reported harm is heavy tailed: a handful of intersections carry many times the
-// median, so any linear scale spends most of its range on corners that do not
-// exist and pins every busy corner at 100. A percentile answers the question a
-// resident actually asks, which is not "how many points" but "how bad is this
-// compared to the rest of the city".
-//
-// Frozen means frozen. This array must never be recomputed from whatever corners
-// happen to be loaded, because a corner graded B on Tuesday that becomes a C on
-// Friday with nothing changed on the ground is a grade nobody can cite, and
-// people screenshot these. Regenerating it regrades the whole city: bump
-// SCORE_VERSION with it and say so publicly.
-// n=600, min 0, median 3.1, p90 28.1, max 157.8 (Myrtle and Larkin). 47 of the
-// 600 have no recorded harm at all. The shape is the argument: half the city sits
-// under 3.1 points while the worst corner carries 157.8, which is why a linear
-// scale against any single maximum could not tell a bad corner from a
-// catastrophic one. A first pass at 150 was too coarse in the tail, where six
-// distinct corners spanning 83 to 107 points all landed on the same percentile.
-export const DISTRIBUTION = [
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.1,
-  0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1,
-  0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1,
-  0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1,
-  0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1,
-  0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.2,
-  0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-  0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-  0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-  0.2, 0.2, 0.2, 0.2, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3,
-  0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3,
-  0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3,
-  0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4,
-  0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.5,
-  0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.6, 0.6,
-  0.6, 0.6, 0.6, 0.6, 0.7, 0.7, 0.7, 0.8, 0.9, 1, 1, 1,
-  1, 1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1,
-  1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2,
-  1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.3, 1.3, 1.3,
-  1.3, 1.3, 1.3, 1.4, 1.4, 1.4, 1.4, 1.4, 1.5, 1.6, 1.6, 1.6,
-  1.6, 1.8, 1.8, 2, 2, 2.1, 2.1, 2.2, 2.2, 2.2, 2.3, 2.3,
-  2.3, 2.4, 2.4, 2.4, 2.4, 2.5, 2.7, 2.8, 3, 3.1, 3.1, 3.1,
-  3.1, 3.1, 3.1, 3.1, 3.1, 3.1, 3.2, 3.2, 3.2, 3.2, 3.2, 3.2,
-  3.2, 3.2, 3.2, 3.2, 3.2, 3.3, 3.3, 3.3, 3.3, 3.3, 3.3, 3.3,
-  3.4, 3.4, 3.4, 3.4, 3.5, 3.5, 3.5, 3.5, 3.7, 3.8, 3.9, 4.1,
-  4.1, 4.1, 4.2, 4.2, 4.2, 4.2, 4.2, 4.2, 4.2, 4.2, 4.3, 4.3,
-  4.3, 4.3, 4.3, 4.3, 4.3, 4.4, 4.4, 4.5, 4.5, 4.5, 4.6, 4.6,
-  4.7, 4.8, 4.9, 5.2, 5.2, 5.2, 5.2, 5.2, 5.3, 5.4, 5.4, 5.4,
-  5.5, 5.5, 5.6, 5.6, 5.8, 5.8, 5.9, 6.1, 6.1, 6.1, 6.1, 6.1,
-  6.1, 6.2, 6.2, 6.2, 6.3, 6.3, 6.4, 6.4, 6.5, 6.6, 6.6, 6.6,
-  6.6, 6.6, 6.7, 6.7, 6.8, 7.1, 7.1, 7.1, 7.1, 7.1, 7.3, 7.3,
-  7.3, 7.3, 7.5, 7.5, 7.5, 7.5, 7.5, 7.8, 7.8, 8, 8, 8.1,
-  8.2, 8.2, 8.2, 8.3, 8.3, 8.7, 8.8, 9.1, 9.2, 9.2, 9.3, 9.4,
-  9.4, 9.5, 9.6, 9.6, 9.7, 9.7, 9.7, 9.7, 9.7, 9.8, 10.1, 10.2,
-  10.3, 10.3, 10.4, 10.7, 11, 11, 11.1, 11.2, 11.2, 11.2, 11.2, 11.2,
-  11.3, 11.3, 11.3, 11.3, 11.3, 11.3, 12.1, 12.1, 12.1, 12.3, 12.3, 12.3,
-  12.6, 12.6, 12.6, 12.8, 13, 13.1, 13.1, 13.2, 13.2, 13.2, 13.4, 13.4,
-  13.5, 13.5, 13.6, 13.7, 13.7, 14, 14.2, 14.3, 15.1, 15.2, 15.3, 15.3,
-  15.5, 15.5, 15.6, 16.2, 16.3, 16.3, 16.3, 16.4, 16.5, 16.6, 16.7, 17,
-  17, 17.1, 17.4, 17.5, 18, 18.1, 18.1, 18.3, 18.5, 18.6, 18.6, 19,
-  19.2, 19.3, 19.3, 19.5, 19.8, 20.2, 20.4, 20.5, 20.6, 20.7, 21.9, 22.3,
-  22.5, 22.6, 23.2, 23.5, 23.7, 23.8, 24, 24.2, 24.3, 24.4, 24.8, 27.3,
-  28.1, 29, 29.5, 30.3, 32.4, 32.6, 33.7, 33.7, 34.4, 35.1, 35.2, 35.2,
-  35.4, 36.8, 36.9, 37.3, 37.9, 38.5, 38.6, 38.7, 39.1, 39.6, 41.9, 41.9,
-  42.1, 42.4, 43.1, 44.7, 48.9, 49.3, 49.5, 49.7, 50.5, 50.7, 52.2, 52.7,
-  53.6, 54.1, 56, 58.8, 59.6, 61.7, 62.2, 64.5, 64.6, 69.2, 70.2, 71,
-  71.4, 73.7, 75.3, 85.9, 87.2, 89.8, 90.2, 110.4, 110.9, 124.1, 126, 157.8,
-];
-
-export const DISTRIBUTION_SEED = 20260818;
-export const DISTRIBUTION_DATE = "2026-08-18";
+// The distribution lives in src/distribution.js: the full census of the city's
+// crossings, computed once by tools/sweep.mjs and declared final there. It
+// replaced a 600-sample estimate on 2026-08-18; the two agreed closely (both
+// medians 3.1), so the swap moved percentiles by at most a point or two while
+// removing the sampling caveat entirely. The seed constant went with the
+// sampler: a census has no seed.
+export { DISTRIBUTION, DISTRIBUTION_DATE } from "./distribution.js";
+import { DISTRIBUTION } from "./distribution.js";
 
 // More reported harm than this share of the sampled city. Strictly-below is the
 // honest count for the sentence the page prints: a corner with no recorded harm
@@ -131,7 +62,10 @@ export function percentileOf(points) {
   if (!DISTRIBUTION.length) return 0;
   let below = 0;
   for (const v of DISTRIBUTION) if (v < points) below++;
-  return Math.round((100 * below) / DISTRIBUTION.length);
+  // Capped at 99: with a full census the worst corner rounds to 100, and
+  // "more reported harm than 100 percent of intersections" would include the
+  // corner itself. No corner is worse than itself, so no corner reads 100.
+  return Math.min(99, Math.round((100 * below) / DISTRIBUTION.length));
 }
 
 // An F now means worse than 93 percent of San Francisco intersections, which is
