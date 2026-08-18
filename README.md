@@ -30,6 +30,10 @@ It is not a dashboard. It ends in an action: a letter addressed to one named per
 | Resident voices | Apify | `/api/voices` |
 | Corner seen three ways | Street View plus Gemini vision | `/api/imagery` |
 | The ask | Gemini text | `/api/letter` |
+| Press history, year by year | Exa, date bounded | `/api/timeline` |
+| What each tool actually did | the run itself | `/api/run` |
+
+The first five are the evidence. The last two are the receipts: `/api/timeline` is the same press query run once per year since 2014, and `/api/run` is the manifest of what every tool actually did on this corner, which is what the replay animates.
 
 Four independent sources cross-check each other on one specific claim, and that claim becomes a costed, addressed request. Every endpoint reports a `source` of `live`, `cache`, or `sample`, and the page tags anything that is not live. No endpoint returns an error to the browser, so a panel is never dead.
 
@@ -115,7 +119,8 @@ src/resolve.js free text to a corner: normalizing, DataSF lookup, districts
 src/score.js   the Danger Index, DataSF arithmetic only
 src/hazards.js the audit pass and the deterministic corroboration rule
 src/cred.js    four lanes to one verdict, no model
-src/store.js   KV: corners, scores, imagery, budget, rate limiting, leaderboard
+src/store.js   KV: corners, scores, imagery, budgets, rate limiting, leaderboard,
+               run manifests, press timelines, the daily audit queue and log
 src/imagery.js on-demand Street View and Gemini generation, never blocking
 tools/         precompute, share cards, imagery, voices, two test files
 public/        logos and the wordmark
@@ -194,6 +199,20 @@ Frozen means frozen. The array must never float with whatever corners happen to 
 That immediately caught something this product had been getting wrong. The letter used to assert, at every corner, that "an automated visual audit identified sub-standard, faded crosswalk markings and vehicle turning conflict zones." It was a hardcoded sentence, not an audit result, and this README used to call it the strongest and most checkable claim in the letter. Asked to actually look, the model reports that 16th and Mission's markings are **not** faded, which matches the bright continental striping plainly visible in the screenshot at the top of this file. The product was making a specific, checkable, false claim to a named elected official. The letter is now built from the labels: CONFIRMED may be stated as documented, REPORTED is attributed to the record rather than the photograph, and CANDIDATE is an observation the letter is instructed never to present as fact.
 
 **The Cred Check** puts the whole thesis on one line. Four lanes, four booleans, one verdict: 4 of 4 CORROBORATED, 3 SUPPORTED, 2 PARTIAL, 1 or 0 REPORTED ONLY. Agency primary sources cannot light the press lane, since a police bulletin is the record rather than reporting on it. The resident token list is split between street nouns that count on their own and ambiguous words like "scary" that only count beside one, because without that split a review reading "Safe even though it's a scary movie outside" lights the resident lane at 16th and Mission.
+
+## Showing the work
+
+The tools' outputs are all over this page. The tools themselves were invisible. These four features make them visible, at scale and over time, and every one of them is built so it cannot flatter itself.
+
+**Run manifests.** Every corner's pipeline writes `run:{slug}` to KV: what each tool actually did, as counts taken from the payloads the run produced. Nothing is estimated. A stage that did not run records `ran: false` with a reason, which is why a quiet corner's manifest says "no on-topic results found" rather than reporting a zero that reads like a result. The manifest is what makes the rest of this section possible.
+
+**The Exa time machine.** The press query is re-run once per year from 2014 using `startPublishedDate` and `endPublishedDate`, about a dozen searches per corner, cached forever. A collision record says a corner is dangerous now; a year strip says people have been writing about it for a decade. 16th and Mission has coverage in every one of the last thirteen years, 32 headlines in total, from The Bold Italic in 2014 to Walk SF in 2026. 40th and Cabrillo has one, from 2023. That contrast is the feature. It is phrased everywhere as **coverage we can find**, never as a first report, because Exa recall is not ground truth and an empty year means this search found nothing, not that nothing happened.
+
+**The replay.** A "Watch the run" button plays the manifest back as a terminal log, one line per tool, each with its lane color. It is theatre and it says so twice: it names the date of the run it is replaying and it states that timings are compressed. It never re-runs anything, it reads cache only, and under `prefers-reduced-motion` it renders the whole log instantly with no animation and no timers scheduled at all. A corner with missing counts prints why, dimmed, rather than being quietly dropped: a log that shows only successes is an advertisement.
+
+**Corner of the day.** A Cloudflare Cron Trigger audits one new intersection every morning at 06:10 Pacific with nobody present. It eats from a queue of High Injury Network corners, runs the same pipeline a visitor triggers, counts against the same daily generation cap rather than bypassing it, and publishes even when a lane fails, with that lane in its labelled degraded state. It is idempotent by Pacific date, so a redeploy or a retry cannot audit a second corner or spend a second pair of generations. The homepage carries the result and a growing history strip, and the corner's own page says **Audited autonomously by StreetCred on {date}**.
+
+There is a fifth, and it is the one that currently shows nothing. `findSimilar` on the worst corner's best headline looks for a related crossing worth auditing next, then checks every candidate against the city's intersection table before offering it. Right now the coverage related to a fatality at 16th and Mission is entirely citywide, so no candidate survives and the homepage renders nothing rather than a suggestion it cannot stand behind. `/api/suggest` returns the reason.
 
 ## Sharing and the city view
 
