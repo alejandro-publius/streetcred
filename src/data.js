@@ -44,6 +44,51 @@ export const CORNERS = {
 
 export const DEFAULT_SLUG = "16th-mission";
 
+// The canonical slug for a typed corner is its two street names sorted
+// alphabetically, which is what makes "16th and Mission" and "Mission and 16th"
+// one cache entry rather than two. The two precomputed corners predate that rule
+// and keep their original slugs, so every link already in the wild still works.
+export const ALIASES = {
+  "16th-and-mission": "16th-mission",
+  "6th-and-market": "6th-market",
+};
+
+export const canonicalSlug = (slug) => ALIASES[slug] || slug;
+
+// Applied to any corner resolved at runtime. The two precomputed corners carry
+// a fix costed for that specific intersection; a corner nobody has looked at yet
+// gets the standard treatment package and an order-of-magnitude estimate, which
+// is stated as such on the page rather than dressed up as an engineering figure.
+export const DEFAULT_FIX = {
+  name: "Continental crosswalks, corner daylighting, and a leading pedestrian interval",
+  cost: "$250,000 to $350,000, order of magnitude",
+  grant: "Caltrans Highway Safety Improvement Program (HSIP)",
+};
+
+// Builds a corner object in the same shape as a CORNERS entry, so every lane
+// downstream treats a typed corner and a precomputed one identically.
+export function makeCorner({ slug, name, lat, lon, district, cnn }) {
+  return {
+    slug,
+    name,
+    short: name.replace(/ and /i, " & "),
+    city: "San Francisco",
+    lat,
+    lon,
+    // Precomputed corners carry a hand-validated heading picked to put the
+    // crosswalk in the foreground. There is no way to pick that automatically,
+    // so a resolved corner takes the default panorama orientation.
+    heading: 0,
+    pitch: 0,
+    radiusMeters: 150,
+    district: district ?? null,
+    cnn: cnn ?? null,
+    generated: true,
+    voicesKey: null,
+    fix: DEFAULT_FIX,
+  };
+}
+
 // Names only. No email addresses anywhere in this product: nothing here is ever
 // sent to a real official.
 export const SUPERVISORS = {

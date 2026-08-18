@@ -7,6 +7,16 @@
     "directory": "./public",
     "binding": "ASSETS"
   },
+  // Durable store for resolved corners, generated imagery, the daily generation
+  // budget, and resolve rate limiting. KV is eventually consistent, so the daily
+  // cap is approximate at the margin, but it is global and it survives isolate
+  // recycling, which the edge cache does not.
+  "kv_namespaces": [
+    {
+      "binding": "STORE",
+      "id": "6918c07a1e1540f0ac9b6c499c5917b7"
+    }
+  ],
   "observability": {
     "enabled": true
   }

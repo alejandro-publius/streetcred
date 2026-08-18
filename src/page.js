@@ -25,19 +25,31 @@ export const PAGE = (c) => `<!doctype html>
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Poppins,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1120px;margin:0 auto;padding:28px 22px 64px}
-header{display:flex;align-items:center;gap:14px;padding-bottom:22px}
+header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wrap}
 .mark{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1}
 .mark span{color:var(--accent)}
 .switcher{display:flex;gap:7px;margin-left:22px}
 .switcher a{font-size:12.5px;font-weight:600;text-decoration:none;color:var(--dim);
   background:var(--card);border:1px solid var(--line);border-radius:999px;padding:7px 15px;white-space:nowrap}
 .switcher a.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.find{display:flex;align-items:center;gap:7px;margin-left:12px;position:relative}
+.find input{font-family:inherit;font-size:13px;color:var(--ink);background:var(--panel);
+  border:1px solid var(--line);border-radius:999px;padding:8px 15px;width:200px;outline:none}
+.find input:focus{border-color:var(--accent)}
+.find input::placeholder{color:var(--dim)}
+.find button{font-family:inherit;font-size:12.5px;font-weight:600;color:#fff;background:var(--ink);
+  border:0;border-radius:999px;padding:9px 16px;cursor:pointer;white-space:nowrap}
+.find button[disabled]{opacity:.5;cursor:default}
+.findmsg{position:absolute;top:44px;left:0;font-size:12.5px;color:var(--ink);background:var(--panel);
+  border:1px solid var(--line);border-radius:10px;padding:9px 13px;width:300px;line-height:1.5;
+  z-index:6;box-shadow:0 6px 18px rgba(20,27,45,.09)}
 .corner{margin-left:auto;text-align:right;font-size:13px;color:var(--dim);line-height:1.5}
 .corner b{display:block;font-size:15px;color:var(--ink);font-weight:600}
 .lede{font-size:15px;color:var(--dim);max-width:660px;margin:0 0 26px;line-height:1.6}
 
 .toggle{display:flex;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;width:max-content;margin-bottom:16px}
 .toggle button{font-family:inherit;font-size:14px;font-weight:600;color:var(--dim);background:none;border:0;padding:10px 20px;border-radius:8px;cursor:pointer}
+.toggle button[disabled]{opacity:.42;cursor:default}
 .toggle button[aria-pressed="true"]{background:var(--ink);color:#fff}
 .toggle button:nth-child(2)[aria-pressed="true"]{background:var(--accent)}
 .toggle button:nth-child(3)[aria-pressed="true"]{background:var(--green)}
@@ -125,15 +137,23 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
       )
       .join("")}
   </nav>
-  <div class="corner"><b>${c.name}</b>${c.city}, District ${c.district}</div>
+  <form class="find" id="find" role="search">
+    <input id="q" type="search" placeholder="Try 24th and Valencia" autocomplete="off"
+      aria-label="Check any San Francisco corner">
+    <button type="submit" id="findgo">Check</button>
+    <div class="findmsg" id="findmsg" role="status" hidden></div>
+  </form>
+  <div class="corner"><b>${c.name}</b>${c.city}${
+    c.district ? `, District ${c.district}` : ", district unresolved"
+  }</div>
 </header>
 
 <p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor.</p>
 
 <div class="toggle" role="group" aria-label="Corner view">
   <button data-state="today" aria-pressed="true">Today</button>
-  <button data-state="hazards" aria-pressed="false">Hazards</button>
-  <button data-state="fix" aria-pressed="false">Proposed fix</button>
+  <button data-state="hazards" aria-pressed="false"${c.generated ? " disabled" : ""}>Hazards</button>
+  <button data-state="fix" aria-pressed="false"${c.generated ? " disabled" : ""}>Proposed fix</button>
 </div>
 
 <div class="hero single" id="hero">
@@ -216,11 +236,21 @@ const mark = (id, src) => { const t = el(id); if (src !== "live" && src !== "cac
 function render(){
   if(!IMG) return;
   const hero = el("hero");
+  // A corner with no Street View coverage is still a corner with collisions.
+  // Drop the stage, keep every records lane below it untouched.
+  if(!IMG.today){
+    hero.hidden = true;
+    document.querySelector(".toggle").hidden = true;
+    el("capk").textContent = "No photograph";
+    el("capv").textContent = IMG.note || "Street View has no imagery for this corner.";
+    return;
+  }
+  hero.hidden = false;
   el("base").src = IMG.today;
-  if(state === "today"){ hero.classList.add("single"); }
+  if(state === "today" || !IMG[state]){ hero.classList.add("single"); }
   else { hero.classList.remove("single"); el("overlay").src = IMG[state]; setSplit(split); }
   el("capk").textContent = CAPS[state][0];
-  el("capv").textContent = CAPS[state][1];
+  el("capv").textContent = CAPS[state][1] + (state === "today" && IMG.note ? " " + IMG.note : "");
 }
 let split = 50;
 function setSplit(pct){
@@ -242,7 +272,60 @@ document.querySelectorAll(".toggle button").forEach(b => b.addEventListener("cli
   addEventListener("pointermove", move);
 })();
 
-fetch("/api/imagery" + X).then(r => r.json()).then(d => { IMG = d; render(); });
+// Imagery. A precomputed corner answers once with no status field and nothing
+// below ever runs. A corner resolved from typed input answers immediately with
+// the Street View frame and status "pending", then this polls until the two
+// generated states land, enabling each button as it arrives without a repaint.
+const LABELS = { hazards: "Hazards", fix: "Proposed fix" };
+const POLL_MS = 3000, POLL_MAX = 30;   // 30 polls at 3s is a 90 second ceiling
+let polls = 0;
+
+function stateButton(s){ return document.querySelector('.toggle button[data-state="' + s + '"]'); }
+
+function applyImagery(d){
+  IMG = d;
+  for(const s of ["hazards","fix"]){
+    const b = stateButton(s);
+    if(!b) continue;
+    if(d[s]){ b.disabled = false; b.textContent = LABELS[s]; }
+    else if(d.status === "pending"){ b.disabled = true; b.textContent = LABELS[s] + ", generating"; }
+    else if(d.status === "atcapacity"){ b.disabled = true; b.textContent = LABELS[s] + ", at capacity"; }
+    else if(d.status && d.status !== "ready"){ b.disabled = true; b.textContent = LABELS[s] + ", unavailable"; }
+  }
+  render();
+}
+
+function loadImagery(){
+  fetch("/api/imagery" + X).then(r => r.json()).then(d => {
+    applyImagery(d);
+    const settled = !d.status || d.status !== "pending";
+    if(settled) return;
+    if(polls++ < POLL_MAX) setTimeout(loadImagery, POLL_MS);
+    // Timed out rather than failed, but the honest label is the same either way.
+    else applyImagery(Object.assign({}, d, { status: "failed" }));
+  }).catch(() => {});
+}
+loadImagery();
+
+// Free-text corner lookup. Resolve first, then navigate, so the address bar
+// always matches what is on screen and the page is refreshable and linkable.
+(function(){
+  const form = el("find"), input = el("q"), go = el("findgo"), msg = el("findmsg");
+  const say = t => { msg.textContent = t || ""; msg.hidden = !t; };
+  form.addEventListener("submit", e => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if(!q) return;
+    say(""); go.disabled = true; go.textContent = "Checking";
+    const reset = () => { go.disabled = false; go.textContent = "Check"; };
+    fetch("/api/resolve?q=" + encodeURIComponent(q)).then(r => r.json()).then(d => {
+      if(d.ok){ location.href = "/?x=" + encodeURIComponent(d.slug); return; }
+      reset();
+      say(d.message || "That corner could not be found.");
+    }).catch(() => { reset(); say("Lookup failed. Try again in a moment."); });
+  });
+  input.addEventListener("input", () => say(""));
+})();
 
 // The map panel stays out of the document until the thumbnail actually decodes.
 // A failed Static Maps request removes it rather than leaving a broken image.

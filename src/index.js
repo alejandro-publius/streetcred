@@ -1,5 +1,8 @@
-import { CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor } from "./data.js";
+import { CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, canonicalSlug, makeCorner } from "./data.js";
 import { PAGE } from "./page.js";
+import { parseQuery, locate, districtFor, soql } from "./resolve.js";
+import { getCorner, putCorner, getImage, rateLimit } from "./store.js";
+import { imageryFor } from "./imagery.js";
 
 // DataSF open datasets, keyless.
 const DS_CRASHES = "ubvf-ztfx";
@@ -61,9 +64,14 @@ const json = (obj, status = 200) =>
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
   });
 
-function corner(url) {
-  const slug = url.searchParams.get("x") || DEFAULT_SLUG;
-  return CORNERS[slug] || CORNERS[DEFAULT_SLUG];
+// A corner is either one of the two precomputed entries or one resolved from
+// typed input and parked in KV. Both come back in the same shape, so every lane
+// downstream is unaware of the difference.
+async function corner(url, env) {
+  const slug = canonicalSlug(url.searchParams.get("x") || DEFAULT_SLUG);
+  if (CORNERS[slug]) return CORNERS[slug];
+  const stored = await getCorner(env, slug);
+  return stored || CORNERS[DEFAULT_SLUG];
 }
 
 // Static assets must be read through the ASSETS binding. A Worker fetching its
@@ -71,14 +79,6 @@ function corner(url) {
 // production even though it works under `wrangler dev`.
 function asset(env, origin, path) {
   return env.ASSETS.fetch(new Request(new URL(path, origin)));
-}
-
-async function soql(dataset, params) {
-  const u = new URL(`https://data.sfgov.org/resource/${dataset}.json`);
-  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-  const r = await fetch(u, { headers: { accept: "application/json" } });
-  if (!r.ok) throw new Error(`datasf ${dataset} ${r.status}`);
-  return r.json();
 }
 
 // ---------------------------------------------------------------- stats
@@ -128,13 +128,15 @@ async function getStats(c) {
     .map((r) => ({ d: parseInt(r.supervisor_district, 10), n: parseInt(r.count, 10) || 0 }))
     .filter((r) => Number.isFinite(r.d))
     .sort((a, b) => b.n - a.n)[0]?.d;
-  const district = parseInt(c.district ?? majority, 10) || majority;
+  const resolved = parseInt(c.district ?? majority, 10);
   return {
     source: "live",
     crashes: parseInt(crashes?.[0]?.count ?? 0, 10),
     fatal: parseInt(fatal?.[0]?.sum_number_killed ?? 0, 10) || 0,
     reports311: parseInt(reports?.[0]?.count ?? 0, 10),
-    district,
+    // Null rather than a guess. A corner on a district line with no clear
+    // majority is addressed citywide instead of to a Supervisor picked at random.
+    district: Number.isFinite(resolved) && resolved > 0 ? resolved : null,
   };
 }
 
@@ -337,7 +339,14 @@ async function getLetter(c, env, ctx) {
   // letter quoting a review of the escalators would weaken the ask.
   const ONTOPIC = /crosswalk|crossing|pedestrian|sidewalk|driver|traffic|curb|intersection|corner/i;
   const quote = (ctx.voices.items || []).map((v) => v.text).find((t) => t && ONTOPIC.test(t));
-  const prompt = `Write a respectful one-page letter from a resident to San Francisco Supervisor ${supervisor} about the intersection of ${c.name} in District ${ctx.stats.district}.
+  // With no clear district majority the addressee is the citywide official, and
+  // the letter must not invent a district number to sound authoritative.
+  const dist = ctx.stats.district;
+  const addressee = dist ? `Supervisor ${supervisor}` : supervisor;
+  const where = dist ? ` in District ${dist}` : " in San Francisco";
+  const signoff = dist ? `A resident of District ${dist}` : "A resident of San Francisco";
+
+  const prompt = `Write a respectful one-page letter from a resident to San Francisco ${addressee} about the intersection of ${c.name}${where}.
 
 Use these facts and cite them plainly:
 - ${ctx.stats.crashes} injury collisions recorded by the city within 150 meters of this intersection in the last five years${ctx.stats.fatal ? `, ${ctx.stats.fatal} of them fatal` : ""}. Do not describe this figure as covering any longer period.
@@ -347,7 +356,7 @@ ${headlines ? `- Recent press coverage: ${headlines}.` : "- No press coverage wa
 ${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident testimony."}
 - The request: fund ${c.fix.name}, estimated ${c.fix.cost}, through the ${c.fix.grant}.
 
-Rules: plain civic English. Under 220 words. Address only Supervisor ${supervisor}. Include the sentence about the automated visual audit, it is the central finding. No em dashes anywhere. No placeholders in brackets. Sign off as "A resident of District ${ctx.stats.district}". Return only the letter text.`;
+Rules: plain civic English. Under 220 words. Address only ${addressee}. Include the sentence about the automated visual audit, it is the central finding. No em dashes anywhere. No placeholders in brackets. Sign off as "${signoff}". Return only the letter text.`;
 
   const r = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`,
@@ -376,15 +385,18 @@ Rules: plain civic English. Under 220 words. Address only Supervisor ${superviso
 
 function sampleLetter(c, district) {
   const supervisor = supervisorFor(district);
+  const salutation = district ? `Dear Supervisor ${supervisor}` : `Dear ${supervisor}`;
+  const where = district ? `, in District ${district}` : ", in San Francisco";
+  const signoff = district ? `A resident of District ${district}` : "A resident of San Francisco";
   return {
     source: "sample",
     supervisor,
     fix: c.fix.name,
     cost: c.fix.cost,
     grant: c.fix.grant,
-    text: `Dear Supervisor ${supervisor},
+    text: `${salutation},
 
-I am writing about the intersection of ${c.name}, in District ${district}.
+I am writing about the intersection of ${c.name}${where}.
 
 City records show hundreds of collisions within 150 meters of this corner, and street-related 311 reports from this location arrive continuously. Local reporting has covered pedestrian safety on this corridor repeatedly. An automated visual audit of the intersection identified sub-standard, faded crosswalk markings and vehicle turning conflict zones where drivers cross the pedestrian path.
 
@@ -394,7 +406,7 @@ I am asking you to fund ${c.fix.name} at this intersection, estimated at ${c.fix
 
 Thank you for your time and your attention to this corner.
 
-A resident of District ${district}`,
+${signoff}`,
   };
 }
 
@@ -462,15 +474,129 @@ async function health(env, origin) {
   return { ok: Object.values(out).every((v) => v === "ok"), ...out };
 }
 
+// ---------------------------------------------------------------- resolve
+
+const titleCase = (s) => String(s).replace(/\b([a-z])/g, (m) => m.toUpperCase());
+
+// Free text to a corner. Everything cheap and local happens before anything
+// billable: rate limit, then parse, then the alias table, then the KV cache, and
+// only then a network lookup. A nonsense query never leaves the Worker.
+async function handleResolve(url, request, env) {
+  const q = url.searchParams.get("q") || "";
+
+  const ip = request.headers.get("CF-Connecting-IP") || request.headers.get("x-real-ip");
+  const rl = await rateLimit(env, ip);
+  if (!rl.allowed) {
+    return json(
+      {
+        ok: false,
+        reason: "rate limited",
+        message: "Too many lookups from this connection. Try again in a few minutes.",
+      },
+      429,
+    );
+  }
+
+  const parsed = parseQuery(q);
+  if (!parsed.ok) {
+    return json({
+      ok: false,
+      reason: parsed.reason,
+      message: 'Type two cross streets, like "24th and Valencia" or "Turk & Taylor".',
+    });
+  }
+
+  const slug = canonicalSlug(parsed.slug);
+
+  if (CORNERS[slug]) {
+    const c = CORNERS[slug];
+    return json({ ok: true, slug: c.slug, name: c.name, district: c.district, source: "precomputed" });
+  }
+
+  const cached = await getCorner(env, slug);
+  if (cached) {
+    return json({ ok: true, slug: cached.slug, name: cached.name, district: cached.district, source: "cache" });
+  }
+
+  const loc = await locate(parsed);
+  if (!loc.ok) {
+    const [a, b] = parsed.streets.map(titleCase);
+    let message;
+    if (loc.reason === "out of bounds") {
+      message = `${parsed.name} is outside San Francisco. This tool only covers SF intersections.`;
+    } else if (loc.reason === "no intersection") {
+      // Both are real SF streets that never cross. Saying "not found" here would
+      // send someone hunting for a typo that does not exist.
+      message = `${a} and ${b} are both San Francisco streets, but they do not intersect.`;
+    } else if (loc.known && (loc.known[0] || loc.known[1])) {
+      const missing = loc.known[0] ? b : a;
+      message = `San Francisco has no street named ${missing}. Check the spelling.`;
+    } else {
+      message = `No San Francisco intersection found at ${parsed.name}. Try two cross streets, like "24th and Valencia".`;
+    }
+    return json({ ok: false, reason: loc.reason, message });
+  }
+
+  const district = await districtFor(loc.lat, loc.lon).catch(() => null);
+  const c = makeCorner({
+    slug,
+    name: parsed.name,
+    lat: loc.lat,
+    lon: loc.lon,
+    district,
+    cnn: loc.cnn,
+  });
+  await putCorner(env, c);
+
+  return json({ ok: true, slug: c.slug, name: c.name, district, source: loc.source });
+}
+
+// ---------------------------------------------------------------- generated imagery
+
+async function generatedImage(pathname, env, ctx) {
+  const parts = pathname.split("/").filter(Boolean); // gen, slug, state.jpg
+  if (parts.length !== 3) return new Response("not found", { status: 404 });
+  const slug = canonicalSlug(parts[1]);
+  const state = parts[2].replace(/\.jpg$/, "");
+  if (!["today", "hazards", "fix"].includes(state)) {
+    return new Response("not found", { status: 404 });
+  }
+
+  const key = new Request(`https://streetcred.internal/gen/${slug}/${state}.jpg`);
+  const hit = await caches.default.match(key);
+  if (hit) return hit;
+
+  const bytes = await getImage(env, slug, state);
+  if (!bytes) return new Response("not generated", { status: 404 });
+
+  const res = new Response(bytes, {
+    headers: { "content-type": "image/jpeg", "cache-control": "public, max-age=604800" },
+  });
+  ctx.waitUntil(caches.default.put(key, res.clone()));
+  return res;
+}
+
 // ---------------------------------------------------------------- router
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const origin = url.origin;
-    const c = corner(url);
     const p = url.pathname;
 
     try {
+      // Resolve runs before the corner lookup, since it is what creates corners.
+      if (p === "/api/resolve") {
+        return await handleResolve(url, request, env);
+      }
+
+      // Imagery generated at runtime lives in KV, not in the repo. The edge
+      // cache sits in front so a corner's bytes are read from KV once per colo.
+      if (p.startsWith("/gen/")) {
+        return await generatedImage(p, env, ctx);
+      }
+
+      const c = await corner(url, env);
+
       if (p === "/map.jpg") {
         return await mapImage(c, env, ctx);
       }
@@ -499,7 +625,17 @@ export default {
       }
 
       if (p === "/api/imagery") {
-        return json(await getImagery(c, env, origin));
+        // Precomputed corners serve from static assets exactly as before: no
+        // status field, no polling, no generation, same speed.
+        if (CORNERS[c.slug]) return json(await getImagery(c, env, origin));
+        return json(
+          await imageryFor(c, env, ctx, {
+            recordsEmpty: async () => {
+              const s = await getStats(c).catch(() => null);
+              return !s || (s.crashes === 0 && s.reports311 === 0);
+            },
+          }),
+        );
       }
 
       if (p === "/api/letter") {

@@ -1,0 +1,224 @@
+// On-demand imagery for corners that were never precomputed.
+//
+// The two derived states cost 10 to 20 seconds each of Gemini time, which is far
+// longer than anyone will wait on a blank page. So nothing here is ever awaited
+// by a page load: /api/imagery answers immediately with the Street View frame
+// and a pending marker, generation runs in the background, and the page polls.
+//
+// The prompts are the same ones tools/generate_imagery.py uses at build time, so
+// a corner generated on demand is indistinguishable from a precomputed one.
+
+import { getImage, putImage, putImageryStatus, getImageryStatus, reserveGeneration } from "./store.js";
+
+const MODEL = "gemini-3.1-flash-image";
+
+const HAZARD_PROMPT = (name) =>
+  `This is a real street-level photo of the intersection of ${name} in San Francisco. ` +
+  "Annotate it as a professional traffic-safety audit: overlay semi-transparent RED " +
+  "hatching on sub-standard or faded pedestrian crosswalk markings, and semi-transparent " +
+  "AMBER hatching on vehicle turning and through-traffic conflict zones where cars cross " +
+  "the pedestrian path. Add a small legend box in an upper corner with the heading " +
+  `"Traffic Safety Audit: ${name}" and two entries: "RED: sub-standard / faded crosswalk ` +
+  'markings" and "AMBER: vehicle conflict zone". Do not name any other street. Keep the ' +
+  "underlying photograph completely unchanged and photorealistic underneath the overlay.";
+
+const FIX_PROMPT = (name) =>
+  `Edit this street-level photo of ${name} to show a proposed pedestrian safety upgrade. ` +
+  "Keep all buildings, vehicles, people, sky, poles, overhead wires, and traffic signals " +
+  "exactly as they are. Repave the roadway with fresh dark asphalt. Repaint all crosswalks " +
+  "as bright white high-visibility continental (ladder) stripes. Add a green painted bike " +
+  "lane with white flex posts. Add a concrete curb extension with low plantings at the " +
+  "corner. Photorealistic, same camera angle, same lighting, same time of day. " +
+  "Do not add any text, labels, or watermarks.";
+
+// Chunked, because String.fromCharCode.apply on a 700KB array blows the stack.
+function toBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(out);
+}
+
+function fromBase64(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// The metadata endpoint is free and does not count against the imagery quota,
+// which is exactly why coverage is checked before anything is spent.
+export async function hasCoverage(c, env) {
+  try {
+    const r = await fetch(
+      `https://maps.googleapis.com/maps/api/streetview/metadata?location=${c.lat},${c.lon}&key=${env.GOOGLE_MAPS_API_KEY}`,
+    );
+    const d = await r.json();
+    return d.status === "OK";
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchToday(c, env) {
+  const url =
+    "https://maps.googleapis.com/maps/api/streetview?size=640x400" +
+    `&location=${c.lat},${c.lon}&heading=${c.heading ?? 0}&pitch=${c.pitch ?? 0}` +
+    `&fov=90&key=${env.GOOGLE_MAPS_API_KEY}`;
+  const r = await fetch(url);
+  const type = r.headers.get("content-type") || "";
+  if (!r.ok || !type.startsWith("image/")) throw new Error(`streetview ${r.status}`);
+  return r.arrayBuffer();
+}
+
+async function generateOne(todayBytes, prompt, env) {
+  const r = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { inlineData: { mimeType: "image/jpeg", data: toBase64(todayBytes) } },
+              { text: prompt },
+            ],
+          },
+        ],
+        generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
+      }),
+    },
+  );
+  if (!r.ok) throw new Error(`gemini ${r.status}`);
+  const d = await r.json();
+  const parts = d?.candidates?.[0]?.content?.parts || [];
+  const img = parts.find((p) => p.inlineData?.data);
+  if (!img) throw new Error("gemini returned no image");
+  return fromBase64(img.inlineData.data);
+}
+
+// Runs inside ctx.waitUntil, so it never delays a response. Both states are
+// generated in parallel and each is stored the moment it lands, so a partial
+// success still enables one button rather than throwing the pair away.
+export async function generateStates(c, env) {
+  try {
+    const today = await getImage(env, c.slug, "today");
+    if (!today) throw new Error("no today frame to work from");
+
+    const jobs = [
+      generateOne(today, HAZARD_PROMPT(c.name), env)
+        .then(async (b) => {
+          await putImage(env, c.slug, "hazards", b);
+          return "hazards";
+        })
+        .catch(() => null),
+      generateOne(today, FIX_PROMPT(c.name), env)
+        .then(async (b) => {
+          await putImage(env, c.slug, "fix", b);
+          return "fix";
+        })
+        .catch(() => null),
+    ];
+    const done = (await Promise.all(jobs)).filter(Boolean);
+    await putImageryStatus(env, c.slug, {
+      status: done.length ? "ready" : "failed",
+      states: done,
+      at: Date.now(),
+    });
+  } catch {
+    await putImageryStatus(env, c.slug, { status: "failed", states: [], at: Date.now() });
+  }
+}
+
+// Decides what /api/imagery should say right now, and starts generation if this
+// is the first ask. Never awaits generation itself.
+export async function imageryFor(c, env, ctx, opts = {}) {
+  const base = `/gen/${c.slug}`;
+  const existing = await getImageryStatus(env, c.slug);
+
+  if (existing?.status === "ready") {
+    return {
+      source: "cache",
+      status: "ready",
+      today: `${base}/today.jpg`,
+      hazards: existing.states.includes("hazards") ? `${base}/hazards.jpg` : null,
+      fix: existing.states.includes("fix") ? `${base}/fix.jpg` : null,
+    };
+  }
+  if (existing?.status === "failed") {
+    return {
+      source: "live",
+      status: "failed",
+      note: "The visual audit could not be generated for this corner.",
+      today: `${base}/today.jpg`,
+      hazards: null,
+      fix: null,
+    };
+  }
+  if (existing?.status === "pending") {
+    return { source: "live", status: "pending", today: `${base}/today.jpg`, hazards: null, fix: null };
+  }
+
+  // First ask for this corner. Confirm free things before spending anything.
+  if (!(await hasCoverage(c, env))) {
+    await putImageryStatus(env, c.slug, { status: "nocoverage", states: [], at: Date.now() });
+    return {
+      source: "live",
+      status: "nocoverage",
+      note: "Street View has no imagery for this corner.",
+      today: null,
+      hazards: null,
+      fix: null,
+    };
+  }
+
+  let today;
+  try {
+    today = await fetchToday(c, env);
+    await putImage(env, c.slug, "today", today);
+  } catch {
+    await putImageryStatus(env, c.slug, { status: "nocoverage", states: [], at: Date.now() });
+    return {
+      source: "live",
+      status: "nocoverage",
+      note: "Street View has no imagery for this corner.",
+      today: null,
+      hazards: null,
+      fix: null,
+    };
+  }
+
+  // A corner whose records lanes are all empty is a strong signal the resolve
+  // was wrong. Show the photograph, spend nothing on generating states for it.
+  // Checked as a thunk so the stats query only runs on a corner's first ask.
+  if (opts.recordsEmpty && (await opts.recordsEmpty())) {
+    await putImageryStatus(env, c.slug, { status: "skipped", states: [], at: Date.now() });
+    return {
+      source: "live",
+      status: "skipped",
+      note: "No city records at this corner, so the visual audit was not generated.",
+      today: `${base}/today.jpg`,
+      hazards: null,
+      fix: null,
+    };
+  }
+
+  if (!(await reserveGeneration(env))) {
+    await putImageryStatus(env, c.slug, { status: "atcapacity", states: [], at: Date.now() });
+    return {
+      source: "live",
+      status: "atcapacity",
+      note: "Daily image generation limit reached. Records and the photograph are unaffected.",
+      today: `${base}/today.jpg`,
+      hazards: null,
+      fix: null,
+    };
+  }
+
+  await putImageryStatus(env, c.slug, { status: "pending", states: [], at: Date.now() });
+  ctx.waitUntil(generateStates(c, env));
+  return { source: "live", status: "pending", today: `${base}/today.jpg`, hazards: null, fix: null };
+}

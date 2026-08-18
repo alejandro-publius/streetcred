@@ -103,6 +103,9 @@ One Cloudflare Worker, no build step, no framework.
 src/index.js   router, five data lanes, health, graceful degradation
 src/page.js    the entire front end as one HTML string
 src/data.js    corner registry, Supervisor roster, sample payloads
+src/resolve.js free text to a corner: normalizing, DataSF lookup, districts
+src/store.js   KV: resolved corners, generated imagery, budget, rate limiting
+src/imagery.js on-demand Street View and Gemini generation, never blocking
 tools/         build-time pipelines: imagery generation, voices normalization
 public/        generated imagery, normalized voices, logo
 docs/          the README screenshot
@@ -130,6 +133,29 @@ Generalizing from one corner to two is where a demo either holds up or quietly s
 
 **Data corrections shipped at the same time.** The 311 filter had been substring matching on "Street", which swept in Street and Sidewalk Cleaning, a 3.4M row sanitation queue. That single bug inflated this corner from roughly 355 street-condition reports to 8,546. It is now an explicit allow list of service types. The collision count had also been unbounded back to 2005, describing two decades of a corner that has since been rebuilt; it is now bounded to five years and shows the fatal count alongside it.
 
+## Any corner
+
+Type two cross streets and the whole page rebuilds around them. The registry is now a fast path, not the whole product.
+
+**Geocoding uses the city's own data, not a general geocoder.** San Francisco publishes `gmfx-8h6i`, 18,546 intersections, keyless and unthrottled. Its shape is not obvious: it stores **one row per street leg**, so an intersection is two or three rows sharing a `cnn` and an identical point. Matching a typed pair is therefore a self-join, expressed as one grouped query with `count(distinct st_name) > 1`. The dataset agrees with the hand-configured 16th and Mission coordinates to about two meters. Nominatim stays as a fallback with a real User-Agent and an SF viewbox, but it cannot resolve intersection-style queries at all, so in practice DataSF answers or nobody does.
+
+**The quirk that would have broken it:** single-digit ordinals are zero-padded. `01ST`, `02ND`, `09TH` exist; `1ST`, `2ND`, `9TH` return nothing. Without that, "6th and Market" silently fails to resolve.
+
+**One canonical corner per intersection.** Input is lowercased, punctuation-stripped, split on `and`, `&`, `/`, `+`, `at` or `x`, relieved of its street type suffix, and spelled ordinals become numeric. The two street names are then sorted alphabetically to build the slug, so "24th and Valencia" and "Valencia and 24th" are one cached corner that is geocoded once and generates imagery once. The two precomputed corners keep their original slugs as aliases, so no existing link breaks.
+
+**Rejections say which kind of miss it was.** Both streets real but never crossing is a different answer from a misspelling, which is different again from a corner in another city. Telegraph and Bancroft is the interesting case: San Francisco has Telegraph Place on Telegraph Hill and Bancroft Avenue in the Bayview, six miles apart, so the honest answer is that both are SF streets that do not intersect, not that the corner is out of town.
+
+**Imagery never blocks the page.** `/api/imagery` answers immediately with the Street View frame and `status: "pending"`, the two Gemini states generate in the background, and the page polls every 3 seconds up to a 90 second ceiling, enabling each toggle button as its state lands. Coverage is confirmed first against the free Street View metadata endpoint, so a corner with no photograph says so and still renders every records lane. Precomputed corners return no status field at all and skip the entire mechanism.
+
+**Spending is bounded in four places**, because a public URL that triggers paid image generation is a standing invitation:
+
+- a query that does not resolve to a real SF intersection spends nothing, and nonsense never leaves the Worker
+- resolved corners are cached in KV with no TTL, so a corner is geocoded once and generated once
+- a global daily generation cap, currently 25 corners, after which new corners still render every records lane and the photograph with an honest at-capacity label
+- per-IP rate limiting on the resolve endpoint, 20 lookups per 10 minutes
+
+A corner whose records lanes all come back empty never generates imagery either, since that is a strong signal the resolve was wrong.
+
 ## Running it
 
 ```
@@ -147,5 +173,6 @@ wrangler dev
 - The proposed fix image is a visualization, not an engineering drawing, and the cost is an order-of-magnitude estimate.
 - 311 counts are filtered to street-related service types within 150 meters, which is a proxy for street complaints, not a precise one.
 - The voices lane is the thinnest of the five, and the reason is a finding rather than a bug. Both Apify actors ran and returned real data, but Google Maps reviews at this corner are overwhelmingly about the BART station (escalators, cleanliness, policing) and the Reddit search returned mostly off-corner noise. That is why selection moved out of the scrape and into Redis: the normalizer now scores quotes by how directly they speak to street safety rather than passing a flat keyword test, and the surviving set is curated into the key the Worker reads. Every quote shown is still real scrape output, never generated. The letter also only quotes a resident when the quote is actually about the street, and otherwise quotes no one rather than inventing testimony.
-- Two corners are wired, in two different districts, which is what turned three latent one-corner assumptions into fixed bugs. The imagery pipeline was also validated on a third intersection outside San Francisco entirely. But a visitor still cannot type in their own corner: this is a registry of corners, not yet a tool you point at an arbitrary intersection. That is the next thing to build, and until it exists the generalization claim rests on three corners rather than on the whole city.
+- Any San Francisco intersection resolves, but the two precomputed corners are still the ones that look best. A typed corner takes the default panorama orientation, because the heading that puts the crosswalk in the foreground was chosen by hand for the precomputed pair and there is no way to pick it automatically. Expect a resolved corner to sometimes show the street rather than the crossing.
+- The resident voices lane only exists for corners that were scraped ahead of time. A typed corner shows the honest empty state, because an Apify actor run takes minutes and a page load cannot wait on one.
 - Nothing on the page is scored yet. StreetCred currently displays the evidence and traces each claim to its source; it does not grade a corner or rank it against any other. The name is a promise the product has not finished keeping.
