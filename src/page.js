@@ -109,7 +109,18 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .hzfoot{font-size:11.5px;color:var(--dim);line-height:1.5;margin:2px 0 0}
 .cap b{color:var(--ink);font-weight:600;white-space:nowrap}
 
-.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:30px}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:14px}
+/* Cred Check. Typographic, not a panel: four lanes either agree or they do not,
+   and a lit chip should read as a fact rather than as a badge. */
+.cred{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 30px}
+.cred .c{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+  padding:5px 11px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);
+  color:var(--dim);cursor:default;white-space:nowrap}
+.cred .c::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--line2)}
+.cred .c.on{color:var(--ink);border-color:var(--ink)}
+.cred .c.on::before{background:var(--ink)}
+.cred .v{font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);margin-left:3px}
+.cred .v.strong{color:var(--ink)}
 .stat{background:var(--panel);border:1px solid var(--line2);border-top:2px solid var(--ink);border-radius:14px;
   padding:20px 22px;min-width:0;transition:transform 150ms ease-out,box-shadow 150ms ease-out}
 .stat .n{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--accent)}
@@ -261,6 +272,7 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-condition 311 reports, 3 years</div></div>
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>
 </div>
+<div class="cred" id="cred" hidden></div>
 
 <section class="lane" id="maplane" hidden>
   <div class="eyebrow"><span>The corner</span></div>
@@ -491,6 +503,19 @@ fetch("/api/stats" + X).then(r => r.json()).then(d => {
       if(to !== "") countUp(node, to);
     });
   });
+});
+
+// Cred Check. Four lanes, lit when they agree, with the verdict beside them.
+// Detail sits in the title attribute, which is hover on a pointer and long
+// press on touch, and keeps the strip to one line.
+fetch("/api/cred" + X).then(r => r.json()).then(d => {
+  if(!d || !d.lanes) return;
+  el("cred").hidden = false;
+  el("cred").innerHTML = d.lanes.map(l =>
+    '<span class="c' + (l.hit ? ' on' : '') + '" title="' + esc(l.detail) + '">' + esc(l.label) + '</span>'
+  ).join("") +
+    '<span class="v' + (d.score >= 3 ? ' strong' : '') + '" title="' + esc(d.score) +
+    ' of 4 lanes agree">' + esc(d.verdict) + '</span>';
 });
 
 // Corroboration. Which audit findings the public record backs, which it does

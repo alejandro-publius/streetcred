@@ -9,6 +9,7 @@ import {
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import { imageryFor } from "./imagery.js";
 import { corroborate, HAZARD_VERSION } from "./hazards.js";
+import { credCheck, isSafetyCoverage } from "./cred.js";
 
 // DataSF open datasets, keyless.
 const DS_CRASHES = "ubvf-ztfx";
@@ -18,7 +19,7 @@ const GEMINI_TEXT_MODEL = "gemini-3.7-flash";
 // served from a cache holding the old ones. The edge cache is per-colo, so
 // without this a correction lands unevenly across data centers and some
 // visitors keep reading the old numbers for the life of the TTL.
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v6";
 
 // The letter embeds live figures, press headlines, and the Danger Index, so it
 // goes stale in more ways than any other lane and it is the one artifact a
@@ -176,6 +177,20 @@ async function getHazardsFor(c, env, origin) {
   return fresh;
 }
 
+// ---------------------------------------------------------------- cred check
+
+// Every input here is a lane that has already been computed and cached, so this
+// is assembly rather than work.
+async function getCred(c, env, origin) {
+  const [stats, news, voices, hazards] = await Promise.all([
+    getStats(c).catch(() => sampleStats(c)),
+    getNews(c, env).catch(() => sampleNews(c)),
+    getVoices(c, env, origin).catch(emptyVoices),
+    getHazardsFor(c, env, origin).catch(() => null),
+  ]);
+  return credCheck({ stats, news, voices, hazards });
+}
+
 // ---------------------------------------------------------------- news
 
 // Agency primary sources. A police bulletin or an SFMTA project page is a real,
@@ -241,6 +256,9 @@ async function getNews(c, env) {
       domain,
       date: (x.publishedDate || "").slice(0, 10),
       official: OFFICIAL_SOURCE.test(domain),
+      // Computed here because this is the only place the Exa page text still
+      // exists. The Cred Check reads the flag rather than the article.
+      corroborates: isSafetyCoverage({ title: x.title, text: x.text }, tokens),
     };
   });
 
@@ -703,6 +721,10 @@ export default {
         return await edgeCached(ctx, `news-${c.slug}`, 600, () =>
           cached(`news:${c.slug}`, 600e3, () => getNews(c, env).catch(() => sampleNews(c))),
         );
+      }
+
+      if (p === "/api/cred") {
+        return await edgeCached(ctx, `cred-${c.slug}`, 3600, () => getCred(c, env, origin));
       }
 
       if (p === "/api/hazards") {
