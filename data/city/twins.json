@@ -1,0 +1,92 @@
+{
+ "builtAt": "2026-08-18",
+ "splitAboveM": 150,
+ "twins": [
+  {
+   "bare": "funston-and-lincoln",
+   "spreadM": 4161,
+   "preferred": "funston-and-lincoln-way",
+   "rows": [
+    {
+     "slug": "funston-and-lincoln-blvd",
+     "name": "Funston Ave and Lincoln Blvd",
+     "lat": 37.800858,
+     "lon": -122.454527,
+     "points": 0.1,
+     "index": 8,
+     "grade": "A",
+     "counts": {
+      "fatal": 0,
+      "severe": 0,
+      "otherVisible": 0,
+      "pain": 0,
+      "ped": 0,
+      "safety311": 1
+     },
+     "cnn": "51270000"
+    },
+    {
+     "slug": "funston-and-lincoln-way",
+     "name": "Funston Ave and Lincoln Way",
+     "lat": 37.765739,
+     "lon": -122.470727,
+     "points": 3.7,
+     "index": 54,
+     "grade": "B",
+     "counts": {
+      "fatal": 0,
+      "severe": 0,
+      "otherVisible": 1,
+      "pain": 0,
+      "ped": 0,
+      "safety311": 14
+     },
+     "cnn": "27176000"
+    }
+   ]
+  },
+  {
+   "bare": "14th-and-ortega",
+   "spreadM": 243,
+   "preferred": "14th-and-ortega-way",
+   "rows": [
+    {
+     "slug": "14th-and-ortega-st",
+     "name": "14th Ave and Ortega St",
+     "lat": 37.754797,
+     "lon": -122.471017,
+     "points": 0.1,
+     "index": 8,
+     "grade": "A",
+     "counts": {
+      "fatal": 0,
+      "severe": 0,
+      "otherVisible": 0,
+      "pain": 0,
+      "ped": 0,
+      "safety311": 2
+     },
+     "cnn": "27132000"
+    },
+    {
+     "slug": "14th-and-ortega-way",
+     "name": "14th Ave and Ortega Way",
+     "lat": 37.752616,
+     "lon": -122.470908,
+     "points": 1.2,
+     "index": 39,
+     "grade": "A",
+     "counts": {
+      "fatal": 0,
+      "severe": 0,
+      "otherVisible": 0,
+      "pain": 1,
+      "ped": 0,
+      "safety311": 4
+     },
+     "cnn": "27123000"
+    }
+   ]
+  }
+ ]
+}

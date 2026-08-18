@@ -135,6 +135,36 @@ limit and about $104 left, cycle ending 2026-09-16.
 `exa:calls`, `exa:spend`, `apifyruns:{month}`, `apify:costs`, `voicerun:{slug}`,
 `voicerun:pending`, `voices:{slug}`.
 
+## Slug collisions: audited, and mostly a non-issue
+
+`tools/audit_slugs.mjs` pulls the intersections table WITH `st_type`, which the
+sweep never selected, and asks whether two different pairs of streets ever land
+on one slug. Verdict over all 8,254 crossings and 7,926 slugs:
+
+- **267 slugs are shared by cnns with identical street types.** These are the
+  quadrants of one big crossing and are expected, not collisions.
+- **5 are true collisions**, one slug from two different pairs of streets.
+- **2 of the 5 are actually two different places** and are now split:
+  `funston-and-lincoln` was a Presidio crossing on Lincoln Blvd and a Sunset
+  crossing on Lincoln Way **4.1km apart**, and the sweep kept the higher scoring
+  one and silently dropped the other. `14th-and-ortega` was two crossings 243m
+  apart. Both now have suffixed slugs, both scored through the production
+  `countsFor`, and both pages name the other.
+- **3 are one junction under two labels** (36 to 63m apart: Clipper St vs
+  Clipper Ter, Clover St vs Clover Ln, Jennings St vs Jennings Ct). They stay
+  merged, because two pages forty metres apart would be a worse answer than one.
+
+**The 19th Street vs 19th Avenue case is a verified non-issue as a slug
+collision.** It never produces one, because the two streets never cross the
+same street. What it does produce is a *press connection* precision problem,
+which is what the recency bar in `src/press.js` exists for (gotcha 23).
+
+Every bare slug still resolves and still points where it pointed, marked
+`alias: true` in its shard row so it is not counted, ranked or drawn twice.
+The city counter went from 7,353 to **7,355**: two crossings that had no page
+now have one. Re-run the audit with `node tools/audit_slugs.mjs`, which rewrites
+`data/city/twins.json`, then rebuild the shards.
+
 ## Gotchas a fresh session must not rediscover
 
 The first twelve are inherited and all still true. 13 onward are new.

@@ -125,6 +125,10 @@ export async function cityCornerFor(env, slug) {
       district: row.district ?? null,
       sweepDate: shard.sweepDate,
       radiusM: shard.radiusM,
+      // Set only on the handful of slugs two different pairs of streets
+      // produce. The page has to say which crossing it is showing.
+      ...(row.twin ? { twin: row.twin } : {}),
+      ...(row.alias ? { alias: true, aliasOf: row.aliasOf, aliasName: row.aliasName } : {}),
     },
   };
 }

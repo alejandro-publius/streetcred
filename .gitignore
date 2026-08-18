@@ -17,3 +17,4 @@ docs/hazards.jpg
 .scoretier-bulk.json
 .suggest-bulk.json
 .city-bulk.json
+.slug-collisions.json

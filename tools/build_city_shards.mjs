@@ -20,7 +20,7 @@
 // typed into the search box lands on exactly the record this tool wrote.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { parseQuery } from "../src/resolve.js";
@@ -75,8 +75,62 @@ for (const c of sweep.corners) {
   const prev = bySlug.get(slug);
   if (!prev || row.points > prev.points) bySlug.set(slug, row);
 }
+// ---------------------------------------------------------------- twins
+
+// Five slugs in the city are produced by two different pairs of streets,
+// because the resolver's normalizer strips street types: "Funston and Lincoln"
+// is both a Presidio crossing on Lincoln Blvd and a Sunset crossing on Lincoln
+// Way, 4.1km apart. The sweep kept whichever scored higher and silently
+// dropped the other, so one of those two places had no page and the other
+// carried a name that could mean either.
+//
+// tools/audit_slugs.mjs decides which collisions are really two places and
+// scores both through the production countsFor. Here they are given
+// unambiguous slugs. The bare slug stays exactly where it pointed, marked as
+// an alias so it is not counted twice, because links to it already exist.
+const twinFile = join(ROOT, "data", "city", "twins.json");
+let twinPairs = [];
+if (existsSync(twinFile)) twinPairs = JSON.parse(readFileSync(twinFile, "utf8")).twins || [];
+
+for (const pair of twinPairs) {
+  const bare = bySlug.get(pair.bare);
+  const [a, b] = pair.rows;
+  if (!a || !b) continue;
+  for (const [row, other] of [[a, b], [b, a]]) {
+    bySlug.set(row.slug, {
+      slug: row.slug,
+      name: row.name,
+      lat: row.lat,
+      lon: row.lon,
+      points: row.points,
+      index: row.index,
+      grade: row.grade,
+      counts: row.counts,
+      district: bare?.district ?? null,
+      twin: { slug: other.slug, name: other.name, apartM: pair.spreadM },
+    });
+  }
+  if (bare) {
+    // Not counted, not ranked, not a dot: it is the same place as one of the
+    // two above and would otherwise appear on the map twice.
+    const preferred = pair.rows.find((r) => r.slug === pair.preferred);
+    const other = pair.rows.find((r) => r.slug !== pair.preferred);
+    bySlug.set(pair.bare, {
+      ...bare,
+      alias: true,
+      aliasOf: pair.preferred,
+      aliasName: preferred?.name || null,
+      twin: other ? { slug: other.slug, name: other.name, apartM: pair.spreadM } : null,
+    });
+  }
+  log(`  ${pair.bare}: ${a.slug} and ${b.slug}, ${pair.spreadM}m apart, bare slug keeps pointing at ${pair.preferred}`);
+}
+
 const rows = [...bySlug.values()];
-log(`${rows.length} corners (${unparsed} unparseable names dropped)`);
+// An alias row resolves and renders, but it is not a distinct intersection and
+// must not be counted, ranked or drawn as one.
+const places = rows.filter((r) => !r.alias);
+log(`${rows.length} rows (${unparsed} unparseable names dropped), ${places.length} distinct intersections, ${rows.length - places.length} alias rows`);
 
 // ---------------------------------------------------------------- shards
 
@@ -124,7 +178,7 @@ if (largestShardBytes > KV_VALUE_LIMIT / 10) {
 // The leaderboard reads the city worst first. Sorting 7,000 rows inside the
 // Worker would mean reading every shard on every page of the list, so the
 // order is computed once here and paged.
-const ranked = [...rows].sort((a, b) => b.points - a.points || a.slug.localeCompare(b.slug));
+const ranked = [...places].sort((a, b) => b.points - a.points || a.slug.localeCompare(b.slug));
 const rankPages = [];
 for (let i = 0; i < ranked.length; i += RANK_PAGE_SIZE) {
   rankPages.push(
@@ -184,7 +238,7 @@ const meta = {
   built: new Date().toISOString().slice(0, 10),
   sweepDate: sweep.runDate,
   scoreVersion: SCORE_VERSION,
-  totalScored: rows.length,
+  totalScored: places.length,
   totalEnriched: enriched.length,
   totalAudited: audited.length,
   censusSize: DISTRIBUTION.length,
@@ -212,7 +266,7 @@ log("wrote data/city/meta.json");
 // reads it directly as a static asset: a second copy under data/ would be a
 // file nothing writes and everything could drift from.
 const gi = { A: 0, B: 1, C: 2, D: 3, F: 4 };
-const dots = rows.map((r) => [r.lat, r.lon, gi[r.grade]]);
+const dots = places.map((r) => [r.lat, r.lon, gi[r.grade]]);
 mkdirSync(join(ROOT, "public", "data", "city"), { recursive: true });
 const dotsBody = JSON.stringify(dots);
 writeFileSync(join(ROOT, "public", "data", "city", "dots.json"), dotsBody);
@@ -231,7 +285,7 @@ if (DRY) {
 // real pair of SF streets that simply do not meet at a graded crossing. Both
 // are rejects; only one of them is worth showing a reader.
 const streetNames = new Set();
-for (const r of rows) {
+for (const r of places) {
   const parsed = parseQuery(r.name);
   if (parsed.ok) for (const st of parsed.streets) streetNames.add(st);
 }

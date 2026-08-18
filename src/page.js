@@ -190,6 +190,12 @@ header{display:flex;flex-direction:column;align-items:stretch;gap:24px;padding-b
    chip drops to its own line rather than squeezing. */
 .ctitle{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 .cmeta{margin-top:4px}
+/* Said on the page, because the alternative is a page that quietly answers
+   about a crossing four kilometres from the one somebody meant. Only the few
+   slugs two different pairs of streets produce ever show this. */
+.ctwin{margin-top:6px;font-size:11.5px;line-height:1.5;color:var(--dim)}
+.ctwin a{color:var(--accent);text-decoration:none;font-weight:600}
+.ctwin a:hover{text-decoration:underline}
 /* Only present on a corner the scheduled handler audited by itself. It is a
    claim about the product rather than about the corner, so it appears only when
    the run record says so and never as decoration. */
@@ -698,7 +704,19 @@ ${BASE_CSS}
     </div>
     <div class="cmeta">${c.city}${
       c.district ? `, District ${c.district}` : ", district unresolved"
-    }</div>${c.cotd ? `<span class="auto">Audited autonomously by StreetCred on ${c.cotd}</span>` : ""}
+    }</div>${
+      c.sweep?.twin
+        ? `<div class="ctwin">${
+            c.sweep.alias
+              ? `Two crossings carry this name. This page is ${esc(c.sweep.aliasName || c.name)}.`
+              : "Another crossing carries this name."
+          } The other is <a href="/c/${esc(c.sweep.twin.slug)}">${esc(c.sweep.twin.name)}</a>, ${
+            c.sweep.twin.apartM >= 1000
+              ? `${(c.sweep.twin.apartM / 1000).toFixed(1)}km`
+              : `${c.sweep.twin.apartM}m`
+          } away.</div>`
+        : ""
+    }${c.cotd ? `<span class="auto">Audited autonomously by StreetCred on ${c.cotd}</span>` : ""}
   </div>
 </header>
 <main>
