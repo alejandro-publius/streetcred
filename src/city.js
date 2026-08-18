@@ -154,6 +154,16 @@ export function tagTiers(rows, meta) {
   }));
 }
 
+// The rosters have to move when a corner is promoted, or the homepage counter
+// keeps saying 23 while the cron quietly audits its way through the queue and
+// the sentence "one more every morning" stops being true. The isolate copy is
+// dropped so the write is visible to this isolate immediately.
+export async function putCityMeta(env, meta) {
+  if (!env?.STORE) return;
+  META_CACHE = null;
+  await env.STORE.put("city:meta", JSON.stringify(meta));
+}
+
 export async function getRankPage(env, n) {
   if (!env?.STORE) return null;
   return env.STORE.get(`city:rank:${n}`, "json").catch(() => null);

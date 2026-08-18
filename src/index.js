@@ -20,7 +20,7 @@ import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import {
   cityCornerFor, getCityMeta, getRankPage, cityStats, cityScore, cityCred,
   cityNews, cityVoices, cityTimeline, cityRun, cityHazards, cityLetter,
-  TIERS, TIER_LABEL, tierOf, RANK_PAGE_SIZE, tagTiers,
+  TIERS, TIER_LABEL, tierOf, RANK_PAGE_SIZE, tagTiers, putCityMeta,
 } from "./city.js";
 import { imageryFor } from "./imagery.js";
 import { corroborate, HAZARD_VERSION } from "./hazards.js";
@@ -1248,6 +1248,36 @@ async function cornerOfTheDay(env, ctx, origin) {
   // the run is almost always "pending". By now the slower lanes have taken long
   // enough that it has usually settled: report where it actually landed.
   const settled = await getImageryStatus(env, corner.slug).catch(() => null);
+
+  // Move this corner between the city's tier rosters. The homepage counter
+  // promises one more audited corner every morning, so the roster it counts
+  // has to gain one every morning; without this the number would sit still
+  // while the cron worked its way through the queue underneath it. Audited
+  // means both generated states exist as bytes, exactly as the builder counts
+  // them, so a run that could not spend on imagery lands in enriched instead
+  // of claiming an audit that did not happen.
+  await lane("city roster", async () => {
+    const meta = await getCityMeta(env);
+    if (!meta) return null;
+    const audited = new Set(meta.audited || []);
+    const enriched = new Set(meta.enriched || []);
+    const states = settled?.states || [];
+    if (states.includes("hazards") && states.includes("fix")) {
+      audited.add(corner.slug);
+      enriched.delete(corner.slug);
+    } else if (!audited.has(corner.slug)) {
+      enriched.add(corner.slug);
+    }
+    const next = {
+      ...meta,
+      audited: [...audited].sort(),
+      enriched: [...enriched].sort(),
+      totalAudited: audited.size,
+      totalEnriched: enriched.size,
+    };
+    await putCityMeta(env, next);
+    return { audited: audited.size, enriched: enriched.size };
+  });
 
   const entry = {
     date: today,
