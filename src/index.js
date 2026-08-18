@@ -27,6 +27,7 @@ import { buildSuggestion, SUGGEST_VERSION } from "./suggest.js";
 import { buildInputSet, verifyLetter, retryInstruction, VERIFY_VERSION } from "./verify.js";
 import { handleAgentReport, journalStats, JOURNAL_CAP } from "./agent.js";
 import { WATCHDOG } from "./watchdog.js";
+import { projectImpact } from "./impact.js";
 import { METHODOLOGY } from "./methodology.js";
 import { CHANGES } from "./changes.js";
 import { STATUS } from "./status.js";
@@ -1501,6 +1502,23 @@ export default {
           source: "empty",
           reason: String(e.message || e).slice(0, 120),
         })));
+      }
+
+      if (p === "/api/impact") {
+        // Deterministic arithmetic over the curated CMF table and this
+        // corner's own crash counts. Cached beside the score it derives from.
+        return await edgeCached(ctx, `impact-${c.slug}`, 24 * 3600, async () => {
+          const [score, tableRes] = await Promise.all([
+            getScoreFor(c, env).catch(() => null),
+            asset(env, origin, "/data/cmf.json").catch(() => null),
+          ]);
+          let table = null;
+          try { table = tableRes && tableRes.ok ? await tableRes.json() : null; } catch { table = null; }
+          if (!score?.counts || !table) {
+            return { source: "empty", reason: "no counts or no factor table" };
+          }
+          return projectImpact(score.counts, table);
+        });
       }
 
       if (p === "/api/timeline") {

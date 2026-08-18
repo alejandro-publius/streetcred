@@ -1,0 +1,60 @@
+{
+  "lastReviewed": "2026-08-18",
+  "note": "Hand-curated from cmfclearinghouse.fhwa.dot.gov with every sourceUrl opened on the lastReviewed date. Rows without a factor are deliberate: nothing at 3 stars or better isolates that treatment, and shipping a weak number would be worse than shipping none. CMFs are national averages, never promises about a specific corner.",
+  "interventions": [
+    {
+      "intervention": "leading pedestrian interval",
+      "cmfClearinghouseId": 9918,
+      "cmf": 0.87,
+      "standardError": 0.05,
+      "crashTypesApplied": "vehicle/pedestrian",
+      "crashSeverity": "all",
+      "starRating": 5,
+      "sourceUrl": "https://cmfclearinghouse.fhwa.dot.gov/detail.php?facid=9918",
+      "study": "Goughnour et al. 2018, Safety Evaluation of Protected Left-Turn Phasing and Leading Pedestrian Intervals on Pedestrian Safety",
+      "notes": "Five-star empirical study across Chicago, New York, Charlotte and Toronto. The strongest factor in this table."
+    },
+    {
+      "intervention": "continental crosswalks",
+      "cmfClearinghouseId": 2697,
+      "cmf": 0.63,
+      "standardError": 0.12,
+      "crashTypesApplied": "vehicle/pedestrian",
+      "crashSeverity": "all",
+      "starRating": 4,
+      "sourceUrl": "https://cmfclearinghouse.fhwa.dot.gov/detail.php?facid=2697",
+      "study": "Empirical Bayesian evaluation of high-visibility (yellow) school crosswalks in San Francisco",
+      "notes": "Four stars, and the study city is San Francisco itself, but the sites were school zones with yellow markings; white continental crosswalks at a transit intersection are a related, not identical, treatment. The two-star general urban study (facid 4123, CMF 0.6) was rejected for quality. This is the conservative, higher-CMF survivor."
+    },
+    {
+      "intervention": "corner curb extension",
+      "cmfClearinghouseId": null,
+      "cmf": null,
+      "crashTypesApplied": null,
+      "starRating": null,
+      "sourceUrl": "https://cmfclearinghouse.fhwa.dot.gov/",
+      "study": null,
+      "notes": "No high-quality published factor. Clearinghouse entries that include curb extensions bundle them inside road-diet packages, so no factor of 3 stars or better isolates the treatment."
+    },
+    {
+      "intervention": "corner daylighting",
+      "cmfClearinghouseId": null,
+      "cmf": null,
+      "crashTypesApplied": null,
+      "starRating": null,
+      "sourceUrl": "https://cmfclearinghouse.fhwa.dot.gov/",
+      "study": null,
+      "notes": "No high-quality published factor. Parking-restriction CMFs on the clearinghouse are compendium entries without empirical star ratings (e.g. facid 1786). San Francisco's own California Street evaluation, which included daylighting, appears on the precedents table instead."
+    },
+    {
+      "intervention": "protected bike lane",
+      "cmfClearinghouseId": null,
+      "cmf": null,
+      "crashTypesApplied": null,
+      "starRating": null,
+      "sourceUrl": "https://cmfclearinghouse.fhwa.dot.gov/detail.php?facid=8248",
+      "study": null,
+      "notes": "No high-quality published factor. The separated-bike-lane rows from Rothenberg et al. 2016 (facids 8232, 8248, 8287) carry one star, and the opened 8248 row shows a CMF above 1.0, which says more about the data than the treatment. FHWA published a 2023 separated-bike-lane CMF study not yet star-rated on the clearinghouse at review time."
+    }
+  ]
+}

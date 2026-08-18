@@ -1,0 +1,34 @@
+{
+  "lastReviewed": "2026-08-18",
+  "note": "Completed San Francisco projects with outcomes as published by the city's own evaluations. Quotes are tight and attributed; we never compute our own before/after, because regression to the mean, pandemic-era traffic, and small-n noise would make any figure we derived untrustworthy. Every sourceUrl was opened on the lastReviewed date.",
+  "projects": [
+    {
+      "name": "Safe Streets Evaluation Program, citywide",
+      "what": "Aggregated evaluation of 18 bike and pedestrian safety projects completed 2017 to 2022",
+      "completed": "evaluations through 2022",
+      "outcome": "\"Our findings show that street design changes are decreasing bike and pedestrian-related collision rates by 33 and 32% respectively.\"",
+      "sourceUrl": "https://www.sfcta.org/sites/default/files/2022-11/SFCTA_Board_SFMTASafeStreetsEvaluationPRESENTATION_2022-11-15.pdf"
+    },
+    {
+      "name": "California Street Safety Project",
+      "what": "Road diet, intersection daylighting, continental crosswalks, longer crossing times, Arguello to Park Presidio",
+      "completed": "summer 2020",
+      "outcome": "\"64% decrease in injury collisions in the year following project implementation.\"",
+      "sourceUrl": "https://www.sfmta.com/project-updates/evaluation-report-summary-california-street-safety-project"
+    },
+    {
+      "name": "Tenderloin No Turn on Red",
+      "what": "No Turn on Red signs at over 50 Tenderloin intersections, fall 2021",
+      "completed": "fall 2021",
+      "outcome": "\"On average, 92% of vehicles are complying with the turn restriction... Vehicles blocking or encroaching onto crosswalks on a red signal was reduced by more than 70%... close calls for vehicle-pedestrians decreased from 5 close calls before NTOR signs were posted to 1 close call after.\"",
+      "sourceUrl": "https://www.sfmta.com/sites/default/files/reports-and-documents/2022/04/tenderloinntor_factsheet_0.pdf"
+    },
+    {
+      "name": "Safer Taylor Street",
+      "what": "Quick-build lane reduction and intersection treatments, Market to Sutter; capital project completed 2024",
+      "completed": "quick-build 2020, capital 2024",
+      "outcome": "SFMTA's quick-build evaluation: the lane reduction \"curtailed severe speeding on the corridor (30+, 40+ mph)\" and intersection treatments \"yielded higher rates of yielding to pedestrians by drivers and fewer close calls.\" Stated qualitatively by the city; no collision percentage published.",
+      "sourceUrl": "https://www.sfmta.com/projects/safer-taylor-street"
+    }
+  ]
+}
