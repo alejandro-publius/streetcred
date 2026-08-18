@@ -54,7 +54,8 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px}
 
 /* Lane eyebrow: the page is one long column, so each lane gets a small label
    and a hairline to separate it from the one above. */
-.eyebrow{font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+.eyebrow{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
   color:var(--dim);margin:0 0 13px;padding-bottom:7px;border-bottom:1px solid var(--line)}
 .lane[hidden]{display:none}
 
@@ -127,7 +128,7 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 </div>
 <p class="cap"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
 
-<div class="eyebrow">Official record</div>
+<div class="eyebrow"><span>Official record</span></div>
 <div class="stats" id="stats">
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Collisions on record within 150m</div></div>
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-related 311 reports, 3 years</div></div>
@@ -135,9 +136,8 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 </div>
 
 <section class="lane" id="maplane" hidden>
-  <div class="eyebrow">The corner</div>
+  <div class="eyebrow"><span>The corner</span></div>
   <div class="panel" id="mappanel">
-    <div class="ph"><h2>The corner</h2></div>
     <img id="mapimg" class="mapimg" alt="Roadmap showing the location of ${c.name}, ${c.city}">
     <p class="mapfoot">${c.name}, District ${c.district}. Map data: Google.</p>
   </div>
@@ -145,21 +145,18 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 
 <div class="cols">
   <div>
-    <div class="eyebrow">Press coverage</div>
+    <div class="eyebrow"><span>Press coverage</span><span class="tag" id="newstag">found live, cited</span></div>
     <div class="panel">
-      <div class="ph"><h2>Press coverage</h2><span class="tag" id="newstag">found live, cited</span></div>
       <div class="news" id="news"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
     </div>
-    <div class="eyebrow">Resident voices</div>
+    <div class="eyebrow"><span>Resident voices</span><span class="tag" id="voicestag">scraped</span></div>
     <div class="panel">
-      <div class="ph"><h2>Resident voices</h2><span class="tag" id="voicestag">scraped</span></div>
       <div id="voices"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
     </div>
   </div>
   <div>
-    <div class="eyebrow">The ask</div>
+    <div class="eyebrow"><span>The ask</span><span class="tag" id="lettertag">drafted</span></div>
     <div class="panel">
-      <div class="ph"><h2>The ask</h2><span class="tag" id="lettertag">drafted</span></div>
       <div class="fixrow">
         <div><div class="k">Proposed fix</div><div class="v" id="fixname">${c.fix.name}</div></div>
         <div class="cost" id="fixcost">${c.fix.cost}</div>
