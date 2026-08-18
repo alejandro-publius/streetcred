@@ -243,13 +243,16 @@ The first twelve are inherited and all still true. 13 onward are new.
     Storing one would promote a corner to the warmed fleet just because
     somebody looked at it, and the fleet is what the daily audit works through.
 
-21. **No Apify actor run has been paid for yet.** The wiring is deployed and
-    the inputs are verified against the actors' published input schemas, but no
-    live run has been started: the sandbox blocked the billable call, so the
-    first spend was left as a deliberate human action. Until one succeeds, the
-    honest claim is "it runs tomorrow morning", not "it has been running". Both
-    actors are PAY_PER_EVENT at $0.004 a unit on the free tier, so a corner is
-    roughly fifteen cents at the configured caps.
+21. **The Apify path is paid-run proven.** 24th and Valencia was commissioned
+    on 2026-08-18 for **$0.2961**, ingested, and published. Both actors are
+    PAY_PER_EVENT at $0.004 a unit. What the first real run taught, and what
+    the tests now pin: the relevance scorer kept four restaurant reviews out of
+    five, because naming the corner scored points on its own and "my go-to
+    corner store" scored on the word corner. Both rules are now the ones
+    src/cred.js already used, and the run keeps one true quote instead of five
+    that pad. `commission_voices.mjs --rescore` re-applies the current scorer to
+    datasets already paid for, so tightening the filter never costs a
+    re-commission. The morning cron has not yet fired with this code deployed.
 22. **A verification bar that reads its own data per candidate can switch
     itself off.** The street-name check was read once per candidate; one failed
     KV read cached a null for the process and the bar silently stopped running,

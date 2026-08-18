@@ -1,72 +1,118 @@
 # Make them know
 
-A human checklist. Nothing here is builder work and nothing here has been done:
-no post has been drafted into any account, no message sent, no tag applied.
-Every item below is an action for a person with the accounts open.
+A human checklist. Nothing here has been sent: no post drafted into any
+account, no message posted, no tag applied. Every item is an action for a
+person with the accounts open. Both posts below are written to be pasted
+verbatim.
 
 The framing that matters: **these are things worth showing, not things
-addressed to anyone.** Jonah Berman and Saif Raja (Exa) and Petros Hong (Apify)
-were at the event and judge or mentor these categories. A post written at them
-reads as a post written at them. A post that would be worth reading if none of
-them existed is the one they will actually stop on.
+addressed to anyone.** Jonah Berman and Saif Raja (Exa) and Petros Hong
+(Apify) were at the event and judge or mentor these categories. A post written
+at them reads as a post written at them. A post that would be worth reading if
+none of them existed is the one they will actually stop on.
 
-## What is now true and worth showing
+## Blocker status: CLEARED
 
-Both of these shipped today and both are live. The claims below are checkable
-at the URLs given, which is the point.
+The Apify blocker that held the autonomous-voices claim is gone. The first
+paid run happened on 2026-08-18:
 
-**Exa.** The Press Watchlist at
-https://streetcred.thealexschroeder.workers.dev/watchlist is entity discovery
-with the verification shown. Seven citywide semantic searches, every crossing
-name extracted, three hard bars before anything surfaces, and the rejects
-published with their reasons. The last pass read 104 articles, surfaced 4
-corners, published 7 rejects and discarded 22 phrases that named no street.
-The rejects are the interesting half: `3rd and New Montgomery` is a real pair
-of SF streets with no graded crossing between them; `16th and 24th` are two
-streets that never meet. Capabilities in use, all six: neural search, news
-category, date-sliced queries, `includeDomains` and `excludeDomains` at the
-API, contents extraction, and `findSimilar`. This is a Websets-shaped workflow
-on the search API.
+- Two actor runs commissioned for 24th and Valencia, run ids
+  `Os1CdqA1f2wVp5tfh` (Google Maps) and `oEGaTMxZfO3yzhfKs` (Reddit).
+- **Cost $0.2961**, against a $105 cycle limit with about $104 left.
+- 15 accounts read, and after the relevance filter was corrected by what that
+  first run exposed, **one quote kept**: a Reddit post about a cyclist struck
+  in the Valencia centre bike lane.
+- Visible in the ledger at /status and on the corner page, which says the
+  scrape was commissioned autonomously.
 
-Press connections are the second half: 16th and Mission links to Grant and
-Jackson through CBS coverage of a fatal Chinatown crash, and both corners' pages
-say so. Nineteen of 23 audited corners show nothing, which is the honest answer
-and the more interesting screenshot.
+Both posts below may now make the autonomous claim. Everything in them is true
+as of this writing and checkable at the URLs given.
 
-**Apify.** The site commissions its own scrapes. The 06:10 cron starts both
-actors for the corner it audits, and the next morning's run ingests them. A
-hard monthly ceiling of 70 runs and a per-run cost ledger from Apify's own
-reported number, both visible at
-https://streetcred.thealexschroeder.workers.dev/status. An autonomous system
-spending real credit, with the ledger in public.
+## Post 1: the rally post, for the event WhatsApp
+
+Paste as is. One message, not a thread.
+
+---
+
+StreetCred is live: https://streetcred.thealexschroeder.workers.dev
+
+Every intersection in San Francisco now has a safety grade. All 7,355 of them,
+scored against a full census of the city's own collision and 311 records rather
+than a sample. Type any corner into the box and you get its grade, the counts
+behind it, and a link to the exact query on data.sfgov.org so you can check the
+math yourself.
+
+There is also a Press Watchlist that reads the city's current coverage and
+works out which corners are being written about right now. It publishes what it
+rejected and why, which is the more interesting half.
+
+And it runs itself overnight: one corner audited every morning, and it
+commissions its own resident-voice scrapes while nobody is watching.
+
+If you think it deserves a vote, I would really appreciate yours. Genuinely
+curious what grade your corner gets.
+
+---
+
+## Post 2: the follow-up sponsor post, for LinkedIn
+
+Reject-list led, per the original brief. Tag Exa and Apify. Lead the image with
+a screenshot of the reject list at
+https://streetcred.thealexschroeder.workers.dev/watchlist, not the hit list.
+
+**Status: GO.** Every number below is live and checkable.
+
+---
+
+My discovery pipeline read 104 San Francisco news articles this week and put
+four corners on a street-safety watchlist. The interesting half is the seven it
+threw away.
+
+"3rd and New Montgomery" is a real pair of San Francisco streets with no graded
+crossing between them. "16th and 24th" are two streets that never meet.
+"Church and Market" was named in an article that turned out not to be about
+safety there. Each rejection is published with its reason, because a discovery
+pipeline that shows only its hits is indistinguishable from a search box that
+got lucky.
+
+A further 24 candidates were discarded before that, for naming no San Francisco
+street at all. News pages are full of capitalized pairs joined by "and", and
+"Metro Areas and Our Cities" looks exactly like an intersection to a pattern
+match. Every candidate is checked against a 2,219-name street index and then
+against the 7,355-corner index the site grades from, and only then against
+whether the article is actually about safety at that crossing.
+
+That is entity discovery with the verification shown, built on @Exa: neural
+search, the news category, date-sliced queries, domain filters in both
+directions, and findSimilar for connecting corners that get written about in
+the same breath.
+
+The other half runs unattended. Every morning the site audits one new corner
+and commissions its own resident-voice scrapes through @Apify, then ingests
+them the next morning and publishes what survives a relevance filter. The first
+autonomous run read 15 accounts and kept one, about a cyclist struck in the
+Valencia bike lane, for 29 cents. Every run is in a public cost ledger, because
+an autonomous system spending real credit without one is the thing nobody
+should ship.
+
+https://streetcred.thealexschroeder.workers.dev/watchlist
+
+---
 
 ## The checklist
 
-- [ ] **LinkedIn post, tagging Exa and Apify.** Annie reposts favorites, so the
-      post should stand on its own as a thing worth reposting. Lead with the
-      screenshot of the reject list, not the hit list: "here is what my
-      discovery pipeline threw away and why" is a more interesting post than
-      "here is what it found", and it is the part that shows the verification.
-      One post, both tools, because they do different halves of the same
-      unattended morning.
-- [ ] **Event WhatsApp thread, one message when the watchlist goes live.** Name
-      the feature and the tool, link the page. Not a thread, not a series.
-- [ ] **Event WhatsApp thread, one message when autonomous voices go live.**
-      Same shape. The honest hook is the ledger: the thing runs at 06:10 and
-      publishes what it spent.
-- [ ] Neither message should be addressed to a judge or mentor by name.
+- [ ] Post 1 into the event WhatsApp thread.
+- [ ] Post 2 to LinkedIn, tagging Exa and Apify, with the reject-list
+      screenshot. Annie reposts favorites, so it should stand on its own as
+      something worth reposting.
+- [ ] Optional second WhatsApp message when the autonomous-voices feature is
+      worth calling out separately. The honest hook is the ledger: it runs at
+      06:10 and publishes what it spent.
+- [ ] Neither message addressed to a judge or mentor by name.
 
-## Two caveats to keep the posts truthful
+## One caveat that survives
 
-1. **No Apify actor run has been paid for yet.** The wiring is deployed and the
-   inputs are verified against the published input schemas, but the first real
-   run has not happened: the sandbox blocked the billable call, so the first
-   spend was left as a deliberate human action. Run
-   `node tools/commission_voices.mjs "24th and Valencia" --dry` to read the
-   exact inputs, then drop `--dry` to commission one, then
-   `node tools/commission_voices.mjs --ingest` a few minutes later. **Do that
-   before posting about autonomous voices**, and confirm the ledger row appears
-   at /status. Until then the honest claim is "it ships tomorrow morning", not
-   "it has been running".
-2. The Exa side is fully exercised and paid for: 103 searches, $0.85 recorded,
-   against a 1,500-call ceiling. Screenshot away.
+The morning cron has not yet fired with the autonomous-voices code deployed, so
+"one corner audited every morning" is true of the audit and the voices path has
+been proved by hand rather than by a scheduled run. If someone asks, that is
+the honest answer. The next 06:10 PT run closes it.
