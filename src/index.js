@@ -1231,6 +1231,57 @@ export default {
         });
       }
 
+      // The nearest real crossing to a tapped point. One keyless SoQL query
+      // against the city's own intersection table, 120m ceiling. This is the
+      // read half of tap-anywhere; it never resolves, never warms, never
+      // spends. Navigation happens only when the person taps the popup's link,
+      // which goes through the same resolver guards as typing the name.
+      if (p === "/api/nearest") {
+        const lat = parseFloat(url.searchParams.get("lat"));
+        const lon = parseFloat(url.searchParams.get("lon"));
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+          return json({ ok: false, error: "lat and lon required" }, 400);
+        }
+        const legs = await soql("gmfx-8h6i", {
+          "$select": "cnn,st_name,the_geom",
+          "$where": `within_circle(the_geom, ${lat}, ${lon}, 120)`,
+          "$limit": "80",
+        }).catch(() => []);
+        const byCnn = new Map();
+        for (const r of legs) {
+          if (!r.cnn) continue;
+          let e = byCnn.get(r.cnn);
+          if (!e) byCnn.set(r.cnn, (e = { names: new Set(), lat: null, lon: null }));
+          if (r.st_name) e.names.add(r.st_name);
+          if (e.lat === null && r.the_geom?.coordinates?.length === 2) {
+            e.lon = Number(r.the_geom.coordinates[0]);
+            e.lat = Number(r.the_geom.coordinates[1]);
+          }
+        }
+        // Nearest cnn carrying at least two street names: one name is a dead
+        // end or a rename, not a crossing anyone can stand on.
+        const mLat = 111320, mLon = 111320 * Math.cos((lat * Math.PI) / 180);
+        let best = null;
+        for (const e of byCnn.values()) {
+          if (e.names.size < 2 || e.lat === null) continue;
+          const d = Math.hypot((e.lat - lat) * mLat, (e.lon - lon) * mLon);
+          if (!best || d < best.d) best = { ...e, d };
+        }
+        if (!best) return json({ ok: false, reason: "no crossing within 120m" });
+        const names = [...best.names].slice(0, 2);
+        const q = `${names[0]} and ${names[1]}`;
+        const parsed = parseQuery(q);
+        return json({
+          ok: true,
+          name: parsed.ok ? parsed.name : q,
+          slug: parsed.ok ? canonicalSlug(parsed.slug) : null,
+          query: q,
+          lat: best.lat,
+          lon: best.lon,
+          distanceM: Math.round(best.d),
+        });
+      }
+
       // Public, unauthenticated, and the reason the diary's numbers are worth
       // anything: every figure on /watchdog can be recounted from this.
       if (p === "/api/agent/journal") {

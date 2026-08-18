@@ -168,6 +168,45 @@
           .bindTooltip(esc(opts.focus.name), { permanent: false });
       }
 
+      // Tap anywhere: name the nearest real crossing, spend nothing. The first
+      // tap is a read (one keyless lookup against the city's intersection
+      // table); only tapping the popup's link resolves the corner, through the
+      // same guards as typing its name. Map browsing must never bill anyone.
+      if (opts.tapAnywhere) {
+        map.on("click", function (e) {
+          var at = e.latlng;
+          fetch("/api/nearest?lat=" + at.lat.toFixed(6) + "&lon=" + at.lng.toFixed(6))
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              var html;
+              if (d.ok) {
+                html =
+                  "<div class='lpop'><b>" + esc(d.name) + "</b>" +
+                  "<br><span class='lpop-s'>" + d.distanceM + "m from your tap.</span>" +
+                  "<br><a href='#' data-q='" + esc(d.query) + "' class='lpop-go'>View this corner</a></div>";
+              } else {
+                html = "<div class='lpop'><span class='lpop-s'>No crossing within 120m of that tap.</span></div>";
+              }
+              var pop = window.L.popup().setLatLng(at).setContent(html).openOn(map);
+              var go = pop.getElement() && pop.getElement().querySelector(".lpop-go");
+              if (go) {
+                go.addEventListener("click", function (ev) {
+                  ev.preventDefault();
+                  go.textContent = "Resolving";
+                  fetch("/api/resolve?q=" + encodeURIComponent(go.getAttribute("data-q")))
+                    .then(function (r) { return r.json(); })
+                    .then(function (res) {
+                      if (res.ok && res.slug) location.href = "/c/" + res.slug;
+                      else go.textContent = res.error || "Could not resolve this corner";
+                    })
+                    .catch(function () { go.textContent = "Could not resolve this corner"; });
+                });
+              }
+            })
+            .catch(function () {});
+        });
+      }
+
       if (opts.onReady) opts.onReady(map, L);
       return map;
     });

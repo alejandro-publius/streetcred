@@ -844,6 +844,7 @@ function upgradeMap(){
         StreetMap.upgrade(wrap, {
           center: [CORNER_GEO.lat, CORNER_GEO.lon], zoom: 16,
           audited, scored, heatUrl: "/data/heat.json",
+          tapAnywhere: true,
           focus: CORNER_GEO,
           onReady: () => {
             const t = el("maptag"); if(t) t.textContent = "OpenStreetMap";

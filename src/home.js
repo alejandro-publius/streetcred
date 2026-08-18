@@ -365,6 +365,7 @@ var AUDITED = ${JSON.stringify(
         StreetMap.upgrade(mapEl, {
           center: [VIEW.lat, VIEW.lon], zoom: VIEW.zoom,
           audited: AUDITED, scored: scored, heatUrl: "/data/heat.json",
+          tapAnywhere: true,
           onReady: function(map){
             var md = document.getElementById("mapdata");
             if(md) md.textContent = "Map data (c) OpenStreetMap contributors (c) CARTO. Danger Index ranks reported harm, not risk per crossing.";
