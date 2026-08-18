@@ -728,6 +728,7 @@ function applyImagery(d){
     // Not a failure and not a wait. Say what it is, so a calm corner does not
     // read as a broken one.
     else if(d.status === "recordsonly"){ b.disabled = true; b.textContent = LABELS[s] + ", not generated"; }
+    else if(d.status === "scoredonly"){ b.disabled = true; b.textContent = LABELS[s] + ", audit pending"; }
     else if(d.status && d.status !== "ready"){ b.disabled = true; b.textContent = LABELS[s] + ", unavailable"; }
   }
   render();

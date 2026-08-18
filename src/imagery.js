@@ -138,6 +138,13 @@ export async function generateStates(c, env) {
 const RECORDS_ONLY_NOTE =
   "This corner was warmed for its records only, so the visual audit was not generated. The Street View photograph is real.";
 
+// The score tier: corners the citywide sweep ranked high enough to publish but
+// that no one has spent an audit on yet. The state must say "not yet" rather
+// than "not ever", because these are exactly the corners the daily cron works
+// through, worst first.
+const SCORED_ONLY_NOTE =
+  "Scored from city records. The visual audit has not run for this corner yet. The Street View photograph is real.";
+
 export async function imageryFor(c, env, ctx, opts = {}) {
   const base = `/gen/${c.slug}`;
   const existing = await getImageryStatus(env, c.slug);
@@ -169,6 +176,16 @@ export async function imageryFor(c, env, ctx, opts = {}) {
       source: "cache",
       status: "recordsonly",
       note: RECORDS_ONLY_NOTE,
+      today: `${base}/today.jpg`,
+      hazards: null,
+      fix: null,
+    };
+  }
+  if (existing?.status === "scoredonly") {
+    return {
+      source: "cache",
+      status: "scoredonly",
+      note: SCORED_ONLY_NOTE,
       today: `${base}/today.jpg`,
       hazards: null,
       fix: null,
@@ -209,6 +226,18 @@ export async function imageryFor(c, env, ctx, opts = {}) {
   // is made entirely by the index and the collision record. Two billed image
   // generations per corner would buy nothing it needs, so they are not spent,
   // and the panel says so rather than showing an empty state that looks broken.
+  if (c.tier === "score") {
+    await putImageryStatus(env, c.slug, { status: "scoredonly", states: [], at: Date.now() });
+    return {
+      source: "live",
+      status: "scoredonly",
+      note: SCORED_ONLY_NOTE,
+      today: `${base}/today.jpg`,
+      hazards: null,
+      fix: null,
+    };
+  }
+
   if (c.derived === false) {
     await putImageryStatus(env, c.slug, { status: "recordsonly", states: [], at: Date.now() });
     return {

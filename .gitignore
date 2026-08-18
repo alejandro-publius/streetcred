@@ -14,3 +14,4 @@ hin-run.log
 .cotd-queue.json
 docs/hazards.jpg
 .sweep-cache/
+.scoretier-bulk.json

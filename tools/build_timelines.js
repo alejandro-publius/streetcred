@@ -21,8 +21,14 @@ const LIMIT = args.includes("--limit") ? Number(args[args.indexOf("--limit") + 1
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (m) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
 
-const corners = JSON.parse(readFileSync(join(ROOT, ".hin-list.json"), "utf8")).corners;
-log(`${corners.length} warmed corners, base=${BASE}`);
+// --file points at any {corners:[{slug,...}]} list; default stays the warmed
+// fleet. Added for the score tier, whose hundred corners live in
+// public/data/scoretier.json rather than on the board.
+const FILE = args.includes("--file")
+  ? args[args.indexOf("--file") + 1]
+  : join(ROOT, ".hin-list.json");
+const corners = JSON.parse(readFileSync(FILE, "utf8")).corners;
+log(`${corners.length} corners from ${FILE.split("/").pop()}, base=${BASE}`);
 
 let built = 0;
 let cached = 0;
