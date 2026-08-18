@@ -418,6 +418,11 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .stack .lg b{font-size:14px;color:var(--ink);font-weight:600;white-space:nowrap;letter-spacing:-.01em}
 @media(max-width:860px){.stack .lg{width:auto}}
 .cname{display:inline;font-size:inherit;font-weight:inherit;margin:0;letter-spacing:inherit}
+/* Preview badge. Only the preview environment renders the element at all, so
+   production carries neither the node nor the style burden of hiding it. */
+.pvw{position:fixed;right:14px;bottom:14px;z-index:80;font-size:10px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--dim);background:var(--panel);
+  border:1px dashed var(--line2);border-radius:999px;padding:5px 12px;opacity:.85;pointer-events:none}
 footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
 footer a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
 footer a:hover{color:var(--ink)}
@@ -657,6 +662,7 @@ ${BASE_CSS}
 
 </main>
 </main>
+${og.preview ? '<div class="pvw">Preview</div>' : ''}
 <footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
 Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
 </div>

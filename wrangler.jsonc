@@ -25,5 +25,23 @@
   },
   "observability": {
     "enabled": true
+  },
+  // The preview environment: the redesign branch deploys here, production
+  // never does. Same KV so it reads exactly what production reads, but NO cron
+  // triggers, because a second 06:10 firing against the shared store would
+  // consume the corner-of-the-day queue and the generation budget twice.
+  // Secrets do not inherit across environments; each must be set with
+  // `wrangler secret put NAME --env preview`.
+  "env": {
+    "preview": {
+      "name": "streetcred-preview",
+      "assets": { "directory": "./public", "binding": "ASSETS" },
+      "kv_namespaces": [
+        { "binding": "STORE", "id": "6918c07a1e1540f0ac9b6c499c5917b7" }
+      ],
+      "triggers": { "crons": [] },
+      "vars": { "PREVIEW": "1" },
+      "observability": { "enabled": true }
+    }
   }
 }

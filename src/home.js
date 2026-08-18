@@ -99,7 +99,7 @@ function severityLine(c) {
   return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
 
-export const HOME = (corners, origin = "", cotd = [], suggestion = null) => {
+export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false) => {
   // A corner without finite geometry poisons every pin: fitView produces a NaN
   // center and every overlay lands at left:NaN%. One bad row on the board must
   // cost that row its pin, not the whole map its anchors. It happened: a board
@@ -321,6 +321,7 @@ ${ranked
 </div>
 
 </main>
+${preview ? '<div class="pvw">Preview</div>' : ''}
 <footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
 Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
 </div>

@@ -1426,13 +1426,13 @@ export default {
           // a suggestion that has not been built yet simply does not render.
           getSuggestion(env, SUGGEST_VERSION).catch(() => null),
         ]);
-        return new Response(HOME(corners, origin, cotdLog, suggestion), {
+        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW)), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
 
       if (/^\/c\/[A-Za-z0-9-]+\/?$/.test(p)) {
-        const og = { ...(await ogFor(c, env)), origin };
+        const og = { ...(await ogFor(c, env)), origin, preview: Boolean(env.PREVIEW) };
         // A corner nobody has opened has no cached verdict yet, so warm it in
         // the background. The response never waits on it.
         if (!og.cred) ctx.waitUntil(getCred(c, env, origin).catch(() => {}));
