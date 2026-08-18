@@ -72,7 +72,9 @@
     var state = c.audited === false ? "<br><span class='lpop-s'>Scored from city records, audit pending.</span>" : "";
     return (
       "<div class='lpop'>" + chip + " <b>" + esc(c.name) + "</b>" + sentence + state +
-      "<br><a href='/c/" + esc(c.slug) + "'>View this corner</a></div>"
+      "<br><a href='/c/" + esc(c.slug) + "' class='lpop-view' data-slug='" + esc(c.slug) +
+      "' data-name='" + esc(c.name) + "' data-lat='" + c.lat + "' data-lon='" + c.lon +
+      "' data-grade='" + esc(c.grade || "") + "'>View this corner</a></div>"
     );
   }
 

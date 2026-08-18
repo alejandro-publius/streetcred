@@ -430,6 +430,21 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
 .stack .lg b{font-size:14px;color:var(--ink);font-weight:600;white-space:nowrap;letter-spacing:-.01em}
 @media(max-width:860px){.stack .lg{width:auto}}
 .cname{display:inline;font-size:inherit;font-weight:inherit;margin:0;letter-spacing:inherit}
+/* The split stage. Desktop only: at 1100px and up the imagery panel and the
+   corner map share one band under the verdict, imagery 60, map 40, equal
+   height. Below that everything stacks exactly as before; the band is created
+   by script, so no JavaScript means no band and nothing is lost. The 520px
+   imagery floor is structural: at the narrowest band viewport the left column
+   is ~630px, and if a future layout change ever squeezed it the stack rule
+   wins because the slider must never be starved. */
+.band{display:grid;grid-template-columns:60fr 40fr;gap:18px;align-items:stretch;margin-bottom:20px}
+.band > *{margin-bottom:0 !important;min-width:0}
+.band #mappanel{display:flex;flex-direction:column;height:100%}
+.band #mappanel .pbody{flex:1;display:flex;flex-direction:column}
+.band #mappanel .pbody > div:first-of-type,
+.band #mappanel .mapwrap{flex:1;min-height:420px}
+.band .mapfoot{margin-top:10px}
+
 /* The sticky letter bar. Appears on scroll, never taller than 48px, hides
    while the letter panel is on screen because an arrow pointing at something
    already visible is noise. Dismiss survives until the next page load. */
@@ -761,9 +776,12 @@ const CAPS = {
   hazards:["Hazards","Gemini read the real photograph and marked the zones it flags as high risk: faded crosswalk markings in red, vehicle conflict zones in amber. Drag to compare."],
   fix:["Proposed fix","An AI visualization of continental crosswalks, a protected bike lane, and a corner curb extension. Not a photograph of anything that exists. Drag to compare."]
 };
-const X = "?x=${c.slug}";
-const CORNER_SLUG = "${c.slug}";
-const CORNER_GEO = {lat: ${c.lat}, lon: ${c.lon}, name: ${JSON.stringify(c.short || c.name)}};
+// Mutable on purpose: the split stage swaps corners in place via pushState,
+// and every lane below reads these at fetch time rather than baking the slug
+// into a closure. A full page load still initializes them from the server.
+let X = "?x=${c.slug}";
+let CORNER_SLUG = "${c.slug}";
+let CORNER_GEO = {lat: ${c.lat}, lon: ${c.lon}, name: ${JSON.stringify(c.short || c.name)}};
 let IMG = null, state = "today";
 
 const el = id => document.getElementById(id);
@@ -1035,10 +1053,13 @@ function upgradeMap(){
   if(!window.fetch) return;
   const img = el("mapimg");
   const wrap = document.createElement("div");
+  wrap.className = "mapwrap";
   wrap.style.position = "relative";
   img.parentNode.insertBefore(wrap, img);
   wrap.appendChild(img);
-  wrap.style.height = img.clientHeight ? img.clientHeight + "px" : "300px";
+  // Inside the band the wrap flexes to fill the column; standalone it keeps
+  // the thumbnail's height as before.
+  if(!document.querySelector(".band")) wrap.style.height = img.clientHeight ? img.clientHeight + "px" : "300px";
   img.style.position = "absolute"; img.style.inset = "0";
   img.style.width = "100%"; img.style.height = "100%"; img.style.objectFit = "cover";
   const s = document.createElement("script");
@@ -1062,14 +1083,19 @@ function upgradeMap(){
             const p = el("mapprov");
             if(p) p.textContent = "Map data (c) OpenStreetMap contributors (c) CARTO.";
           }
-        });
+        }).then(map => { if(map) CORNER_MAP = map; });
       });
     });
   };
   document.head.appendChild(s);
 }
 
-fetch("/api/stats" + X).then(r => r.json()).then(d => {
+// The lane registry. Each loader is a function of the CURRENT corner (it
+// reads X when called), so calling them again after a swap repaints every
+// panel in place through the exact same code a full load runs.
+const LANE_LOADERS = {};
+
+LANE_LOADERS.stats = () => fetch("/api/stats" + X).then(r => r.json()).then(d => {
   V.stats = d; paintVerdict();
   // A null district means no clear majority, which prints as "n/a" rather than
   // as the 0 that Number(null) would quietly produce.
@@ -1101,7 +1127,7 @@ fetch("/api/stats" + X).then(r => r.json()).then(d => {
 // Cred Check. Four lanes, lit when they agree, with the verdict beside them.
 // Detail sits in the title attribute, which is hover on a pointer and long
 // press on touch, and keeps the strip to one line.
-fetch("/api/cred" + X).then(r => r.json()).then(d => {
+LANE_LOADERS.cred = () => fetch("/api/cred" + X).then(r => r.json()).then(d => {
   V.cred = d; paintVerdict();
   if(!d || !d.lanes) return;
   el("cred").hidden = false;
@@ -1115,7 +1141,7 @@ fetch("/api/cred" + X).then(r => r.json()).then(d => {
 // Corroboration. Which audit findings the public record backs, which it does
 // not, and which the record raised on its own. Deterministic server side, so
 // this is display only.
-fetch("/api/hazards" + X).then(r => r.json()).then(d => {
+LANE_LOADERS.hazards = () => fetch("/api/hazards" + X).then(r => r.json()).then(d => {
   const items = d.items || [];
   // Feed the hero's alt text: the audit image's description names what the
   // audit actually flagged at this corner, not a generic phrase.
@@ -1160,7 +1186,7 @@ function paintVerdict(){
   v.hidden = false;
 }
 
-fetch("/api/score" + X).then(r => r.json()).then(d => {
+LANE_LOADERS.score = () => fetch("/api/score" + X).then(r => r.json()).then(d => {
   if(!d || typeof d.index !== "number") return;
   V.score = d; paintVerdict();
   // Remember this visit on this device and nowhere else: slug, name, the grade
@@ -1219,7 +1245,7 @@ fetch("/api/changes").then(r => r.json()).then(d => {
   el("ghist").hidden = false;
 }).catch(() => {});
 
-fetch("/api/news" + X).then(r => r.json()).then(d => {
+LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
   mark("newstag", d.source);
   // Do not claim corner-level precision the result set does not support.
   if (d.heading) el("newshead").textContent = d.heading;
@@ -1332,7 +1358,7 @@ fetch("/api/news" + X).then(r => r.json()).then(d => {
     panel.hidden = false;
     if(manifest){ render(manifest, REDUCED); return; }
     log.innerHTML = '<div class="rline in off"><b></b><span>Reading the run manifest...</span></div>';
-    fetch("/api/run" + X).then(r => r.json()).then(m => {
+    LANE_LOADERS.run = () => fetch("/api/run" + X).then(r => r.json()).then(m => {
       manifest = m;
       render(m, REDUCED);
     }).catch(() => {
@@ -1365,7 +1391,7 @@ fetch("/api/news" + X).then(r => r.json()).then(d => {
 // The press year strip. Phrased as coverage-we-can-find everywhere, never as
 // first report: Exa recall is not ground truth, and an empty year means this
 // search found nothing that year, not that nothing happened.
-fetch("/api/timeline" + X).then(r => r.json()).then(t => {
+LANE_LOADERS.timeline = () => fetch("/api/timeline" + X).then(r => r.json()).then(t => {
   const years = t && t.years;
   if(!years || !years.length) return;
   const counts = years.map(y => y.count || 0);
@@ -1432,7 +1458,7 @@ fetch("/api/run" + X).then(r => r.json()).then(m => {
   n.hidden = false;
 }).catch(() => {});
 
-fetch("/api/voices" + X).then(r => r.json()).then(d => {
+LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d => {
   const items = d.items || [];
   const tag = el("voicestag");
   if (!items.length) {
@@ -1463,12 +1489,13 @@ fetch("/api/voices" + X).then(r => r.json()).then(d => {
     (v.when ? " &middot; " + esc(v.when) : "") + '</div></div>').join("");
 });
 
-fetch("/api/letter" + X).then(r => r.json()).then(d => {
+LANE_LOADERS.letter = () => fetch("/api/letter" + X).then(r => r.json()).then(d => {
   mark("lettertag", d.source);
   el("letter").textContent = d.text || "";
+
 // Download as text: a client-side blob of exactly what is on screen, named
 // for the corner. Nothing fetched, nothing regenerated.
-el("download") && el("download").addEventListener("click", () => {
+el("download") && (el("download").onclick = () => {
   const text = el("letter") ? el("letter").textContent : "";
   if(!text.trim()) return;
   const blob = new Blob([text], {type: "text/plain;charset=utf-8"});
@@ -1479,12 +1506,104 @@ el("download") && el("download").addEventListener("click", () => {
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
 });
-  el("copy").addEventListener("click", () => {
+  // onclick, not addEventListener: this handler rebinds on every letter load,
+  // and after an in-place corner swap a second listener would copy the letter
+  // twice. Assignment replaces; listeners accumulate.
+  el("copy").onclick = () => {
     navigator.clipboard.writeText(d.text || "");
     el("copy").textContent = "Copied";
     setTimeout(() => el("copy").textContent = "Copy letter", 1400);
-  });
+  };
 });
+
+// ---------------- in-place corner swap (split stage) ----------------
+// pushState navigation between corners without a reload: identity flips,
+// transient DOM resets to skeletons, and the exact same lane loaders repaint
+// every panel. Deep links and the back button stay truthful because every
+// swap is a history entry and popstate swaps back through the same path.
+let CORNER_MAP = null; // the Leaflet map instance, once the band upgrade runs
+
+function runLanes(){ Object.values(LANE_LOADERS).forEach(fn => { try { fn(); } catch(e) {} }); }
+
+function resetTransient(){
+  V.score = null; V.stats = null; V.cred = null;
+  IMG = null; state = "today"; polls = 0;
+  window.HZLABELS = [];
+  el("verdict").hidden = true;
+  el("scorewrap").hidden = true;
+  el("cred").hidden = true;
+  if(el("ghist")) el("ghist").hidden = true;
+  if(el("tl")) el("tl").hidden = true;
+  if(el("hz")){ el("hz").hidden = true; el("hz").innerHTML = ""; }
+  if(el("replay")) el("replay").hidden = true;
+  const sk = '<div class="sk"></div><div class="sk"></div><div class="sk"></div>';
+  el("letter").innerHTML = sk + sk;
+  el("news").innerHTML = sk;
+  if(el("voices")) el("voices").innerHTML = sk;
+  el("stats").innerHTML = '<div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Injury collisions, last 5 years</div></div>' +
+    '<div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-condition 311 reports, 3 years</div></div>' +
+    '<div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>';
+  document.querySelectorAll(".toggle button").forEach((b,i) => {
+    b.setAttribute("aria-pressed", String(i === 0));
+    if(b.dataset.state !== "today"){ b.disabled = true; b.textContent = b.dataset.state === "hazards" ? "Hazards" : "Proposed fix"; }
+  });
+}
+
+function swapCorner(info, push){
+  CORNER_SLUG = info.slug;
+  CORNER_GEO = { lat: Number(info.lat), lon: Number(info.lon), name: info.name };
+  X = "?x=" + info.slug;
+  if(push !== false) history.pushState({ corner: info }, "", "/c/" + info.slug);
+  document.title = info.name + ", graded - StreetCred";
+  const h = document.querySelector(".cname b"); if(h) h.textContent = info.name;
+  const sn = document.querySelector(".sn"); if(sn) sn.textContent = info.name;
+  resetTransient();
+  runLanes();
+  loadImagery();
+  if(CORNER_MAP && window.L){
+    // Recenter, never flyTo under reduced motion; the map itself stays live
+    // while the left column shows skeletons.
+    if(REDUCED) CORNER_MAP.setView([CORNER_GEO.lat, CORNER_GEO.lon], 16);
+    else CORNER_MAP.flyTo([CORNER_GEO.lat, CORNER_GEO.lon], 16, { duration: 0.8 });
+    CORNER_MAP.closePopup();
+  }
+}
+
+window.addEventListener("popstate", (e) => {
+  const m = location.pathname.match(/^[/]c[/]([A-Za-z0-9-]+)/);
+  if(!m) return;
+  if(e.state && e.state.corner){ swapCorner(e.state.corner, false); return; }
+  // A history entry from before the first swap: reload is the honest fallback,
+  // because we no longer know that corner's geometry without asking.
+  location.reload();
+});
+
+// Intercept popup navigation inside the band only. Everywhere else the link
+// behaves as a link.
+document.addEventListener("click", (e) => {
+  const a = e.target.closest && e.target.closest(".lpop-view");
+  if(!a || !document.querySelector(".band")) return;
+  e.preventDefault();
+  swapCorner({ slug: a.dataset.slug, name: a.dataset.name, lat: a.dataset.lat, lon: a.dataset.lon });
+});
+
+// ---------------- band assembly, desktop only ----------------
+(function(){
+  if(!matchMedia("(min-width: 1100px)").matches) return;
+  if(document.querySelector(".band")) return;
+  const imagery = document.querySelector(".panel.lane-imagery");
+  const maplane = el("maplane");
+  if(!imagery || !maplane) return;
+  const band = document.createElement("div");
+  band.className = "band";
+  imagery.parentNode.insertBefore(band, imagery);
+  band.appendChild(imagery);
+  band.appendChild(maplane);
+  maplane.hidden = false;
+})();
+
+// First load: every lane once. Swaps call runLanes() again.
+runLanes();
 </script>
 <script src="/typeahead.js" defer></script>
 </body>
