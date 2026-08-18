@@ -5,6 +5,9 @@ import { PAGE } from "./page.js";
 const DS_CRASHES = "ubvf-ztfx";
 const DS_311 = "vw6y-z8j6";
 const GEMINI_TEXT_MODEL = "gemini-3.7-flash";
+// Bump to invalidate every edge-cached payload. Corrected figures must not be
+// served from a cache holding the old ones.
+const CACHE_VERSION = "v2";
 
 // Small in-process cache. The Worker isolate holds this between requests, which
 // is all the caching this product needs: every slow artifact (imagery, scraped
@@ -25,20 +28,31 @@ async function cached(key, ttlMs, fn) {
 // are never stored, so a lane that failed once is retried rather than pinned.
 async function edgeCached(ctx, key, ttlSec, produce) {
   const cache = caches.default;
-  const req = new Request(`https://streetcred.internal/api/${key}`);
+  const req = new Request(`https://streetcred.internal/api/${CACHE_VERSION}/${key}`);
+  // The cached copy carries max-age so the edge will hold it. What goes back to
+  // the client is always no-store: a public max-age on the real URL lets the CDN
+  // and the browser pin a payload for an hour, which means a data correction
+  // ships but does not show up. Fast internally, never stale externally.
+  const fresh = (body) =>
+    new Response(body, {
+      headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+    });
+
   const hit = await cache.match(req);
-  if (hit) return hit;
+  if (hit) return fresh(await hit.text());
+
   const value = await produce();
-  const res = new Response(JSON.stringify(value), {
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": `public, max-age=${ttlSec}`,
-    },
-  });
+  const body = JSON.stringify(value);
   if (value && value.source !== "sample" && value.source !== "empty") {
-    ctx.waitUntil(cache.put(req, res.clone()));
+    const stored = new Response(body, {
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": `public, max-age=${ttlSec}`,
+      },
+    });
+    ctx.waitUntil(cache.put(req, stored));
   }
-  return res;
+  return fresh(body);
 }
 
 const json = (obj, status = 200) =>
@@ -68,14 +82,36 @@ async function soql(dataset, params) {
 }
 
 // ---------------------------------------------------------------- stats
+// 311 service types that describe the physical street. An earlier substring
+// match on "Street" swept in Street and Sidewalk Cleaning, which is a sanitation
+// queue, not a street-condition signal, and inflated this corner from 354 to
+// 8,546. Explicit allow list only.
+const SERVICE_NAMES = [
+  "Street Defects",
+  "Street Defect",
+  "Sign Repair",
+  "Streetlights",
+  "Sidewalk or Curb",
+  "Sidewalk and Curb",
+  "Blocked Street or SideWalk",
+  "Blocked Street and Sidewalk",
+  "Color Curb",
+];
+
 async function getStats(c) {
   const circle = `within_circle(point, ${c.lat}, ${c.lon}, ${c.radiusMeters})`;
   const since = new Date(Date.now() - 3 * 365 * 24 * 3600 * 1000).toISOString().slice(0, 19);
-  const [crashes, reports, dist] = await Promise.all([
-    soql(DS_CRASHES, { "$select": "count(*)", "$where": circle }),
+  // The collision dataset reaches back to 2005. Unbounded, the count describes
+  // two decades of a corner that has since been rebuilt. Five years.
+  const crashSince = new Date(Date.now() - 5 * 365 * 24 * 3600 * 1000).toISOString().slice(0, 19);
+  const crashWhere = `${circle} AND collision_datetime > '${crashSince}'`;
+  const services = SERVICE_NAMES.map((s) => `'${s}'`).join(",");
+  const [crashes, fatal, reports, dist] = await Promise.all([
+    soql(DS_CRASHES, { "$select": "count(*)", "$where": crashWhere }),
+    soql(DS_CRASHES, { "$select": "sum(number_killed)", "$where": crashWhere }).catch(() => []),
     soql(DS_311, {
       "$select": "count(*)",
-      "$where": `${circle} AND requested_datetime > '${since}' AND service_name like '%Street%'`,
+      "$where": `${circle} AND requested_datetime > '${since}' AND service_name in(${services})`,
     }),
     // Grouped, not $limit 1. A major street is often a district boundary: within
     // 150m of 6th and Market, DataSF holds 242 rows in District 6 and 114 in
@@ -96,6 +132,7 @@ async function getStats(c) {
   return {
     source: "live",
     crashes: parseInt(crashes?.[0]?.count ?? 0, 10),
+    fatal: parseInt(fatal?.[0]?.sum_number_killed ?? 0, 10) || 0,
     reports311: parseInt(reports?.[0]?.count ?? 0, 10),
     district,
   };
@@ -127,8 +164,26 @@ async function getNews(c, env) {
   if (!r.ok) throw new Error(`exa ${r.status}`);
   const d = await r.json();
   const tokens = streetTokens(c);
-  const items = (d.results || [])
-    .filter((x) => x.title && tokens.some((t) => (x.title + " " + (x.url || "")).toLowerCase().includes(t)))
+  // Law firm and lead generation sites republish crash reports to farm clients.
+  // They are not press coverage and they do not belong in an evidence lane.
+  const DENY = /(lawfirm|law-firm|attorney|lawyer|injuryl|accidentl|legal)/i;
+  const all = (d.results || []).filter((x) => x.title && !DENY.test(x.url || ""));
+
+  const scored = all.map((x) => {
+    const hay = (x.title + " " + (x.url || "") + " " + (x.text || "")).toLowerCase();
+    const hits = tokens.filter((t) => hay.includes(t)).length;
+    const titleHay = (x.title + " " + (x.url || "")).toLowerCase();
+    // Corner level means both street names, not just the neighborhood.
+    const corner = tokens.every((t) => titleHay.includes(t)) || (hits >= tokens.length && tokens.length > 1);
+    return { x, corner, loose: tokens.some((t) => titleHay.includes(t)) };
+  });
+
+  const tight = scored.filter((s) => s.corner);
+  // Only claim corner-level precision when there is enough of it to stand on.
+  const precise = tight.length >= 3;
+  const chosen = (precise ? tight : scored.filter((s) => s.loose)).map((s) => s.x);
+
+  const items = chosen
     .map((x) => ({
       title: x.title.trim(),
       url: x.url,
@@ -144,7 +199,12 @@ async function getNews(c, env) {
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
     .slice(0, 5);
   if (!items.length) throw new Error("exa no on-topic results");
-  return { source: "live", items };
+  return {
+    source: "live",
+    precise,
+    heading: precise ? "Press coverage" : "Coverage of this corridor",
+    items,
+  };
 }
 
 // ---------------------------------------------------------------- voices
@@ -280,8 +340,8 @@ async function getLetter(c, env, ctx) {
   const prompt = `Write a respectful one-page letter from a resident to San Francisco Supervisor ${supervisor} about the intersection of ${c.name} in District ${ctx.stats.district}.
 
 Use these facts and cite them plainly:
-- ${ctx.stats.crashes} collisions recorded by the city within 150 meters of this intersection.
-- ${ctx.stats.reports311} street-related 311 reports at this location in the last three years.
+- ${ctx.stats.crashes} injury collisions recorded by the city within 150 meters of this intersection in the last five years${ctx.stats.fatal ? `, ${ctx.stats.fatal} of them fatal` : ""}. Do not describe this figure as covering any longer period.
+- ${ctx.stats.reports311} street-condition 311 reports at this location in the last three years, counting street defects, sidewalk and curb, signs, streetlights and blocked sidewalks only.
 ${headlines ? `- Recent press coverage: ${headlines}.` : "- No press coverage was found for this corner. Do not cite or invent any news reporting."}
 - An automated visual audit of the intersection identified sub-standard, faded crosswalk markings and vehicle turning conflict zones where drivers cross the pedestrian path.
 ${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident testimony."}

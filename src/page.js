@@ -145,8 +145,8 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 
 <div class="eyebrow"><span>Official record</span></div>
 <div class="stats" id="stats">
-  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Collisions on record within 150m</div></div>
-  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-related 311 reports, 3 years</div></div>
+  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Injury collisions, last 5 years</div></div>
+  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-condition 311 reports, 3 years</div></div>
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>
 </div>
 
@@ -160,7 +160,7 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 
 <div class="cols">
   <div>
-    <div class="eyebrow"><span>Press coverage</span><span class="tag" id="newstag">found live, cited</span></div>
+    <div class="eyebrow"><span id="newshead">Press coverage</span><span class="tag" id="newstag">found live, cited</span></div>
     <div class="panel">
       <div class="news" id="news"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
     </div>
@@ -255,7 +255,8 @@ fetch("/api/imagery" + X).then(r => r.json()).then(d => { IMG = d; render(); });
 
 fetch("/api/stats" + X).then(r => r.json()).then(d => {
   const n = [d.crashes, d.reports311, d.district].map(v => Number(v).toLocaleString());
-  const l = ["Collisions on record within 150m","Street-related 311 reports, 3 years","Supervisor district"];
+  const l = ["Injury collisions, last 5 years" + (d.fatal ? ", including " + d.fatal + " fatal" : ""),
+             "Street-condition 311 reports, 3 years","Supervisor district"];
   el("stats").innerHTML = n.map((v,i) =>
     '<div class="stat"><div class="n">' + v + '</div><div class="l">' + l[i] +
     (d.source === "sample" && i === 0 ? ' <span class="tag sample">sample</span>' : '') + '</div></div>').join("");
@@ -263,6 +264,8 @@ fetch("/api/stats" + X).then(r => r.json()).then(d => {
 
 fetch("/api/news" + X).then(r => r.json()).then(d => {
   mark("newstag", d.source);
+  // Do not claim corner-level precision the result set does not support.
+  if (d.heading) el("newshead").textContent = d.heading;
   el("news").innerHTML = (d.items||[]).map(x =>
     '<a href="' + esc(x.url) + '" target="_blank" rel="noopener"><div class="t">' + esc(x.title) +
     '</div><div class="m">' + esc(x.domain) + (x.date ? " &middot; " + esc(x.date) : "") + '</div></a>').join("")
