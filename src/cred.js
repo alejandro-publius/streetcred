@@ -38,6 +38,9 @@ export function isSafetyCoverage(item, streetTokens) {
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 // stats, news, voices and hazards are the payloads the lanes already produced.
+// Bump when a lane rule or a token list changes.
+export const CRED_VERSION = "v1";
+
 export function credCheck({ stats, news, voices, hazards }) {
   // Official records. One injury collision is not noise, and three filtered
   // street-condition reports in a year is a pattern.
@@ -87,5 +90,5 @@ export function credCheck({ stats, news, voices, hazards }) {
   const verdict =
     score === 4 ? "CORROBORATED" : score === 3 ? "SUPPORTED" : score === 2 ? "PARTIAL" : "REPORTED ONLY";
 
-  return { source: "live", lanes, score, verdict };
+  return { source: "live", version: CRED_VERSION, lanes, score, verdict };
 }

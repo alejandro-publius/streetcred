@@ -5,11 +5,12 @@ import { PAGE } from "./page.js";
 import { parseQuery, locate, districtFor, soql } from "./resolve.js";
 import {
   getCorner, putCorner, getImage, rateLimit, getScore, putScore, getHazards, putHazards,
+  getCredCached, putCredCached, getShareCard,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import { imageryFor } from "./imagery.js";
 import { corroborate, HAZARD_VERSION } from "./hazards.js";
-import { credCheck, isSafetyCoverage } from "./cred.js";
+import { credCheck, isSafetyCoverage, CRED_VERSION } from "./cred.js";
 
 // DataSF open datasets, keyless.
 const DS_CRASHES = "ubvf-ztfx";
@@ -19,7 +20,7 @@ const GEMINI_TEXT_MODEL = "gemini-3.7-flash";
 // served from a cache holding the old ones. The edge cache is per-colo, so
 // without this a correction lands unevenly across data centers and some
 // visitors keep reading the old numbers for the life of the TTL.
-const CACHE_VERSION = "v6";
+const CACHE_VERSION = "v7";
 
 // The letter embeds live figures, press headlines, and the Danger Index, so it
 // goes stale in more ways than any other lane and it is the one artifact a
@@ -83,8 +84,15 @@ const json = (obj, status = 200) =>
 // A corner is either one of the two precomputed entries or one resolved from
 // typed input and parked in KV. Both come back in the same shape, so every lane
 // downstream is unaware of the difference.
+// /c/{slug} is the shareable form. ?x= stays working forever, because links
+// already exist in the wild and a dead link is a lost vote.
+function slugFromUrl(url) {
+  const m = url.pathname.match(/^\/c\/([A-Za-z0-9-]+)\/?$/);
+  return m ? m[1] : url.searchParams.get("x") || DEFAULT_SLUG;
+}
+
 async function corner(url, env) {
-  const slug = canonicalSlug(url.searchParams.get("x") || DEFAULT_SLUG);
+  const slug = canonicalSlug(slugFromUrl(url));
   if (CORNERS[slug]) return CORNERS[slug];
   const stored = await getCorner(env, slug);
   return stored || CORNERS[DEFAULT_SLUG];
@@ -188,7 +196,9 @@ async function getCred(c, env, origin) {
     getVoices(c, env, origin).catch(emptyVoices),
     getHazardsFor(c, env, origin).catch(() => null),
   ]);
-  return credCheck({ stats, news, voices, hazards });
+  const fresh = credCheck({ stats, news, voices, hazards });
+  await putCredCached(env, c.slug, fresh);
+  return fresh;
 }
 
 // ---------------------------------------------------------------- news
@@ -655,6 +665,47 @@ async function handleResolve(url, request, env) {
   return json({ ok: true, slug: c.slug, name: c.name, district, source: loc.source });
 }
 
+// ---------------------------------------------------------------- share card
+
+// Deliberately never the annotated or edited states. Those are modified Street
+// View imagery, and pushing them out as social preview assets is exactly the
+// redistribution question the risk review flagged as unsettled. The card is
+// built on the untouched frame, attribution included.
+async function shareCard(c, env, ctx, origin) {
+  const key = new Request(`https://streetcred.internal/og/${c.slug}.jpg`);
+  const hit = await caches.default.match(key);
+  if (hit) return hit;
+
+  let bytes = await getShareCard(env, c.slug);
+  if (!bytes) {
+    // No composited card for this corner yet. The plain frame is a worse card
+    // but an honest one, and it means every corner has a preview.
+    if (CORNERS[c.slug]) {
+      const r = await asset(env, origin, `/img/${c.slug}-today.jpg`);
+      if (r.ok) bytes = await r.arrayBuffer();
+    } else {
+      bytes = await getImage(env, c.slug, "today");
+    }
+  }
+  if (!bytes) return new Response("no preview", { status: 404 });
+
+  const res = new Response(bytes, {
+    headers: { "content-type": "image/jpeg", "cache-control": "public, max-age=86400" },
+  });
+  ctx.waitUntil(caches.default.put(key, res.clone()));
+  return res;
+}
+
+// Reads only what is already computed. A crawler must never trigger a score, a
+// corroboration pass, or an image generation just by fetching a page.
+async function ogFor(c, env) {
+  const [score, cred] = await Promise.all([
+    getScore(env, c.slug, SCORE_VERSION).catch(() => null),
+    getCredCached(env, c.slug, CRED_VERSION).catch(() => null),
+  ]);
+  return { score, cred };
+}
+
 // ---------------------------------------------------------------- generated imagery
 
 async function generatedImage(pathname, env, ctx) {
@@ -701,12 +752,20 @@ export default {
 
       const c = await corner(url, env);
 
+      if (p === "/og.jpg") {
+        return await shareCard(c, env, ctx, origin);
+      }
+
       if (p === "/map.jpg") {
         return await mapImage(c, env, ctx);
       }
 
-      if (p === "/" || p === "/index.html") {
-        return new Response(PAGE(c), {
+      if (p === "/" || p === "/index.html" || /^\/c\/[A-Za-z0-9-]+\/?$/.test(p)) {
+        const og = { ...(await ogFor(c, env)), origin };
+        // A corner nobody has opened has no cached verdict yet, so warm it in
+        // the background. The response never waits on it.
+        if (!og.cred) ctx.waitUntil(getCred(c, env, origin).catch(() => {}));
+        return new Response(PAGE(c, og), {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       }
@@ -724,7 +783,10 @@ export default {
       }
 
       if (p === "/api/cred") {
-        return await edgeCached(ctx, `cred-${c.slug}`, 3600, () => getCred(c, env, origin));
+        return await edgeCached(ctx, `cred-${c.slug}`, 3600, async () => {
+          const hit = await getCredCached(env, c.slug, CRED_VERSION);
+          return hit ? { ...hit, source: "cache" } : getCred(c, env, origin);
+        });
       }
 
       if (p === "/api/hazards") {

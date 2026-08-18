@@ -106,6 +106,33 @@ export async function putHazards(env, slug, hazards) {
   await rawPut(env, `hazards:${slug}`, JSON.stringify(hazards));
 }
 
+// ---------------------------------------------------------------- cred
+
+export async function getCredCached(env, slug, version) {
+  const raw = await rawGet(env, `cred:${slug}`);
+  if (!raw) return null;
+  try {
+    const c = JSON.parse(raw);
+    return c.version === version ? c : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putCredCached(env, slug, cred) {
+  await rawPut(env, `cred:${slug}`, JSON.stringify(cred));
+}
+
+// ---------------------------------------------------------------- share card
+
+// The 1200x630 preview, composited offline and uploaded, because a Worker has
+// no image library and the alternative would be shipping a WASM codec to draw
+// two lines of text. Absent for a corner nobody has warmed, which is why the
+// route falls back to the plain Street View frame.
+export async function getShareCard(env, slug) {
+  return rawGet(env, `og:${slug}`, "arrayBuffer");
+}
+
 // ---------------------------------------------------------------- imagery
 
 const imgKey = (slug, state) => `img:${slug}:${state}`;

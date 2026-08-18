@@ -7,13 +7,51 @@ const LOGO = `<svg viewBox="0 0 64 64" width="38" height="38" aria-hidden="true"
   <circle cx="32" cy="32" r="3" fill="#F07E26"/>
 </svg>`;
 
-export const PAGE = (c) => `<!doctype html>
+export const PAGE = (c, og = {}) => {
+  const idx = og.score?.index;
+  const grade = og.score?.grade;
+  const verdict = og.cred?.verdict;
+  const records = og.cred?.lanes?.find((l) => l.key === "records");
+  // Falls back to the plain product line when a corner has not been scored yet,
+  // rather than shipping a title with a hole in it.
+  const ogTitle = Number.isFinite(idx)
+    ? `${c.name} scores ${idx}/100 on StreetCred`
+    : `${c.name} on StreetCred`;
+  const ogDesc = [
+    records?.detail,
+    verdict,
+    "Evidence graded and traced, letter drafted.",
+  ]
+    .filter(Boolean)
+    .join(". ")
+    .replace(/\.\./g, ".");
+  // Absolute, because crawlers do not resolve relative og:url or og:image.
+  const base = og.origin || "";
+  const url = `${base}/c/${c.slug}`;
+  const img = `${base}/og.jpg?x=${c.slug}`;
+  const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+  return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>StreetCred, ${c.short}</title>
 <link rel="icon" href="/logo.svg">
+<link rel="canonical" href="${url}">
+<meta name="description" content="${esc(ogDesc)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="StreetCred">
+<meta property="og:title" content="${esc(ogTitle)}">
+<meta property="og:description" content="${esc(ogDesc)}">
+<meta property="og:url" content="${url}">
+<meta property="og:image" content="${img}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Street View photograph of ${esc(c.name)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(ogTitle)}">
+<meta name="twitter:description" content="${esc(ogDesc)}">
+<meta name="twitter:image" content="${img}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Lora:ital@0;1&display=swap" rel="stylesheet">
@@ -46,9 +84,15 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .findmsg{position:absolute;top:44px;left:0;font-size:12.5px;color:var(--ink);background:var(--panel);
   border:1px solid var(--line);border-radius:10px;padding:9px 13px;width:300px;line-height:1.5;
   z-index:6;box-shadow:0 6px 18px rgba(20,27,45,.09)}
+.share{font-family:inherit;font-size:12.5px;font-weight:600;color:var(--dim);background:var(--card);
+  border:1px solid var(--line);border-radius:999px;padding:8px 15px;cursor:pointer;white-space:nowrap;
+  transition:color 150ms ease-out,border-color 150ms ease-out}
+.share:hover{color:var(--ink);border-color:var(--ink)}
 .corner{margin-left:auto;text-align:right;font-size:13px;color:var(--dim);line-height:1.5}
 .corner b{display:block;font-size:15px;color:var(--ink);font-weight:600}
 .lede{font-size:15px;color:var(--dim);max-width:660px;margin:0 0 26px;line-height:1.6}
+.nudge{font-family:inherit;font-size:inherit;color:var(--accent);background:none;border:0;padding:0;
+  cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 
 /* Danger Index. The grade chip and the severity ramp stay inside the existing
    palette: ink reads as most severe, then the accent, then two accent tints. No
@@ -223,7 +267,7 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
     ${Object.values(CORNERS)
       .map(
         (k) =>
-          `<a href="/?x=${k.slug}"${k.slug === c.slug ? ' class="on" aria-current="page"' : ""}>${k.short}</a>`,
+          `<a href="/c/${k.slug}"${k.slug === c.slug ? ' class="on" aria-current="page"' : ""}>${k.short}</a>`,
       )
       .join("")}
   </nav>
@@ -233,12 +277,13 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
     <button type="submit" id="findgo">Check</button>
     <div class="findmsg" id="findmsg" role="status" hidden></div>
   </form>
+  <button class="share" id="share" type="button">Share corner</button>
   <div class="corner"><b>${c.name}</b>${c.city}${
     c.district ? `, District ${c.district}` : ", district unresolved"
   }</div>
 </header>
 
-<p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor.</p>
+<p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
 
 <div class="toggle" role="group" aria-label="Corner view">
   <button data-state="today" aria-pressed="true">Today</button>
@@ -332,6 +377,7 @@ const CAPS = {
   fix:["Proposed fix","An AI visualization of continental crosswalks, a protected bike lane, and a corner curb extension. Not a photograph of anything that exists. Drag to compare."]
 };
 const X = "?x=${c.slug}";
+const CORNER_SLUG = "${c.slug}";
 let IMG = null, state = "today";
 
 const el = id => document.getElementById(id);
@@ -458,6 +504,27 @@ function loadImagery(){
 }
 loadImagery();
 
+// Share. Copies the canonical /c/{slug} URL. No tracking parameters are added,
+// so a shared link is the same link for everyone who receives it.
+(function(){
+  const btn = el("share");
+  if(!btn) return;
+  btn.addEventListener("click", () => {
+    const link = location.origin + "/c/" + CORNER_SLUG;
+    const done = () => {
+      btn.textContent = "Link copied";
+      setTimeout(() => btn.textContent = "Share corner", 1600);
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(link).then(done).catch(() => {
+        prompt("Copy this corner link", link);
+      });
+    } else {
+      prompt("Copy this corner link", link);
+    }
+  });
+})();
+
 // Free-text corner lookup. Resolve first, then navigate, so the address bar
 // always matches what is on screen and the page is refreshable and linkable.
 (function(){
@@ -470,12 +537,14 @@ loadImagery();
     say(""); go.disabled = true; go.textContent = "Checking";
     const reset = () => { go.disabled = false; go.textContent = "Check"; };
     fetch("/api/resolve?q=" + encodeURIComponent(q)).then(r => r.json()).then(d => {
-      if(d.ok){ location.href = "/?x=" + encodeURIComponent(d.slug); return; }
+      if(d.ok){ location.href = "/c/" + encodeURIComponent(d.slug); return; }
       reset();
       say(d.message || "That corner could not be found.");
     }).catch(() => { reset(); say("Lookup failed. Try again in a moment."); });
   });
   input.addEventListener("input", () => say(""));
+  const nudge = el("nudge");
+  if(nudge) nudge.addEventListener("click", () => { input.focus(); input.select(); });
 })();
 
 // The map panel stays out of the document until the thumbnail actually decodes.
@@ -600,3 +669,4 @@ fetch("/api/letter" + X).then(r => r.json()).then(d => {
 </script>
 </body>
 </html>`;
+};
