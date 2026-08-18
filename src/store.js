@@ -87,6 +87,25 @@ export async function putScore(env, slug, score) {
   await rawPut(env, `score:${slug}`, JSON.stringify(score));
 }
 
+// ---------------------------------------------------------------- hazards
+
+// Corroboration is expensive once (one model call plus five DataSF queries) and
+// free forever after, so it is stored like the score is.
+export async function getHazards(env, slug, version) {
+  const raw = await rawGet(env, `hazards:${slug}`);
+  if (!raw) return null;
+  try {
+    const h = JSON.parse(raw);
+    return h.version === version ? h : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putHazards(env, slug, hazards) {
+  await rawPut(env, `hazards:${slug}`, JSON.stringify(hazards));
+}
+
 // ---------------------------------------------------------------- imagery
 
 const imgKey = (slug, state) => `img:${slug}:${state}`;

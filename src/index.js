@@ -3,9 +3,12 @@ import {
 } from "./data.js";
 import { PAGE } from "./page.js";
 import { parseQuery, locate, districtFor, soql } from "./resolve.js";
-import { getCorner, putCorner, getImage, rateLimit, getScore, putScore } from "./store.js";
+import {
+  getCorner, putCorner, getImage, rateLimit, getScore, putScore, getHazards, putHazards,
+} from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import { imageryFor } from "./imagery.js";
+import { corroborate, HAZARD_VERSION } from "./hazards.js";
 
 // DataSF open datasets, keyless.
 const DS_CRASHES = "ubvf-ztfx";
@@ -15,14 +18,14 @@ const GEMINI_TEXT_MODEL = "gemini-3.7-flash";
 // served from a cache holding the old ones. The edge cache is per-colo, so
 // without this a correction lands unevenly across data centers and some
 // visitors keep reading the old numbers for the life of the TTL.
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5";
 
 // The letter embeds live figures, press headlines, and the Danger Index, so it
 // goes stale in more ways than any other lane and it is the one artifact a
 // person might actually send to an official. It carries its own version on top
 // of CACHE_VERSION: bump this whenever the prompt, the facts fed into it, or the
 // score semantics change, even if nothing else does.
-const LETTER_VERSION = "v2";
+const LETTER_VERSION = "v3";
 
 // Small in-process cache. The Worker isolate holds this between requests, which
 // is all the caching this product needs: every slow artifact (imagery, scraped
@@ -145,6 +148,31 @@ async function getScoreFor(c, env) {
   if (hit) return { ...hit, source: "cache" };
   const fresh = await computeScore(c);
   await putScore(env, c.slug, fresh);
+  return fresh;
+}
+
+// ---------------------------------------------------------------- hazards
+
+// The Today frame lives in two places depending on how the corner arrived:
+// static assets for the precomputed pair, KV for anything typed. Both are
+// bytes by the time this returns, so nothing downstream has to care.
+async function todayFrame(c, env, origin) {
+  if (CORNERS[c.slug]) {
+    const r = await asset(env, origin, `/img/${c.slug}-today.jpg`);
+    if (!r.ok) throw new Error(`today asset ${r.status}`);
+    return r.arrayBuffer();
+  }
+  const bytes = await getImage(env, c.slug, "today");
+  if (!bytes) throw new Error("no today frame stored");
+  return bytes;
+}
+
+async function getHazardsFor(c, env, origin) {
+  const hit = await getHazards(env, c.slug, HAZARD_VERSION);
+  if (hit) return { ...hit, source: "cache" };
+  const today = await todayFrame(c, env, origin);
+  const fresh = await corroborate(c, today, env);
+  await putHazards(env, c.slug, fresh);
   return fresh;
 }
 
@@ -381,6 +409,25 @@ async function getLetter(c, env, ctx) {
   const signoff = dist ? `A resident of District ${dist}` : "A resident of San Francisco";
   // The index only enters the letter when it actually computed. A letter that
   // cites a score the page could not produce is a letter citing nothing.
+  // Each verdict gets its own licence. CONFIRMED may be stated as documented,
+  // REPORTED belongs to the record rather than the photograph, and CANDIDATE is
+  // an observation the letter must never dress up as established fact. Before
+  // this existed the letter asserted the same hardcoded audit sentence at every
+  // corner, including corners whose crosswalks are visibly in good condition.
+  const hz = ctx.hazards?.items || [];
+  const hazardLines = hz.length
+    ? hz
+        .map((h) => {
+          const what = h.label.toLowerCase();
+          if (h.verdict === "CONFIRMED")
+            return `- The automated visual audit flagged ${what} in the Street View photograph, and city records corroborate it: ${h.detail}. You may present this as documented.`;
+          if (h.verdict === "CANDIDATE")
+            return `- The audit also flagged ${what}, which does not yet appear in city records. Present this as an observation from the photograph only. Never state it as established fact.`;
+          return `- City records show ${h.detail} relating to ${what}, although the visual audit did not find it in the photograph. Attribute this to the records, not to the audit.`;
+        })
+        .join("\n")
+    : "- No visual audit findings are available for this corner. Do not describe any audit.";
+
   const scoreLine = ctx.score
     ? `- This intersection scores ${ctx.score.index} out of 100 on our reported-harm index, grade ${ctx.score.grade}. State that score and immediately add this caveat in your own words: ${SCORE_CAVEAT}\n`
     : "";
@@ -391,11 +438,11 @@ Use these facts and cite them plainly:
 - ${ctx.stats.crashes} injury collisions recorded by the city within 150 meters of this intersection in the last five years${ctx.stats.fatal ? `, ${ctx.stats.fatal} of them fatal` : ""}. Do not describe this figure as covering any longer period.
 - ${ctx.stats.reports311} street-condition 311 reports at this location in the last three years, counting street defects, sidewalk and curb, signs, streetlights and blocked sidewalks only.
 ${headlines ? `- Recent press coverage: ${headlines}.` : "- No press coverage was found for this corner. Do not cite or invent any news reporting."}
-${scoreLine}- An automated visual audit of the intersection identified sub-standard, faded crosswalk markings and vehicle turning conflict zones where drivers cross the pedestrian path.
+${scoreLine}${hazardLines}
 ${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident testimony."}
 - The request: fund ${c.fix.name}, estimated ${c.fix.cost}, through the ${c.fix.grant}.
 
-Rules: plain civic English. Under 220 words. Address only ${addressee}. Include the sentence about the automated visual audit, it is the central finding. No em dashes anywhere. No placeholders in brackets. Sign off as "${signoff}". Return only the letter text.`;
+Rules: plain civic English. Under 220 words. Address only ${addressee}. Distinguish clearly between what city records document and what the visual audit merely observed. Never present an observation as a documented fact. No em dashes anywhere. No placeholders in brackets. Sign off as "${signoff}". Return only the letter text.`;
 
   const r = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`,
@@ -437,7 +484,7 @@ function sampleLetter(c, district) {
 
 I am writing about the intersection of ${c.name}${where}.
 
-City records show hundreds of collisions within 150 meters of this corner, and street-related 311 reports from this location arrive continuously. Local reporting has covered pedestrian safety on this corridor repeatedly. An automated visual audit of the intersection identified sub-standard, faded crosswalk markings and vehicle turning conflict zones where drivers cross the pedestrian path.
+City records show hundreds of collisions within 150 meters of this corner, and street-related 311 reports from this location arrive continuously. Local reporting has covered pedestrian safety on this corridor repeatedly.
 
 Residents describe the same problem in their own words: people are still in the crosswalk when drivers turn through it.
 
@@ -658,6 +705,12 @@ export default {
         );
       }
 
+      if (p === "/api/hazards") {
+        return await edgeCached(ctx, `hazards-${c.slug}`, 24 * 3600, () =>
+          getHazardsFor(c, env, origin).catch(() => ({ source: "empty", items: [] })),
+        );
+      }
+
       if (p === "/api/score") {
         return await edgeCached(ctx, `score-${c.slug}`, 3600, () => getScoreFor(c, env));
       }
@@ -686,13 +739,14 @@ export default {
         // draft costs several seconds of Gemini time.
         return await edgeCached(ctx, `letter-${LETTER_VERSION}-${c.slug}`, 24 * 3600, () =>
           cached(`letter:${LETTER_VERSION}:${c.slug}`, 24 * 3600e3, async () => {
-            const [stats, news, voices, score] = await Promise.all([
+            const [stats, news, voices, score, hazards] = await Promise.all([
               getStats(c).catch(() => sampleStats(c)),
               getNews(c, env).catch(() => sampleNews(c)),
               getVoices(c, env, origin).catch(emptyVoices),
               getScoreFor(c, env).catch(() => null),
+              getHazardsFor(c, env, origin).catch(() => null),
             ]);
-            return getLetter(c, env, { stats, news, voices, score }).catch(() =>
+            return getLetter(c, env, { stats, news, voices, score, hazards }).catch(() =>
               sampleLetter(c, stats.district),
             );
           }),

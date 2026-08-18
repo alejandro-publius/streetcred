@@ -94,7 +94,19 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 #handle{position:absolute;top:0;bottom:0;left:50%;width:3px;background:#fff;box-shadow:0 0 0 1px rgba(20,27,45,.25);cursor:ew-resize;touch-action:none}
 #handle::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;background:#fff;box-shadow:0 2px 10px rgba(20,27,45,.35)}
 #handle::before{content:"‹ ›";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2;font-size:17px;font-weight:700;color:var(--ink);letter-spacing:2px}
-.cap{display:flex;gap:10px;align-items:baseline;margin:12px 0 30px;font-size:13.5px;color:var(--dim);line-height:1.55}
+.cap{display:flex;gap:10px;align-items:baseline;margin:12px 0 14px;font-size:13.5px;color:var(--dim);line-height:1.55}
+/* Corroboration chips. Green means the record backs the audit, outline means
+   the audit saw something the record has not recorded, gray means the record
+   raised something the photograph does not show. */
+.hz{display:flex;flex-direction:column;gap:8px;margin:0 0 30px}
+.hz .r{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:12.5px;color:var(--dim);line-height:1.45}
+.hz .n{color:var(--ink);font-weight:500}
+.hzc{font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  padding:2px 7px;border-radius:4px;white-space:nowrap}
+.hzc.confirmed{background:rgba(120,140,93,.16);color:var(--green);border:1px solid rgba(120,140,93,.4)}
+.hzc.candidate{background:transparent;color:var(--dim);border:1px dashed var(--line2)}
+.hzc.reported{background:var(--card);color:var(--dim);border:1px solid var(--line2)}
+.hzfoot{font-size:11.5px;color:var(--dim);line-height:1.5;margin:2px 0 0}
 .cap b{color:var(--ink);font-weight:600;white-space:nowrap}
 
 .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:30px}
@@ -229,6 +241,7 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
   <div id="handle" role="separator" aria-label="Drag to compare"></div>
 </div>
 <p class="cap"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
+<div class="hz" id="hz" hidden></div>
 
 <div class="eyebrow"><span>Official record</span></div>
 <div class="scorewrap" id="scorewrap" hidden>
@@ -478,6 +491,22 @@ fetch("/api/stats" + X).then(r => r.json()).then(d => {
       if(to !== "") countUp(node, to);
     });
   });
+});
+
+// Corroboration. Which audit findings the public record backs, which it does
+// not, and which the record raised on its own. Deterministic server side, so
+// this is display only.
+fetch("/api/hazards" + X).then(r => r.json()).then(d => {
+  const items = d.items || [];
+  if(!items.length) return;
+  el("hz").hidden = false;
+  el("hz").innerHTML = items.map(h =>
+    '<div class="r"><span class="hzc ' + esc(h.verdict.toLowerCase()) + '">' + esc(h.verdict) +
+    '</span><span class="n">' + esc(h.label) + '</span><span>' + esc(h.detail) + '</span></div>'
+  ).join("") +
+    '<p class="hzfoot">Confirmed means the city record backs what the audit saw. ' +
+    'Candidate means the audit saw it and the record is silent. ' +
+    'Reported means the record raised it and the photograph does not show it.</p>';
 });
 
 // The Danger Index. Every number here came out of DataSF arithmetic, so the
