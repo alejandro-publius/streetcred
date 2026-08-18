@@ -231,12 +231,12 @@ async function nominatimIntersection(streets) {
 // Market DataSF holds 242 crash rows in District 6 and 114 in District 5, so a
 // single-row lookup returns whichever the API happened to sort first, and the
 // letter goes to the wrong elected official without anything looking broken.
-export async function districtFor(lat, lon, radius = 150) {
-  const rows = await soql(DS_CRASHES, {
-    "$select": "supervisor_district,count(*)",
-    "$where": `within_circle(point, ${lat}, ${lon}, ${radius})`,
-    "$group": "supervisor_district",
-  }).catch(() => []);
+// The vote itself, pure and separate from the query that feeds it, so the
+// citywide sweep can run the identical rule over locally bucketed rows. Two
+// codepaths deciding which Supervisor receives a letter would eventually
+// disagree, and nothing on the page would show that they had.
+// Rows come in as SoQL group results: {supervisor_district, count}.
+export function districtFromRows(rows) {
   // Landmine: collisions return "11", 311 returns "9.00000". Always parseInt.
   const ranked = (rows || [])
     .map((r) => ({ d: parseInt(r.supervisor_district, 10), n: parseInt(r.count, 10) || 0 }))
@@ -247,6 +247,15 @@ export async function districtFor(lat, lon, radius = 150) {
   // wrong Supervisor with confidence.
   if (ranked.length > 1 && ranked[0].n > 0 && ranked[1].n / ranked[0].n > 0.9) return null;
   return ranked[0].d;
+}
+
+export async function districtFor(lat, lon, radius = 150) {
+  const rows = await soql(DS_CRASHES, {
+    "$select": "supervisor_district,count(*)",
+    "$where": `within_circle(point, ${lat}, ${lon}, ${radius})`,
+    "$group": "supervisor_district",
+  }).catch(() => []);
+  return districtFromRows(rows);
 }
 
 // ---------------------------------------------------------------- resolve
