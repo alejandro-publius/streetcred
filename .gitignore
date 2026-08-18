@@ -9,3 +9,7 @@ public/img/probe_*.jpg
 .hin-progress.json
 .hin-list.json
 hin-run.log
+.apify-counts.json
+.calm-corner.json
+.cotd-queue.json
+docs/hazards.jpg

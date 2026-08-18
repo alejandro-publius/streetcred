@@ -37,6 +37,46 @@ export const FONT_LINK = `<link rel="preconnect" href="https://fonts.googleapis.
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Lora:ital@0;1&display=swap" rel="stylesheet">`;
 
+// A corner that does not exist gets told so. Previously this path rendered the
+// default corner's page under the requested name, which is the most confident
+// way software can be wrong: no error, no empty state, just the wrong corner's
+// collision record presented as the answer.
+export const NOT_FOUND = (slug, origin = "") => `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corner not found</title>
+<link rel="icon" href="/logo.svg">
+<meta name="robots" content="noindex">
+${FONT_LINK}
+<style>
+${BASE_CSS}
+.nf{max-width:560px;margin:0 auto;padding:64px 0 0}
+.nf h1{font-size:26px;letter-spacing:-.02em;margin:0 0 12px}
+.nf p{font-size:14.5px;color:var(--dim);line-height:1.65;margin:0 0 22px}
+.nf code{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:2px 7px;font-size:13px}
+.nf a{display:inline-block;font-size:13px;font-weight:600;color:#fff;background:var(--ink);
+  border-radius:999px;padding:10px 18px;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  ${LOGO}
+  <div class="mark">Street<span>Cred</span></div>
+</header>
+<div class="nf">
+  <h1>No corner by that name</h1>
+  <p>Nothing here matches <code>${String(slug || "").replace(/[&<>"]/g, "")}</code>.
+  It may be misspelled, or it may not be an intersection the city's records describe.
+  Rather than show you another corner's numbers, this page shows you nothing.</p>
+  <a href="${origin}/">Check a corner</a>
+</div>
+</div>
+</body>
+</html>`;
+
 export const BASE_CSS = `:root{
   --bg:#faf9f5; --panel:#fff; --card:#f4f2ec; --line:#e8e6dc;
   /* One step darker than --line, for panel edges that need to hold their own
@@ -219,6 +259,10 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
   transition:transform 150ms ease-out,box-shadow 150ms ease-out}
 .stat .n{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--accent)}
 .stat .l{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.45}
+/* Footprint labels. The grade counts an 80m core and the tiles count 150m;
+   both are deliberate and neither used to say so, which left the letter
+   citing two different collision counts in one paragraph. */
+.rad{font-style:normal;font-size:11px;color:var(--dim);opacity:.85;display:inline-block;margin-top:3px}
 
 /* Lane eyebrow: the page is one long column, so each lane gets a small label
    and a hairline to separate it from the one above. */
@@ -477,7 +521,7 @@ ${BASE_CSS}
     <div class="scoreg" id="scoreg"></div>
   </div>
   <div class="scoremeta">
-    <div class="scorelabel">Danger Index, reported harm within 80 meters</div>
+    <div class="scorelabel">Danger Index, reported harm within 80 meters<br><i class="rad">grade computed over the 80m core, so it counts fewer collisions than the tiles above</i></div>
     <div class="scorepct" id="scorepct"></div>
     <div class="distwrap">
       ${DIST_SVG}
@@ -490,8 +534,8 @@ ${BASE_CSS}
   </div>
 </div>
 <div class="stats" id="stats">
-  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Injury collisions, last 5 years</div></div>
-  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-condition 311 reports, 3 years</div></div>
+  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Injury collisions, last 5 years<br><i class="rad">within 150m</i></div></div>
+  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-condition 311 reports, 3 years<br><i class="rad">within 150m</i></div></div>
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>
 </div>
 <div class="cred" id="cred" hidden></div>

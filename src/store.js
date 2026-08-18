@@ -310,6 +310,17 @@ export async function getShareCard(env, slug) {
   return rawGet(env, `og:${slug}`, "arrayBuffer");
 }
 
+// The write half, which did not exist. og:{slug} was only ever written by
+// tools/make_og.py through the wrangler CLI, so a corner resolved at runtime
+// could never receive a composited card: the Worker had a reader for a key
+// nothing inside the Worker could produce. Cards for new corners can now be
+// written by whatever composites them next; until one lands, shareCard() keeps
+// falling back to the plain Street View frame, which is a worse card but an
+// honest one.
+export async function putShareCard(env, slug, bytes) {
+  await rawPut(env, `og:${slug}`, bytes);
+}
+
 // ---------------------------------------------------------------- imagery
 
 const imgKey = (slug, state) => `img:${slug}:${state}`;

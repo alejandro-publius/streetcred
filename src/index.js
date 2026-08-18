@@ -2,7 +2,7 @@ import {
   CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, hasSupervisor, canonicalSlug, makeCorner, SERVICE_NAMES,
   COTD_SEED,
 } from "./data.js";
-import { PAGE } from "./page.js";
+import { PAGE, NOT_FOUND } from "./page.js";
 import { HOME, staticMapPath, fitView } from "./home.js";
 import { parseQuery, locate, districtFor, soql } from "./resolve.js";
 import {
@@ -104,6 +104,18 @@ const json = (obj, status = 200) =>
 function slugFromUrl(url) {
   const m = url.pathname.match(/^\/c\/([A-Za-z0-9-]+)\/?$/);
   return m ? m[1] : url.searchParams.get("x") || DEFAULT_SLUG;
+}
+
+// What the caller actually asked for, or null when they asked for nothing. The
+// difference matters: no slug at all is a legitimate request for the default
+// corner, while a slug that resolves to nothing is a wrong answer waiting to be
+// served. /api/letter?x=zzz-not-a-corner used to return 16th and Mission's
+// letter, which is the same class of bug cornerBySlug already guards on the
+// agent path.
+function requestedSlug(url) {
+  const m = url.pathname.match(/^\/c\/([A-Za-z0-9-]+)\/?$/);
+  if (m) return m[1];
+  return url.searchParams.get("x") || null;
 }
 
 async function corner(url, env) {
@@ -444,43 +456,18 @@ async function getNews(c, env) {
 }
 
 // ---------------------------------------------------------------- voices
-// Real resident quotes, scraped once and parked in Upstash Redis. The panel
-// reads that key directly: an Apify actor run takes minutes and a demo cannot
-// wait on one. The baked asset stays behind it as a fallback.
+// Real resident quotes, scraped ahead of time and baked into public/data. An
+// Apify actor run takes minutes and a page load cannot wait on one.
+//
+// An Upstash Redis read used to sit in front of this, guarded by credentials
+// that were never set in any deployed environment. It was dead in production
+// and would have woken up silently the first time somebody added those two
+// variables, which is the wrong way for a data path to change. Removed rather
+// than left dormant; the audit trail is in git.
 async function getVoices(c, env, origin) {
-  if (env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN) {
-    try {
-      return await redisVoices(c, env);
-    } catch {
-      // Fall through to the baked asset rather than showing the panel empty.
-    }
-  }
   return bakedVoices(c, env, origin);
 }
 
-async function redisVoices(c, env) {
-  const key = c.voicesKey || `voices:${c.slug}`;
-  const r = await fetch(`${env.UPSTASH_REDIS_REST_URL}/get/${encodeURIComponent(key)}`, {
-    headers: { authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
-  });
-  if (!r.ok) throw new Error(`upstash ${r.status}`);
-  // Upstash wraps every reply as {"result": ...}, and the value stored under this
-  // key is itself a JSON string, so it needs a second parse.
-  const { result } = await r.json();
-  if (!result) throw new Error("upstash key empty");
-  const parsed = typeof result === "string" ? JSON.parse(result) : result;
-  const items = (Array.isArray(parsed) ? parsed : parsed.items || [])
-    .filter((v) => v && v.text)
-    .map((v) => ({
-      source: v.source || "web",
-      stars: v.stars ?? null,
-      text: String(v.text).trim(),
-      when: v.when || null,
-    }))
-    .slice(0, 5);
-  if (!items.length) throw new Error("upstash no usable quotes");
-  return { source: "live", items };
-}
 
 async function bakedVoices(c, env, origin) {
   const r = await asset(env, origin, `/data/voices-${c.slug}.json`);
@@ -615,7 +602,7 @@ async function getLetter(c, env, ctx) {
   const prompt = `Write a respectful one-page letter from a resident to San Francisco ${addressee} about the intersection of ${c.name}${where}.
 
 Use these facts and cite them plainly:
-- ${ctx.stats?.crashes ?? 0} injury collisions recorded by the city within 150 meters of this intersection in the last five years${ctx.stats?.fatal ? `, ${ctx.stats.fatal} of them fatal` : ""}. Do not describe this figure as covering any longer period.
+- ${ctx.stats?.crashes ?? 0} injury collisions recorded by the city within 150 meters of this intersection in the last five years${ctx.stats?.fatal ? `, ${ctx.stats.fatal} of them fatal` : ""}. Do not describe this figure as covering any longer period. The first time you cite this count, state in the same sentence that it covers a 150 metre radius while the Danger Index grade is computed over a tighter 80 metre core, so the two figures are measured over different areas and a reader should not expect them to reconcile.
 - ${ctx.stats?.reports311 ?? 0} street-condition 311 reports at this location in the last three years, counting street defects, sidewalk and curb, signs, streetlights and blocked sidewalks only.
 ${headlines ? `- Recent press coverage: ${headlines}.` : "- No press coverage was found for this corner. Do not cite or invent any news reporting."}
 ${scoreLine}${longevityLine}${hazardLines}
@@ -1268,6 +1255,19 @@ export default {
 
       const c = await corner(url, env);
 
+      // Asked for a specific corner and got something else back means the corner
+      // does not exist. Say so rather than quietly answering about another one.
+      const asked = requestedSlug(url);
+      if (asked && canonicalSlug(asked) !== c.slug) {
+        if (p.startsWith("/api/")) {
+          return json({ source: "empty", error: "corner not found", slug: canonicalSlug(asked) }, 404);
+        }
+        return new Response(NOT_FOUND(canonicalSlug(asked), origin), {
+          status: 404,
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+
       if (p === "/og.jpg") {
         return await shareCard(c, env, ctx, origin);
       }
@@ -1406,8 +1406,13 @@ export default {
 
       return new Response("not found", { status: 404 });
     } catch (e) {
-      // No endpoint may ever return an error to the browser.
-      if (p.startsWith("/api/")) return json({ source: "sample", error: String(e.message || e) });
+      // The browser gets a generic string and nothing else. This block used to
+      // return String(e.message), which meant an upstream response body could be
+      // echoed to a client verbatim: the comment claimed one thing and the code
+      // did the reverse. Detail goes to the Worker log, where operators can read
+      // it and visitors cannot.
+      console.log(`unhandled at ${p}: ${String(e?.stack || e?.message || e)}`);
+      if (p.startsWith("/api/")) return json({ source: "error", error: "internal error" }, 500);
       return new Response("not found", { status: 404 });
     }
   },
