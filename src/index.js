@@ -16,6 +16,7 @@ import {
   getVerifiedLetter, putVerifiedLetter, appendTrustIncident, getTrustIncidents,
   getScoreRaw, appendChange, getChanges,
   getWatchlist, putWatchlist, getConnections, putConnections,
+  getLetterBackoff, setLetterBackoff,
   getVoicesStored, exaBudget, actorRunBudget, getActorCosts,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
@@ -93,7 +94,11 @@ async function edgeCached(ctx, key, ttlSec, produce) {
 
   const value = await produce();
   const body = JSON.stringify(value);
-  if (value && value.source !== "sample" && value.source !== "empty") {
+  // A degraded payload is never pinned. Sample and empty were already
+  // excluded; verified-cache joins them because it is what the letter lane
+  // serves while the model is unavailable, and caching it for a day would
+  // outlast the hour-long backoff that produced it.
+  if (value && !["sample", "empty", "verified-cache"].includes(value.source)) {
     const stored = new Response(body, {
       headers: {
         "content-type": "application/json; charset=utf-8",
@@ -692,6 +697,8 @@ Rules: plain civic English. Under 220 words. Address only ${addressee}. Distingu
   // surfaced immediately with the reason attached, because a bare status code
   // sent me looking for a revoked key when the answer was model overload.
   const TRANSIENT = new Set([429, 500, 502, 503, 504]);
+  // What a spent allowance looks like, as opposed to a momentary rate limit.
+  const QUOTA_SPENT = /RESOURCE_EXHAUSTED|quota|PerDay|per day|limit: *0/i;
   // Five attempts with exponential backoff, not three with a flat one. Flash
   // returns UNAVAILABLE for roughly one request in four during a busy hour, and
   // waiting on a fetch costs no Worker CPU, so patience here is nearly free and
@@ -718,6 +725,15 @@ Rules: plain civic English. Under 220 words. Address only ${addressee}. Distingu
       }
       const detail = await r.text().catch(() => "");
       lastErr = `gemini ${r.status}: ${detail.slice(0, 180)}`;
+      // 429 covers two different things. A burst limit clears in a second and
+      // is worth waiting out; a daily quota does not clear today, and five
+      // attempts with exponential backoff spend 15.5 seconds proving it. The
+      // body says which one it is.
+      if (r.status === 429 && QUOTA_SPENT.test(detail)) {
+        const quotaErr = new Error(`gemini quota: ${detail.slice(0, 140)}`);
+        quotaErr.quota = true;
+        throw quotaErr;
+      }
       if (!TRANSIENT.has(r.status)) throw new Error(lastErr);
       await new Promise((res) => setTimeout(res, 500 * 2 ** attempt));
     }
@@ -1821,6 +1837,24 @@ export default {
         // Offered, never drafted on sight. A draft is a billed model call and
         // one is not spent because a crawler opened a page.
         if (isScored(c)) return json(cityLetter(c));
+
+        // The circuit breaker. While the model has no allowance left, every
+        // request serves this corner's last verified letter and touches
+        // nothing else: no model call, no retry gauntlet, no 17 second wait
+        // to rediscover a fact the last request already established.
+        const backoff = await getLetterBackoff(env).catch(() => null);
+        if (backoff) {
+          const stored = await getVerifiedLetter(env, c.slug).catch(() => null);
+          if (stored?.text) {
+            return json({
+              ...stored,
+              source: "verified-cache",
+              backoff,
+              note: "Letter drafting is paused while the generator has no allowance left. This is the last draft that passed verification at this corner.",
+            });
+          }
+          return json({ ...sampleLetter(c, c.district), backoff });
+        }
         // The slowest lane by far, and the one worth caching hardest: a fresh
         // draft costs several seconds of Gemini time.
         return await edgeCached(ctx, `letter-${LETTER_VERSION}-${c.slug}`, 24 * 3600, () =>
@@ -1835,7 +1869,21 @@ export default {
               // to trigger a dozen Exa searches as a side effect.
               getTimeline(env, c.slug, TIMELINE_VERSION).catch(() => null),
             ]);
-            return getLetter(c, env, { stats, news, voices, score, hazards, timeline }).catch((e) => {
+            return getLetter(c, env, { stats, news, voices, score, hazards, timeline }).catch(async (e) => {
+              // A spent allowance is a fact about the whole site, not about
+              // this corner, so it is recorded once and every other request
+              // for the next hour reads it instead of rediscovering it.
+              if (e?.quota) {
+                await setLetterBackoff(env, e.message).catch(() => {});
+                const stored = await getVerifiedLetter(env, c.slug).catch(() => null);
+                if (stored?.text) {
+                  return {
+                    ...stored,
+                    source: "verified-cache",
+                    note: "Letter drafting is paused while the generator has no allowance left. This is the last draft that passed verification at this corner.",
+                  };
+                }
+              }
               // A letter quietly becoming a sample is the failure a reader is
               // least likely to notice and most likely to be misled by, so it
               // leaves a trace with the reason attached rather than vanishing.

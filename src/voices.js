@@ -202,8 +202,15 @@ export function pickVoices(candidates) {
 
 // ---------------------------------------------------------------- apify api
 
+// 1024MB, not the actor default of 2048 or 4096. The account has a hard
+// ceiling on the memory of everything running at once (16GB), and it is
+// account-wide rather than per-actor: at 2048 a batch of twelve corners
+// started eight runs and then got 402 "you will exceed the memory limit" for
+// the rest. These actors are billed per event rather than per second, so
+// halving the memory costs nothing except wall clock and doubles how many
+// corners can be in flight before the ceiling bites.
 async function startRun(env, actor, input) {
-  const r = await fetch(`${API}/acts/${actor}/runs?token=${env.APIFY_TOKEN}&timeout=600&memory=2048`, {
+  const r = await fetch(`${API}/acts/${actor}/runs?token=${env.APIFY_TOKEN}&timeout=900&memory=1024`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),

@@ -426,6 +426,39 @@ export async function reserveGeneration(env) {
   return true;
 }
 
+// ---------------------------------------------------------------- letter backoff
+
+// A daily model quota is not a transient error, and treating it as one is
+// expensive in the one currency a page load actually has: time. The letter
+// lane retries five times with exponential backoff, which is right for a
+// model that returns UNAVAILABLE under load and wrong for a key that has no
+// requests left today. It costs 15.5 seconds of sleeping per request, on every
+// uncached request, and the synthetic monitor measured 17.2s.
+//
+// So the first request to hit a quota refusal writes this flag, and every
+// request for the next hour skips the model entirely and serves the corner's
+// last verified letter. Nothing about the verifier changes; this only shortens
+// a path that was already failing.
+export async function getLetterBackoff(env) {
+  const raw = await rawGet(env, "letter:backoff");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function setLetterBackoff(env, reason, ttlSec = 3600) {
+  const rec = {
+    at: new Date().toISOString(),
+    until: new Date(Date.now() + ttlSec * 1000).toISOString(),
+    reason: String(reason || "").slice(0, 160),
+  };
+  await rawPut(env, "letter:backoff", JSON.stringify(rec), ttlSec);
+  return rec;
+}
+
 // ---------------------------------------------------------------- exa budget
 
 // Total Exa searches the batch lanes may ever spend, against the event
