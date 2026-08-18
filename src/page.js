@@ -20,6 +20,9 @@ export const PAGE = (c) => `<!doctype html>
 <style>
 :root{
   --bg:#faf9f5; --panel:#fff; --card:#f4f2ec; --line:#e8e6dc;
+  /* One step darker than --line, for panel edges that need to hold their own
+     against the page rather than disappear into it. */
+  --line2:#dcd9cc;
   --ink:#141B2D; --accent:#F07E26; --dim:#8a867c; --blue:#6a9bcc; --green:#788c5d;
 }
 *{box-sizing:border-box}
@@ -50,13 +53,15 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 /* Danger Index. The grade chip and the severity ramp stay inside the existing
    palette: ink reads as most severe, then the accent, then two accent tints. No
    new hues, so the score cannot fight the rest of the page. */
-.scorewrap{display:flex;gap:24px;align-items:center;background:var(--panel);border:1px solid var(--line);
-  border-radius:14px;padding:18px 20px;margin-bottom:12px;flex-wrap:wrap}
+.scorewrap{display:flex;gap:24px;align-items:center;background:var(--panel);border:1px solid var(--line2);
+  border-top:2px solid var(--ink);border-radius:14px;padding:18px 20px;margin-bottom:12px;flex-wrap:wrap;
+  transition:transform 150ms ease-out,box-shadow 150ms ease-out}
 .scorefig{display:flex;align-items:center;gap:12px}
 .scoren{font-size:50px;font-weight:700;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .scoren small{font-size:17px;font-weight:600;color:var(--dim);letter-spacing:0}
 .scoreg{font-size:21px;font-weight:700;min-width:40px;height:40px;padding:0 9px;border-radius:11px;
-  display:grid;place-items:center;color:#fff;background:var(--dim)}
+  display:grid;place-items:center;color:#fff;background:var(--card);
+  transition:background-color 2s ease-in,color 2s ease-in}
 .scoreg.gA,.scoreg.gB{background:var(--green)}
 .scoreg.gC{background:var(--blue)}
 .scoreg.gD{background:rgba(240,126,38,.72)}
@@ -82,6 +87,7 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 
 .hero{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--card);aspect-ratio:640/400}
 .hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+#overlay{transition:opacity 200ms ease-out}
 #overlay{clip-path:inset(0 0 0 50%)}
 .hero.single #overlay{display:none}
 .hero.single #handle{display:none}
@@ -92,15 +98,19 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .cap b{color:var(--ink);font-weight:600;white-space:nowrap}
 
 .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:30px}
-.stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;min-width:0}
+.stat{background:var(--panel);border:1px solid var(--line2);border-top:2px solid var(--ink);border-radius:14px;
+  padding:20px 22px;min-width:0;transition:transform 150ms ease-out,box-shadow 150ms ease-out}
 .stat .n{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--accent)}
 .stat .l{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.45}
 
 /* Lane eyebrow: the page is one long column, so each lane gets a small label
    and a hairline to separate it from the one above. */
-.eyebrow{display:flex;align-items:center;justify-content:space-between;gap:12px;
+.eyebrow{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;
   font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--dim);margin:0 0 13px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+  color:var(--dim);margin:0 0 13px;padding-bottom:7px}
+.eyebrow::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--line2);
+  transform:scaleX(0);transform-origin:left center;transition:transform 300ms ease-out}
+.eyebrow.drawn::after{transform:scaleX(1)}
 .lane[hidden]{display:none}
 
 #mappanel[hidden]{display:none}
@@ -109,15 +119,29 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .mapfoot{font-size:11.5px;color:var(--dim);margin:9px 0 0}
 
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:18px}
+.panel{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:22px;margin-bottom:18px;
+  transition:transform 150ms ease-out,box-shadow 150ms ease-out}
+/* A 2px cap in the lane's own color. Reads as the tab on a file folder, which
+   is the right metaphor for a page that is arguing from a case file. */
+.panel.lane-record{border-top:2px solid var(--ink)}
+.panel.lane-press{border-top:2px solid var(--blue)}
+.panel.lane-ask{border-top:2px solid var(--green)}
+.panel.lane-voices{border-top:2px solid var(--dim)}
+.panel.lane-corner{border-top:2px solid var(--line2)}
+.panel:hover,.stat:hover,.scorewrap:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(20,27,45,.07)}
 .ph{display:flex;align-items:center;gap:10px;margin-bottom:16px}
 .ph h2{font-size:15px;font-weight:600;margin:0}
-.tag{font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:5px;background:rgba(106,155,204,.14);color:var(--blue)}
-.tag.sample{background:rgba(240,126,38,.14);color:var(--accent)}
+.tag{font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;
+  border-radius:5px;background:rgba(106,155,204,.14);color:var(--blue);border:1px solid transparent}
+/* Dashed, so a sample or empty state is legible as provisional at a glance and
+   never gets mistaken for a live figure. */
+.tag.sample{background:rgba(240,126,38,.10);color:var(--accent);border:1px dashed rgba(240,126,38,.55)}
 
 .news a{display:block;text-decoration:none;color:inherit;padding:13px 0;border-top:1px solid var(--line)}
 .news a:first-of-type{border-top:0;padding-top:0}
 .news .t{font-size:14px;font-weight:500;line-height:1.45}
+.osrc{display:inline-block;font-size:9.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--dim);border:1px dashed var(--line2);border-radius:4px;padding:1px 5px;vertical-align:2px;white-space:nowrap}
 .news a:hover .t{color:var(--accent)}
 .news .m{font-size:11.5px;color:var(--dim);margin-top:5px}
 
@@ -136,15 +160,32 @@ header{display:flex;align-items:center;gap:14px;padding-bottom:22px;flex-wrap:wr
 .lfoot span{font-size:11.5px;color:var(--dim)}
 .draft{font-size:11.5px;color:var(--accent);font-weight:600;margin-bottom:12px;letter-spacing:.03em}
 
-.stack{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 26px;margin-top:8px}
+.stack{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 26px;margin-top:8px}
 .stack div{font-size:12.5px;color:var(--dim);line-height:1.5}
-.stack b{display:block;font-size:13.5px;color:var(--ink);font-weight:600}
+.stack b{display:block;font-size:13.5px;color:var(--ink);font-weight:600;margin-bottom:5px}
+/* Fixed-height box so a blocked or failed logo cannot reflow the strip. Six
+   brand palettes at full saturation would fight the page, so every mark renders
+   flat ink at 70 percent and only returns to its own color on hover. */
+.stack .lg{display:flex;align-items:center;height:20px;margin-bottom:5px;overflow:hidden}
+.stack .lg img{height:20px;max-height:20px;width:auto;display:block;
+  filter:brightness(0);opacity:.7;transition:filter 200ms ease-out,opacity 200ms ease-out}
+.stack div:hover .lg img{filter:none;opacity:1}
 footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
 
 .sk{background:linear-gradient(90deg,var(--card) 25%,#eeece4 50%,var(--card) 75%);background-size:200% 100%;animation:sh 1.3s infinite;border-radius:6px;height:13px;margin:9px 0}
 @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
 /* The stat row holds three across well past the point the two-column body has to
    collapse, so it breaks on its own, later: 3 across, then 2+1, then stacked. */
+/* Motion is decoration here, never information. Under reduced-motion the rules
+   are already drawn, the numbers are already final, and the shimmer holds still.
+   Nothing on the page becomes unreadable or unavailable. */
+@media(prefers-reduced-motion:reduce){
+  .sk{animation:none;background:var(--card)}
+  .eyebrow::after{transform:scaleX(1);transition:none}
+  .scoreg,.panel,.stat,.scorewrap,#overlay,.stack .lg img{transition:none}
+  .panel:hover,.stat:hover,.scorewrap:hover{transform:none;box-shadow:none}
+}
+
 @media(max-width:860px){.cols,.stack{grid-template-columns:1fr}}
 @media(max-width:600px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:400px){.stats{grid-template-columns:1fr}}
@@ -210,7 +251,7 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 
 <section class="lane" id="maplane" hidden>
   <div class="eyebrow"><span>The corner</span></div>
-  <div class="panel" id="mappanel">
+  <div class="panel lane-corner" id="mappanel">
     <img id="mapimg" class="mapimg" alt="Roadmap showing the location of ${c.name}, ${c.city}">
     <p class="mapfoot">${c.name}, District ${c.district}. Map data: Google.</p>
   </div>
@@ -219,17 +260,17 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 <div class="cols">
   <div>
     <div class="eyebrow"><span id="newshead">Press coverage</span><span class="tag" id="newstag">found live, cited</span></div>
-    <div class="panel">
+    <div class="panel lane-press">
       <div class="news" id="news"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
     </div>
     <div class="eyebrow"><span>Resident voices</span><span class="tag" id="voicestag">scraped</span></div>
-    <div class="panel">
+    <div class="panel lane-voices">
       <div id="voices"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
     </div>
   </div>
   <div>
     <div class="eyebrow"><span>The ask</span><span class="tag" id="lettertag">drafted</span></div>
-    <div class="panel">
+    <div class="panel lane-ask">
       <div class="fixrow">
         <div><div class="k">Proposed fix</div><div class="v" id="fixname">${c.fix.name}</div></div>
         <div class="cost" id="fixcost">${c.fix.cost}</div>
@@ -246,11 +287,12 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
   <div class="ph"><h2>The stack</h2></div>
   <div class="stack">
     <div><b>DataSF</b>Collisions and 311, queried by radius around the corner</div>
-    <div><b>Exa</b>Finds current press coverage of this intersection, cited</div>
-    <div><b>Apify</b>Scrapes what residents say on Reddit and Google Maps</div>
+    <div><span class="lg"><img src="/logos/exa.svg" alt="Exa" width="64" height="20" loading="lazy"></span>Finds current press coverage of this intersection, cited</div>
+    <div><span class="lg"><img src="/logos/apify.svg" alt="Apify" width="73" height="20" loading="lazy"></span>Scrapes what residents say on Reddit and Google Maps</div>
     <div><b>Gemini vision</b>Audits the real photo for hazards, renders the fix</div>
     <div><b>Gemini text</b>Turns four sources into one addressed letter</div>
-    <div><b>Cloudflare Workers</b>Serves the page and every endpoint at the edge</div>
+    <div><span class="lg"><img src="/logos/cloudflare.svg" alt="Cloudflare" width="44" height="20" loading="lazy"></span>Workers serve the page, KV holds corners and imagery</div>
+    <div><b>Google Maps</b>Street View frames and the corner thumbnail</div>
   </div>
 </div>
 
@@ -271,6 +313,41 @@ const el = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
 const mark = (id, src) => { const t = el(id); if (src !== "live" && src !== "cache") { t.textContent = "sample"; t.classList.add("sample"); } };
 
+// Motion is decoration on this page, never information, so reduced-motion takes
+// the short path everywhere: final values, drawn rules, no shimmer.
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// The stat numbers are the evidence, so they get the one piece of real motion:
+// a single 600ms count up the first time they scroll into view.
+function countUp(node, target){
+  const n = Number(target);
+  if(!Number.isFinite(n)){ node.textContent = target; return; }
+  if(REDUCED || n === 0){ node.textContent = n.toLocaleString(); return; }
+  const t0 = performance.now();
+  (function step(t){
+    const p = Math.min(1, (t - t0) / 600);
+    const eased = 1 - Math.pow(1 - p, 3);
+    node.textContent = Math.round(n * eased).toLocaleString();
+    if(p < 1) requestAnimationFrame(step);
+  })(t0);
+}
+
+// Fires a callback the first time an element is visible, once, and degrades to
+// firing immediately where IntersectionObserver is missing.
+function onFirstView(node, fn){
+  if(!node) return;
+  if(REDUCED || typeof IntersectionObserver === "undefined"){ fn(); return; }
+  const io = new IntersectionObserver((entries) => {
+    for(const e of entries){
+      if(e.isIntersecting){ io.disconnect(); fn(); }
+    }
+  }, { rootMargin: "0px 0px -8% 0px" });
+  io.observe(node);
+}
+
+// Lane rules draw themselves left to right as you reach them. Document-like.
+document.querySelectorAll(".eyebrow").forEach(e => onFirstView(e, () => e.classList.add("drawn")));
+
 function render(){
   if(!IMG) return;
   const hero = el("hero");
@@ -286,7 +363,18 @@ function render(){
   hero.hidden = false;
   el("base").src = IMG.today;
   if(state === "today" || !IMG[state]){ hero.classList.add("single"); }
-  else { hero.classList.remove("single"); el("overlay").src = IMG[state]; setSplit(split); }
+  else {
+    hero.classList.remove("single");
+    // Crossfade rather than a hard swap, so switching states reads as the same
+    // photograph being re-examined rather than as a different picture.
+    const ov = el("overlay");
+    if(ov.getAttribute("src") !== IMG[state]){
+      if(!REDUCED) ov.style.opacity = "0";
+      ov.onload = () => { ov.style.opacity = "1"; };
+      ov.src = IMG[state];
+    }
+    setSplit(split);
+  }
   el("capk").textContent = CAPS[state][0];
   el("capv").textContent = CAPS[state][1] + (state === "today" && IMG.note ? " " + IMG.note : "");
 }
@@ -375,12 +463,21 @@ loadImagery();
 })();
 
 fetch("/api/stats" + X).then(r => r.json()).then(d => {
-  const n = [d.crashes, d.reports311, d.district].map(v => Number(v).toLocaleString());
+  // A null district means no clear majority, which prints as "n/a" rather than
+  // as the 0 that Number(null) would quietly produce.
+  const vals = [d.crashes, d.reports311, d.district];
   const l = ["Injury collisions, last 5 years" + (d.fatal ? ", including " + d.fatal + " fatal" : ""),
              "Street-condition 311 reports, 3 years","Supervisor district"];
-  el("stats").innerHTML = n.map((v,i) =>
-    '<div class="stat"><div class="n">' + v + '</div><div class="l">' + l[i] +
+  el("stats").innerHTML = vals.map((v,i) =>
+    '<div class="stat"><div class="n" data-to="' + (v === null || v === undefined ? "" : v) + '">' +
+    (v === null || v === undefined ? "n/a" : "0") + '</div><div class="l">' + l[i] +
     (d.source === "sample" && i === 0 ? ' <span class="tag sample">sample</span>' : '') + '</div></div>').join("");
+  onFirstView(el("stats"), () => {
+    el("stats").querySelectorAll(".n").forEach(node => {
+      const to = node.getAttribute("data-to");
+      if(to !== "") countUp(node, to);
+    });
+  });
 });
 
 // The Danger Index. Every number here came out of DataSF arithmetic, so the
@@ -412,6 +509,9 @@ fetch("/api/news" + X).then(r => r.json()).then(d => {
   if (d.heading) el("newshead").textContent = d.heading;
   el("news").innerHTML = (d.items||[]).map(x =>
     '<a href="' + esc(x.url) + '" target="_blank" rel="noopener"><div class="t">' + esc(x.title) +
+    // An agency page is the record, not reporting on the record. Tagged so it
+    // reads as a primary source rather than as press coverage.
+    (x.official ? ' <span class="osrc">official source</span>' : '') +
     '</div><div class="m">' + esc(x.domain) + (x.date ? " &middot; " + esc(x.date) : "") + '</div></a>').join("")
     || '<div class="m">No coverage found.</div>';
 });

@@ -1,0 +1,31 @@
+Official vendor marks, downloaded from each vendor's own domain and committed
+here so they are served same-origin and never hotlinked.
+
+exa.svg         https://exa.ai/images/logo/exa-logo-blue.svg
+apify.svg       https://apify.com/img/apify-logo/apify-logo-dark-512x141.svg
+                (listed on https://apify.com/resources/brand)
+cloudflare.svg  https://www.cloudflare.com/logo.svg
+
+Downloaded 2026-08-17. Each file was checked to be valid XML containing no
+<script> and no external references before being committed.
+
+Not included, deliberately:
+
+  Google Gemini, Google Maps
+    Google does not publish these as freely downloadable SVGs, and its brand
+    guidelines do not permit recoloring or otherwise modifying its marks, which
+    is exactly what the monochrome treatment used in this strip does. Those rows
+    stay as styled text rather than shipping a modified Google mark or an
+    unofficial redraw.
+
+  Cloudflare press kit
+    The official press-kit archive linked from cloudflare.com/press-kit contains
+    only JPG and PNG, no SVG. The file above is the mark Cloudflare serves from
+    its own root domain, and it carries a <title>Cloudflare logo</title>.
+
+  DataSF
+    No strong logo mark. Styled text by design.
+
+  Upstash
+    Not a dependency of this product. Resolved corners, generated imagery, the
+    generation budget, and rate limiting all run on Cloudflare KV.

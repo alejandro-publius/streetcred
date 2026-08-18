@@ -15,7 +15,7 @@ const GEMINI_TEXT_MODEL = "gemini-3.7-flash";
 // served from a cache holding the old ones. The edge cache is per-colo, so
 // without this a correction lands unevenly across data centers and some
 // visitors keep reading the old numbers for the life of the TTL.
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 
 // The letter embeds live figures, press headlines, and the Danger Index, so it
 // goes stale in more ways than any other lane and it is the one artifact a
@@ -149,6 +149,12 @@ async function getScoreFor(c, env) {
 }
 
 // ---------------------------------------------------------------- news
+
+// Agency primary sources. A police bulletin or an SFMTA project page is a real,
+// citable document, but it is not press coverage of the corner: it is the
+// record that coverage would be written about. Listed explicitly rather than
+// pattern matched, so adding one is a deliberate decision.
+const OFFICIAL_SOURCE = /^(sanfranciscopolice\.org|sfmta\.com|sf\.gov|sfgov\.org)$/i;
 // Street names pulled from the corner itself, so the relevance filter travels to
 // any corner. "16th Street and Mission Street" gives ["16th", "mission"].
 function streetTokens(c) {
@@ -193,21 +199,41 @@ async function getNews(c, env) {
   const precise = tight.length >= 3;
   const chosen = (precise ? tight : scored.filter((s) => s.loose)).map((s) => s.x);
 
-  const items = chosen
-    .map((x) => ({
+  const mapped = chosen.map((x) => {
+    const domain = (() => {
+      try {
+        return new URL(x.url).hostname.replace(/^www\./, "");
+      } catch {
+        return "";
+      }
+    })();
+    return {
       title: x.title.trim(),
       url: x.url,
-      domain: (() => {
-        try {
-          return new URL(x.url).hostname.replace(/^www\./, "");
-        } catch {
-          return "";
-        }
-      })(),
+      domain,
       date: (x.publishedDate || "").slice(0, 10),
-    }))
-    .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
-    .slice(0, 5);
+      official: OFFICIAL_SOURCE.test(domain),
+    };
+  });
+
+  // Agency pages are primary sources. They are real and worth linking, but they
+  // are the thing coverage is about rather than coverage itself, so they sort
+  // last, carry a tag, and never satisfy the press lane on their own.
+  const press = mapped.filter((x) => !x.official);
+  const official = mapped.filter((x) => x.official);
+
+  const byDate = (a, b) => (b.date || "").localeCompare(a.date || "");
+  const cutoff = Date.now() - 18 * 30 * 24 * 3600 * 1000;
+  const fresh = (x) => x.date && Date.parse(x.date) >= cutoff;
+  // Only push stale results down when there is enough recent coverage to fill
+  // the panel without them. A 2022 story beats an empty lane.
+  const recent = press.filter(fresh);
+  const orderedPress =
+    recent.length >= 3
+      ? [...recent.sort(byDate), ...press.filter((x) => !fresh(x)).sort(byDate)]
+      : [...press].sort(byDate);
+
+  const items = [...orderedPress, ...official.sort(byDate)].slice(0, 5);
   if (!items.length) throw new Error("exa no on-topic results");
   return {
     source: "live",
