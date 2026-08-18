@@ -1129,6 +1129,29 @@ export default {
         return json(out.body, out.status);
       }
 
+      // The warmed fleet and its geometry, as JSON. The homepage has held this
+      // list since the first day but only ever rendered it, so anything outside
+      // the Worker had to scrape HTML to find out which corners exist. The
+      // watchdog needs it to seed its baseline snapshots, and diffing against
+      // an empty baseline would report every corner as brand new on day one.
+      if (p === "/api/board") {
+        const corners = await getHinList(env).catch(() => []);
+        return json({
+          source: "live",
+          count: corners.length,
+          corners: corners.map((x) => ({
+            slug: x.slug,
+            name: x.name,
+            lat: x.lat,
+            lon: x.lon,
+            district: x.district ?? null,
+            grade: x.grade ?? null,
+            index: x.index ?? null,
+            radiusMeters: x.radiusMeters ?? 150,
+          })),
+        });
+      }
+
       // Public, unauthenticated, and the reason the diary's numbers are worth
       // anything: every figure on /watchdog can be recounted from this.
       if (p === "/api/agent/journal") {
