@@ -100,7 +100,7 @@ function severityLine(c) {
   return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
 
-export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null) => {
+export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null) => {
   // A corner without finite geometry poisons every pin: fitView produces a NaN
   // center and every overlay lands at left:NaN%. One bad row on the board must
   // cost that row its pin, not the whole map its anchors. It happened: a board
@@ -296,6 +296,11 @@ ${
   <span class="cotdg g${esc(today.grade || "A")}">${esc(today.grade || "?")}</span>
 </a>
 ${city?.queueLength ? `<p class="cotdq">${n(city.queueLength)} corners in line, worst first.</p>` : ""}
+${
+  voices?.commissioned
+    ? `<p class="cotdq">Resident voices commissioned autonomously at ${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}. ${n(voices.withQuote)} produced an account that cleared the relevance filter; the rest are recorded as scraped and empty, which is a result rather than a gap.</p>`
+    : ""
+}
 ${
   runs.length
     ? `<div class="cotdlog">${runs

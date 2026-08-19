@@ -637,6 +637,23 @@ export async function getActorCosts(env) {
   }
 }
 
+// A running count of what the autonomous voices lane has actually produced,
+// so the homepage can state it without reading a hundred keys. Written by
+// whatever ingests, which is the only code that knows the answer changed.
+export async function getVoicesSummary(env) {
+  const raw = await rawGet(env, "voices:summary");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function putVoicesSummary(env, summary) {
+  await rawPut(env, "voices:summary", JSON.stringify(summary));
+}
+
 // ---------------------------------------------------------------- photo budget
 
 export async function photoBudget(env) {

@@ -18,6 +18,7 @@
 import {
   reserveActorRun, actorRunBudget, putVoiceRun, getVoiceRun,
   getVoicePending, putVoicePending, putVoicesStored, appendActorCost,
+  getVoicesSummary, putVoicesSummary,
 } from "./store.js";
 
 export const VOICES_VERSION = "v1";
@@ -359,6 +360,7 @@ export async function rescoreVoices(env, slug, corner) {
     rescoredAt: new Date().toISOString(),
     items,
   });
+  await recordOutcome(env, slug, items.length).catch(() => {});
   // The ledger has to follow, or it keeps reporting what the first ingest kept
   // while the page shows what the current filter keeps, and the two disagree
   // in public. No cost: a rescore reads datasets already paid for.
@@ -373,6 +375,23 @@ export async function rescoreVoices(env, slug, corner) {
     kept: items.length,
   }).catch(() => {});
   return { ok: true, slug, candidates: candidates.length, kept: items.length, items };
+}
+
+// The homepage states how many corners have been scraped unattended and how
+// many produced something that cleared the filter. Both numbers move only when
+// a corner is ingested or rescored, so they are maintained here rather than
+// recounted from a hundred keys on every page load.
+async function recordOutcome(env, slug, kept) {
+  const prior = (await getVoicesSummary(env)) || { corners: {}, at: null };
+  const corners = { ...(prior.corners || {}), [slug]: kept };
+  const slugs = Object.keys(corners);
+  await putVoicesSummary(env, {
+    at: new Date().toISOString(),
+    corners,
+    commissioned: slugs.length,
+    withQuote: slugs.filter((s) => corners[s] > 0).length,
+    quotes: slugs.reduce((n, s) => n + corners[s], 0),
+  });
 }
 
 // ---------------------------------------------------------------- ingest
@@ -472,6 +491,7 @@ export async function ingestVoices(env, cornerFor, max = 3) {
       candidates: candidates.length,
       kept: items.length,
     });
+    await recordOutcome(env, slug, items.length).catch(() => {});
     ingested.push({ slug, kept: items.length, candidates: candidates.length, costUsd });
   }
 

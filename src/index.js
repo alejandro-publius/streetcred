@@ -17,7 +17,7 @@ import {
   getScoreRaw, appendChange, getChanges,
   getWatchlist, putWatchlist, getConnections, putConnections,
   getLetterBackoff, setLetterBackoff,
-  getVoicesStored, exaBudget, actorRunBudget, getActorCosts,
+  getVoicesStored, exaBudget, actorRunBudget, getActorCosts, getVoicesSummary,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import {
@@ -1667,7 +1667,7 @@ export default {
         if (legacy) {
           return Response.redirect(`${origin}/c/${canonicalSlug(legacy)}`, 301);
         }
-        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist] = await Promise.all([
+        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist, voicesSummary] = await Promise.all([
           getHinList(env),
           getCotdLog(env).catch(() => []),
           // Read only. The homepage must never wait on a findSimilar call, so
@@ -1679,6 +1679,7 @@ export default {
           getRankPage(env, 0).catch(() => null),
           getQueue(env).catch(() => null),
           getWatchlist(env, WATCHLIST_VERSION).catch(() => null),
+          getVoicesSummary(env).catch(() => null),
         ]);
         const city = meta
           ? {
@@ -1687,7 +1688,7 @@ export default {
               queueLength: Array.isArray(queue) ? queue.length : 0,
             }
           : null;
-        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist), {
+        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
