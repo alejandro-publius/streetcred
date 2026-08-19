@@ -21,7 +21,7 @@ const when = (ts) => {
   }
 };
 
-export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null, preview = false, scored = 0) => {
+export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null, preview = false, scored = 0, scan = null) => {
   const runs = Array.isArray(synth) ? synth : [];
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
   const week = runs.filter((r) => new Date(r.ts).getTime() > weekAgo);
@@ -60,6 +60,9 @@ ${BASE_CSS}
 .doc h2{font-size:15px;margin:26px 0 10px}
 .big{font-size:44px;font-weight:700;letter-spacing:-.02em;line-height:1}
 .big.ok{color:#657850} .big.bad{color:#d96a10} .big.quiet{color:var(--dim);font-size:26px}
+.scancard{background:var(--panel);border-radius:11px;padding:0 18px 14px}
+.scancard .phs{padding-top:14px}
+.scancard .srow:last-of-type{border-bottom:0}
 .srow{display:flex;gap:10px;align-items:center;font-size:12.5px;padding:7px 0;border-bottom:1px solid var(--line);
   font-variant-numeric:tabular-nums}
 .srow i{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 8px}
@@ -144,6 +147,39 @@ ${(latest.results || [])
       : `No incidents on record. Every served letter has passed verification against its corner's own
       records; a draft that fails twice is never shown, and would be counted here.`
   }</p>
+
+${
+  // The press scan. Its border is the one thing on the site that animates
+  // continuously, and it does so only while a run is actually reporting
+  // progress. When the run stops the class comes off and the stripes hold
+  // still, which is the whole reason the tape means anything.
+  scan
+    ? `<div class="tape${scan.live ? " live" : ""}">
+<div class="scancard">
+  <div class="phs"><h2>Press scan${scan.live ? ", running now" : ""}</h2></div>
+  <div class="srow"><span class="ep">Corners checked</span>
+    <span class="ms">${(scan.done || 0).toLocaleString("en-US")} over ${(scan.chunks || 0).toLocaleString("en-US")} chunk${scan.chunks === 1 ? "" : "s"}</span></div>
+  <div class="srow"><span class="ep">Coverage found</span>
+    <span class="ms">${(scan.withCoverage || 0).toLocaleString("en-US")} of ${(scan.done || 0).toLocaleString("en-US")}${
+      scan.done ? `, ${((scan.withCoverage / scan.done) * 100).toFixed(1)}%` : ""
+    }</span></div>
+  <div class="srow"><span class="ep">Spent by this run</span>
+    <span class="ms">$${Number(scan.spentUsd || 0).toFixed(4)}</span></div>
+  <div class="srow"><span class="ep">Last reported</span>
+    <span class="ms">${esc(when(scan.updatedAt))}</span></div>
+  ${
+    scan.stopReason
+      ? `<p class="note">Stopped: ${esc(scan.stopReason)}</p>`
+      : `<p class="note">${
+          scan.live
+            ? "Reporting progress. The border moves while this is true and stops when it is not."
+            : "No progress reported in the last 30 minutes, so this is treated as not running. It resumes at the next corner, never the next chunk."
+        }</p>`
+  }
+</div>
+</div>`
+    : ""
+}
 
 <h2>What the autonomous run spends</h2>
 <p class="note">The morning run commissions two Apify actor runs per corner and 29 Exa searches for

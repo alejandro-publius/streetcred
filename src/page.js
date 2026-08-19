@@ -703,6 +703,29 @@ header{display:flex;align-items:center;column-gap:14px;row-gap:24px;padding-bott
 .ghist div{font-size:12px;color:var(--dim);line-height:1.7;margin-top:6px}
 .ghist b{color:var(--ink);font-variant-numeric:tabular-nums}
 
+/* Hazard tape.
+   Caution stripes around the press card, because press coverage of a corner is
+   the one lane that is somebody else already saying this place is dangerous.
+
+   The motion rule is the whole point. Stripes are static. They slide exactly
+   twice, 1.6s a loop, the first time the card is scrolled into view, and then
+   they hold still forever. A border that never stops moving stops meaning
+   anything and starts being wallpaper, so continuous motion is reserved for a
+   run that is genuinely happening right now: the /status scan card, and only
+   while a batch is actually reporting progress.
+
+   The band period along the diagonal is 28px, so a 39.6px horizontal shift is
+   exactly one repeat and the loop is seamless. */
+.tape{padding:6px;border-radius:16px;margin-bottom:20px;
+  background:repeating-linear-gradient(45deg,#EDA100 0 14px,#2C2C2A 14px 28px)}
+.tape > *{margin-bottom:0 !important;border-radius:11px}
+@keyframes tapeslide{from{background-position:0 0}to{background-position:39.6px 0}}
+.tape.play{animation:tapeslide 1.6s linear 2}
+.tape.live{animation:tapeslide 1.6s linear infinite}
+@media(prefers-reduced-motion:reduce){
+  .tape.play,.tape.live{animation:none}
+}
+
 .toggle{display:flex;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;width:max-content;margin-bottom:16px}
 .toggle button{font-family:inherit;font-size:14px;font-weight:600;color:var(--dim);background:none;border:0;padding:10px 20px;border-radius:8px;cursor:pointer}
 .toggle button[disabled]{opacity:.42;cursor:default}
@@ -1386,6 +1409,7 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
 
 <div class="cols">
   <div>
+    <div class="tape" id="presstape">
     <div class="panel lane-press">
       <div class="phs"><h2 id="newshead">Press coverage</h2><span class="lanenums" id="newsnums"></span><span class="tag" id="newstag">found live, cited</span></div>
       <div class="pbody">
@@ -1399,6 +1423,7 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
         <div class="news" id="news"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
         <div class="pconn" id="pconn" hidden></div>
       </div>
+    </div>
     </div>
     <div class="panel lane-voices">
       <div class="phs"><h2>Resident voices</h2><span class="lanenums" id="voicenums"></span><span class="tag" id="voicestag">scraped</span></div>
@@ -2072,6 +2097,24 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
     el("news").appendChild(pn);
   }
 });
+
+// Hazard tape, once. Threshold 0.4 so it fires when the card is properly on
+// screen rather than when one pixel of it is, unobserved immediately after so
+// it can never play twice, and not armed at all under reduced motion: the
+// class that animates is simply never added.
+(function(){
+  const tape = el("presstape");
+  if(!tape || !("IntersectionObserver" in window)) return;
+  if(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const io = new IntersectionObserver((entries) => {
+    for(const e of entries){
+      if(!e.isIntersecting) continue;
+      e.target.classList.add("play");
+      io.unobserve(e.target);
+    }
+  }, { threshold: 0.4 });
+  io.observe(tape);
+})();
 
 // The replay. Every line is rendered from the stored run manifest, so the log
 // cannot say anything the pipeline did not actually record. A stage that did

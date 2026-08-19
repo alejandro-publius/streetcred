@@ -19,7 +19,7 @@ import {
   getLetterBackoff, setLetterBackoff,
   getVoicesStored, exaBudget, actorRunBudget, getActorCosts, getVoicesSummary,
   recordExaSpend, recordExaProbe, getExaProbe,
-  getPress, putPress, getPressRollup, bumpPressRollup,
+  getPress, putPress, getPressRollup, bumpPressRollup, getBurnCheckpoint,
 } from "./store.js";
 import { enrichPress, PRESS_VERSION } from "./pressenrich.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
@@ -1767,7 +1767,17 @@ export default {
         const spend = exa && apify
           ? { exa, apify, costs, invoice, apifyUsd: costs.reduce((n, c) => n + (Number(c.costUsd) || 0), 0) }
           : null;
-        return new Response(STATUS(synth, incidents, changes, origin, spend, Boolean(env.PREVIEW), await mastScored()), {
+        // A run counts as live only while it is still reporting progress. A
+        // checkpoint with no stop reason is not evidence of a running process:
+        // a killed run leaves exactly that behind forever.
+        const burn = await getBurnCheckpoint(env).catch(() => null);
+        const scan = burn
+          ? {
+              ...burn,
+              live: !burn.stopReason && Date.now() - Date.parse(burn.updatedAt || 0) < 30 * 60 * 1000,
+            }
+          : null;
+        return new Response(STATUS(synth, incidents, changes, origin, spend, Boolean(env.PREVIEW), await mastScored(), scan), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
