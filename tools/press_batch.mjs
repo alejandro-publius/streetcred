@@ -40,10 +40,19 @@ const CENT_CEILING = num("max-cents", 5);
 const env = kvEnv(ROOT, { EXA_API_KEY: devVar(ROOT, "EXA_API_KEY") });
 
 const before = await exaBudget(env);
-log(`exa meter: $${before.spentUsd.toFixed(4)} of $${before.capUsd.toFixed(2)}, ${before.searches} searches, ${before.account} account`);
+log(`exa meter: $${before.spentUsd.toFixed(4)} of $${before.capUsd.toFixed(2)}, ${before.searches} searches`);
+log(`workspace: ${before.accountVerified ? `${before.account}, confirmed ${before.verifiedAt?.slice(0, 10)}` : "NOT CONFIRMED"}`);
 if (before.exhausted) {
   log("budget reached, nothing to do");
   process.exit(0);
+}
+// The same refusal the Worker's nightly batch makes. A price identifies a plan
+// tier and nothing more, so nothing spends in bulk until somebody has watched
+// a specific workspace's dashboard move after a known call.
+if (!before.accountVerified && !DRY) {
+  log(`refusing to spend: ${before.reconciliation}`);
+  log("verify with: node tools/exa_verify.mjs --workspace <name> --balance <usd>");
+  process.exit(2);
 }
 
 // The queue is the citywide rank, worst first. Audited corners are excluded:

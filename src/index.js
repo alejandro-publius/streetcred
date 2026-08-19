@@ -892,6 +892,12 @@ export async function pressBatch(env, limit = PRESS_BATCH_PER_NIGHT) {
   if (!budget || budget.exhausted) {
     return { source: "budget-reached", checked: 0, spentUsd: 0 };
   }
+  // An unattended batch does not spend against a workspace nobody has
+  // confirmed. The price of a search identifies a plan tier and nothing more,
+  // so until a human has watched a specific dashboard move, this refuses.
+  if (!budget.accountVerified) {
+    return { source: "account-unverified", checked: 0, spentUsd: 0, reason: budget.reconciliation };
+  }
 
   const meta = await getCityMeta(env).catch(() => null);
   const fresh = Date.now() - PRESS_FRESH_DAYS * 24 * 3600 * 1000;
@@ -1010,11 +1016,15 @@ async function health(env, origin) {
   return {
     ok: Object.values(out).every((v) => v === "ok"),
     ...out,
-    // The measured price of the search this check just made, and the account
-    // it identifies. A price matching neither plan reports as null rather than
-    // being rounded into the nearer one.
+    // The measured price of the search this check just made, and the plan
+    // tier it identifies. A price matching neither tier reports as null rather
+    // than being rounded into the nearer one. This does NOT identify a
+    // workspace: any number of workspaces bill identically on one tier, and
+    // reading a price as an account is how a batch ran against a workspace
+    // nobody had confirmed.
     exaUnitUsd: seen?.unitUsd ?? null,
-    exaAccount: seen?.account ?? null,
+    exaPlan: seen?.plan ?? null,
+    exaAccountVerified: Boolean((await exaBudget(env).catch(() => null))?.accountVerified),
   };
 }
 

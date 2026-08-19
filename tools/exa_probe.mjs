@@ -1,14 +1,15 @@
-// Which Exa account a key belongs to, without ever showing the key.
+// What plan an Exa key is on, without ever showing the key.
 //
-// The API does not report the account. The two accounts funding this project
-// are on different plans, so one contents-free search costs a different amount
-// on each, and that price is the fingerprint. This prints the price and the
-// account and nothing else: the key is read from .dev.vars, used once, and
-// never echoed.
+// It cannot tell you the account. The API does not report one, and the price
+// of a contents-free search identifies a plan tier only: any number of
+// workspaces can sit on the same tier and bill identically. Reading this
+// output as an account identification is exactly the mistake that ran a batch
+// against a workspace nobody had confirmed. Only a human watching a specific
+// dashboard move after a known call identifies the account.
 //
 //   node tools/exa_probe.mjs
 import { readFileSync } from "node:fs";
-import { EXA_UNIT_PRICES, exaAccountFor } from "../src/store.js";
+import { EXA_PLAN_PRICES, exaPlanFor } from "../src/store.js";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const varsFor = (name) => {
@@ -40,5 +41,6 @@ const unit = Number(d?.costDollars?.total);
 // stays out of every transcript this ever runs in.
 console.log(".dev.vars key");
 console.log("  unit price   $" + unit);
-console.log("  account      " + (exaAccountFor(unit) || "unknown, matches no known plan"));
-console.log("  plans        " + Object.entries(EXA_UNIT_PRICES).map(([n, u]) => `${n} $${u}`).join(", "));
+console.log("  plan tier    " + (exaPlanFor(unit) || "unknown, matches no known tier"));
+console.log("  known tiers  " + Object.entries(EXA_PLAN_PRICES).map(([n, u]) => `${n} $${u}`).join(", "));
+console.log("  account      NOT DETERMINED. Price identifies a tier, never a workspace.");

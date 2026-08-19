@@ -151,19 +151,27 @@ the citywide watchlist, unattended, against real credit. Both ledgers are writte
 providers themselves report, because an autonomous system spending money without a ledger is the thing
 nobody should ship. The Exa figure is metered in cents: spend is reserved before a call at 0.7 cents a
 search and 0.1 cents a page of contents, then reconciled against the price the provider returns, and
-the cap is enforced on whichever of the two is higher.</p>
+the cap is enforced on whichever of the two is higher. What the ledger cannot tell you by itself is
+which workspace was billed, which is why that is stated separately and only after somebody has
+checked.</p>
 ${
   spend
-    ? `<div class="srow"><span class="ep">Exa press budget, ${esc(spend.exa.period)}, ${esc(spend.exa.account)} account${
-        spend.exa.exhausted ? ", budget reached" : ""
-      }</span>
+    ? `<div class="srow"><span class="ep">Exa press budget, ${esc(spend.exa.period)}, ${
+        spend.exa.accountVerified ? `${esc(spend.exa.account)} workspace, confirmed` : "workspace not confirmed"
+      }${spend.exa.exhausted ? ", budget reached" : ""}</span>
   <span class="ms">$${spend.exa.spentUsd.toFixed(4)} of $${spend.exa.capUsd.toFixed(2)} &middot; ${
     spend.exa.searches
   } searches, ${spend.exa.contentPages} pages of contents${
     spend.exa.deferrals ? `, ${spend.exa.deferrals} deferred at the cap` : ""
   }</span></div>
-<div class="srow"><span class="ep">Exa spend all time on this account, what the balance is drawn against</span>
+<div class="srow"><span class="ep">Exa spend all time, measured from what the provider charged${
+    spend.exa.accountVerified ? "" : ", workspace unverified"
+  }</span>
   <span class="ms">$${spend.exa.allTimeUsd.toFixed(4)} &middot; $${spend.exa.priorSpendUsd.toFixed(3)} of it before this counter</span></div>
+<p class="note">${esc(spend.exa.reconciliation)}. A price identifies a plan tier, not a workspace, so this
+total is only attributable once somebody has watched a specific dashboard move after a known call. Spend
+and balance are also not the same event: where a plan grants free monthly credits, those are consumed
+first, and a real charge can show as usage while the remaining balance does not move at all.</p>
 <div class="srow"><span class="ep">Apify actor runs, ${esc(spend.apify.month)}</span>
   <span class="ms">${spend.apify.used} of ${spend.apify.cap} &middot; $${spend.apifyUsd.toFixed(3)} ledger</span></div>
 ${

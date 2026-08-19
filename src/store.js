@@ -490,7 +490,6 @@ export const EXA_CAP_CENTS = 6500;
 export const EXA_PERIOD = "2026-08";
 export const EXA_SEARCH_CENTS = 0.7;
 export const EXA_CONTENTS_CENTS = 0.1;
-export const EXA_ACCOUNT = "schroeder";
 
 // What this account had already spent when the meter was retuned, from the old
 // call counter. Not erased and not folded into the pass counter: the
@@ -504,7 +503,12 @@ const round4 = (n) => Math.round(n * 10000) / 10000;
 
 const exaZero = () => ({
   period: EXA_PERIOD,
-  account: EXA_ACCOUNT,
+  // Nobody has watched a dashboard move, so nothing here names an account.
+  // These three fields move together and only verifyExaAccount moves them.
+  account: null,
+  accountVerified: false,
+  verifiedAt: null,
+  observedBalanceUsd: null,
   capCents: EXA_CAP_CENTS,
   spentCents: 0,
   reservedCents: 0,
@@ -537,6 +541,20 @@ async function writeExaMeter(env, m) {
   return m;
 }
 
+// A human watched a specific workspace's dashboard move after a known call.
+// That is the only thing that identifies the account, so it is the only thing
+// that sets it. The observed balance is recorded beside it so the next
+// reconciliation has a fixed point to measure from.
+export async function verifyExaAccount(env, { workspace, observedBalanceUsd = null } = {}) {
+  if (!workspace) throw new Error("a workspace name is required to verify the account");
+  const m = await readExaMeter(env);
+  m.account = String(workspace);
+  m.accountVerified = true;
+  m.verifiedAt = new Date().toISOString();
+  m.observedBalanceUsd = Number.isFinite(Number(observedBalanceUsd)) ? Number(observedBalanceUsd) : null;
+  return writeExaMeter(env, m);
+}
+
 export async function exaBudget(env) {
   const m = await readExaMeter(env);
   const usedCents = round2(Math.max(m.spentCents, m.reservedCents));
@@ -549,8 +567,16 @@ export async function exaBudget(env) {
     spentUsd: round4(m.spentCents / 100),
     capUsd: m.capCents / 100,
     exhausted: usedCents >= m.capCents,
-    // What the provider's own dashboard should be showing against the balance.
+    // What some workspace's dashboard should be showing against its balance.
+    // Which workspace is a separate question, and until accountVerified is
+    // true this figure is a total with no address on it. It is also not the
+    // same as a balance drop: free monthly credits are consumed first on some
+    // plans, so a real spend can appear as usage while the balance does not
+    // move at all.
     allTimeUsd: round4(m.priorSpendUsd + m.spentCents / 100),
+    reconciliation: m.accountVerified
+      ? `observed on ${m.account}${m.verifiedAt ? ` at ${m.verifiedAt.slice(0, 10)}` : ""}`
+      : "unverified: no dashboard observation has attributed this spend to a workspace",
   };
 }
 
@@ -589,25 +615,32 @@ export async function recordExaSpend(env, usd) {
   await writeExaMeter(env, m);
 }
 
-// Which Exa account the deployed key belongs to.
+// What plan the deployed Exa key is on, which is NOT the same as what account
+// it belongs to.
 //
-// The API never says. Two accounts fund this project and they are on different
-// plans, so a search costs a different amount on each, and the price of one
-// contents-free search identifies the account without anybody handling a key
-// or reading a billing page. The probe is the health check's own Exa ping,
-// which already spends exactly one search and until now threw the number away.
+// This distinction was got wrong once and it cost a batch run. The price of a
+// contents-free search identifies a plan tier, because the tiers are priced
+// differently. It cannot identify a workspace: any number of workspaces can
+// sit on the same tier and bill identically. Reading "$0.007 a search" as
+// "therefore the $70 workspace" is an inference the data does not support, and
+// the way it failed was silent, with a workspace Usage page showing no
+// activity at all while the counter here climbed.
 //
-// Prices are per search, from the plan pages: $15 and $7 per thousand.
-export const EXA_UNIT_PRICES = { velazquez: 0.015, schroeder: 0.007 };
+// Only a human observing movement on a specific workspace's dashboard
+// identifies the account. That observation is recorded by verifyExaAccount and
+// nothing else sets it.
+//
+// Prices are per search, from the plan pages.
+export const EXA_PLAN_PRICES = { "15-per-1k": 0.015, "7-per-1k": 0.007 };
 
-export function exaAccountFor(unitUsd) {
+export function exaPlanFor(unitUsd) {
   if (!Number.isFinite(unitUsd) || unitUsd <= 0) return null;
   let best = null;
-  for (const [name, unit] of Object.entries(EXA_UNIT_PRICES)) {
+  for (const [name, unit] of Object.entries(EXA_PLAN_PRICES)) {
     const err = Math.abs(unitUsd - unit) / unit;
-    // A 20 percent band. The two prices differ by more than a factor of two,
-    // so nothing lands in both bands, and a price in neither band is reported
-    // as unknown rather than rounded into the nearest story.
+    // A 20 percent band. The tiers differ by more than a factor of two, so
+    // nothing lands in both bands, and a price in neither is reported as
+    // unknown rather than rounded into the nearest story.
     if (err <= 0.2 && (!best || err < best.err)) best = { name, err };
   }
   return best ? best.name : null;
@@ -618,7 +651,7 @@ export async function recordExaProbe(env, cost) {
   if (!Number.isFinite(unitUsd) || unitUsd <= 0) return null;
   const rec = {
     unitUsd,
-    account: exaAccountFor(unitUsd),
+    plan: exaPlanFor(unitUsd),
     breakdown: cost || null,
     at: new Date().toISOString(),
   };

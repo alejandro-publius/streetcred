@@ -355,7 +355,15 @@ The first twelve are inherited and all still true. 13 onward are new.
     and reported success. Any flag where zero is meaningful needs
     `Number.isFinite`, not a falsy fallback.
 
-34. **Exa returns social posts as news.** A Facebook post came back as the top
+34. **A price identifies a plan, never an account.** Phase 0 of the Exa burn
+    pass inferred "$0.007 a search, therefore the $70 workspace" and ran a
+    batch on it. The workspace's Usage page showed zero activity for the whole
+    week. Any number of workspaces bill identically on one tier. The only thing
+    that identifies an account is a human watching a specific dashboard move
+    after a known call, which is what `tools/exa_verify.mjs` records and what
+    `pressBatch` now refuses to spend without.
+
+35. **Exa returns social posts as news.** A Facebook post came back as the top
     result for a Tenderloin corner. A lane that publishes what it keeps under
     the words "found and cited" cannot cite a Facebook post, so `NOT_PRESS` in
     `src/pressenrich.js` excludes social, video, forum and review domains. The
@@ -515,15 +523,35 @@ b8268c2 phase 2: frugal press enrichment, measured at 4.3 cents a corner
 c5a417a phase 4: surface the press lane, and stop calling a cycle total a per-run price
 ```
 
-**Which account the key is on, and how that was settled without touching a
-key.** The Exa API does not report the account. The two accounts funding this
-project are on different plans, $15 and $7 per thousand searches, so the price
-of one contents-free search is the fingerprint. `/api/health` already spent
-exactly that search and threw the price away; it reads it now. Production
-measured **$0.007, which is the $7 plan, which is the $70 account**. The
-`.dev.vars` key probes to the same account through `tools/exa_probe.mjs`, which
-prints the price and never the key. No new key was generated and none was
-installed, because none was needed.
+**Which account the key is on: still unknown, and the first answer was wrong.**
+
+Phase 0 claimed the account was identified by price. It was not. A
+contents-free search costs $0.007 on the deployed key, which identifies a
+**plan tier** of $7 per thousand. It does not identify a workspace: any number
+of workspaces sit on the same tier and bill identically. The gate was written
+as a price comparison, reported as passed, and the batch ran on it. The human
+then checked the $70 workspace's own Usage page and found **no activity at all
+for Aug 12 to 19, with the balance still reading exactly $70.00**, so the spend
+landed somewhere else.
+
+What the code says now:
+
+- `exaPlanFor()` returns a plan tier and the comment says it cannot name an
+  account. `/api/health` reports `exaPlan`, never an account.
+- `budget:exa` carries `account`, `accountVerified`, `verifiedAt` and
+  `observedBalanceUsd`, all null until a human records an observation.
+- **`verifyExaAccount()` is the only thing in the codebase that may name the
+  workspace being billed**, and `tools/exa_verify.mjs` is the only caller. It
+  requires a workspace name and refuses without one.
+- The nightly `pressBatch` returns `account-unverified` and spends nothing
+  while `accountVerified` is false. A test pins that refusal.
+- /status says "workspace not confirmed" and carries the caveat that spend and
+  balance are different events: where a plan grants free monthly credits those
+  are consumed first, so real usage can appear while a balance does not move.
+
+**The lesson, stated so it is not relearned:** a measurement that is consistent
+with a hypothesis is not a confirmation of it. Only an observation that could
+have come out otherwise, on the specific thing being claimed, is a gate.
 
 **The meter is cents now, not calls.** `budget:exa` holds
 `{period, account, capCents, spentCents, reservedCents, searches, contentPages,
