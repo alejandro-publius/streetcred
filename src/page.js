@@ -76,6 +76,137 @@ export const STATBAND = ({ scored = 0, audited = 0, headlines = 0, spendUsd = nu
 </section>`;
 };
 
+// The AI imagery disclosure, defined once. The footer says it on every page and
+// the hero embed says it beside the render itself. Two copies of a sentence
+// like this is one copy too many: they drift, and the drift is the product
+// quietly softening its own disclosure.
+export const AI_DISCLAIMER =
+  "The proposed fix is a visualization, not a photograph of anything that exists.";
+
+// The corner page's own summary of what the record holds, so the embed states
+// the corner's evidence in the corner page's words rather than composing a
+// second claim about the same numbers.
+export const evidenceLine = (cred, district) => {
+  const records = cred?.lanes?.find((l) => l.key === "records");
+  return [records?.detail, district ? `District ${district}` : null]
+    .filter(Boolean)
+    .join(". ")
+    .replace(/\.\./g, ".");
+};
+
+// The corner of the day, embedded and alive in the homepage hero.
+//
+// The best thing this site does was behind a click: a thin strip that named the
+// corner and left the render, the grade and the evidence on the other side of a
+// navigation most visitors never make. This puts the corner itself in the hero,
+// already open, with the proposed fix showing.
+//
+// Assembled entirely from KV by the caller. No provider call happens here or
+// anywhere downstream of here: the frames are stored bytes served by /gen, the
+// grade and the evidence line come from records the audit already wrote.
+export const HERO_CORNER = (e) => {
+  if (!e || !e.slug) return "";
+  const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+  const frames = e.frames || {};
+  // Proposed fix first, because the render is the hook. Today is one tap away
+  // and is the honest baseline, so it is never more than one tap away.
+  const order = ["fix", "hazards", "today"].filter((k) => frames[k]);
+  const first = order.includes("fix") ? "fix" : order[0] || null;
+  const LABEL = { today: "Today", hazards: "Hazards", fix: "Proposed fix" };
+  const CAP = {
+    today: "The corner as Street View last photographed it. Imagery: Google.",
+    hazards:
+      "Gemini read the real photograph and marked the zones it flags as high risk: faded crosswalk markings in red, vehicle conflict zones in amber.",
+    fix: "An AI visualization of continental crosswalks, a protected bike lane, and a corner curb extension.",
+  };
+  const ALT = {
+    today: `${e.name} today, photographed by Google Street View`,
+    hazards: `Automated hazard audit of ${e.name}, with high risk zones marked`,
+    fix: `AI visualization of a proposed fix at ${e.name}. Not a photograph.`,
+  };
+
+  const stageImage = order.length
+    ? `<div class="hcstage">
+      ${order
+        .map(
+          (k) =>
+            `<img class="hcimg" data-state="${k}" src="${esc(frames[k])}" width="640" height="400"
+              alt="${esc(ALT[k])}" fetchpriority="${k === first ? "high" : "low"}"${k === first ? "" : " hidden"}>`,
+        )
+        .join("\n      ")}
+    </div>`
+    : `<div class="hcnone">
+      <span class="hcnonel">Imagery audit pending</span>
+      <p class="hcnonen">${
+        e.state === "text-only"
+          ? "This corner was audited from the city's records. The visual audit has not been generated for it."
+          : "No photograph is stored for this corner yet."
+      }</p>
+    </div>`;
+
+  const stageControls = order.length
+    ? `<div class="hctoggle" role="group" aria-label="Corner view">
+      ${order
+        .map(
+          (k) =>
+            `<button type="button" data-state="${k}" aria-pressed="${k === first}">${LABEL[k]}</button>`,
+        )
+        .join("")}
+    </div>
+    <p class="hccap"><b id="hccapk">${esc(LABEL[first] || "")}</b> <span id="hccapv">${esc(CAP[first] || "")}</span></p>`
+    : "";
+
+  return `<section class="herocorner" aria-label="Corner of the day">
+  <div class="hchead">
+    <span class="hceyebrow">Corner of the day</span>
+    <a class="hcname" href="/c/${esc(e.slug)}">${esc(e.name)}</a>
+    ${e.grade ? `<span class="hcgrade g${esc(e.grade)}">${esc(e.grade)}</span>` : ""}
+  </div>
+  <p class="hcwhen">${
+    e.auditedToday
+      ? `Audited autonomously this morning, ${esc(e.date)}`
+      : `Most recent audit, ${esc(e.date)}`
+  }${e.partial ? ", with some lanes degraded" : ""}</p>
+  ${stageImage}
+  <!-- Non negotiable and never behind a tooltip: the render is AI generated and
+       says so, in the same sentence the footer uses, directly under the image
+       rather than after the controls, so a phone shows it without a scroll. -->
+  <p class="hcdisclaim">${AI_DISCLAIMER}</p>
+  ${
+    // Audited from the records with no visual audit generated. The photograph
+    // is real and stays; the page says what is missing rather than letting the
+    // single frame imply the other two are coming.
+    order.length && !frames.hazards && !frames.fix
+      ? `<p class="hcpending">Imagery audit pending. This corner was audited from the city's records; the visual audit has not been generated for it.</p>`
+      : ""
+  }
+  ${stageControls}
+  ${e.evidence ? `<p class="hcev">${esc(e.evidence)}</p>` : ""}
+  <div class="hcact">
+    <a class="hcgo" href="/c/${esc(e.slug)}">See the full audit</a>
+    <a class="hcletter" href="/c/${esc(e.slug)}#letterpanel">Get the letter</a>
+  </div>
+</section>
+<script>
+(function(){
+  var root=document.currentScript.previousElementSibling;
+  if(!root) return;
+  var CAP=${JSON.stringify(CAP)},LAB=${JSON.stringify(LABEL)};
+  var imgs=root.querySelectorAll(".hcimg"),btns=root.querySelectorAll(".hctoggle button");
+  btns.forEach(function(b){
+    b.addEventListener("click",function(){
+      var want=b.getAttribute("data-state");
+      imgs.forEach(function(i){ i.hidden=i.getAttribute("data-state")!==want; });
+      btns.forEach(function(o){ o.setAttribute("aria-pressed",String(o===b)); });
+      var k=root.querySelector("#hccapk"),v=root.querySelector("#hccapv");
+      if(k) k.textContent=LAB[want]||"";
+      if(v) v.textContent=CAP[want]||"";
+    });
+  });
+})();
+</script>`;
+};
+
 // The footer, one component for every route.
 //
 // Three columns of orientation, then the honesty lines, which close the page
@@ -108,7 +239,7 @@ export const FOOTER = () => `<footer>
   </div>
 </div>
 <p class="fhonest">Exa finds it, Apify hears it, Gemini shows it and writes it. <a href="${REPO_URL}" target="_blank" rel="noopener">Built at Build Club, August 17 2026</a>.<br>
-Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.</p>
+Hazard and proposed-fix images are AI generated from the Street View photograph. ${AI_DISCLAIMER} Nothing here is sent to any official.</p>
 </footer>`;
 
 export const REPO_URL = "https://github.com/alejandro-publius/streetcred";
@@ -766,6 +897,45 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 
 .lanenums{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;margin-left:auto;margin-right:8px}
 .eyebrow .lanenums{margin-left:16px;margin-right:0}
+
+/* The corner of the day, in the hero. Two columns on a wide screen with the
+   search on the left, stacked on a narrow one with the search first, because a
+   returning visitor comes to type. */
+.herohead{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:start;margin:0 0 32px}
+@media(max-width:900px){.herohead{grid-template-columns:1fr;gap:24px}}
+.herocorner{background:var(--panel);border:1.5px solid var(--line3);border-top:3px solid var(--accent);
+  border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(20,27,45,.06)}
+.hchead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hceyebrow{font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:#b0560e;width:100%}
+.hcname{font-size:17px;font-weight:600;color:var(--ink);text-decoration:none}
+.hcname:hover{text-decoration:underline}
+.hcgrade{margin-left:auto;font-size:13px;font-weight:700;min-width:28px;height:28px;border-radius:8px;
+  display:grid;place-items:center;color:#fff;background:var(--dim)}
+.hcwhen{margin:4px 0 12px;font-size:11.5px;color:var(--dim);line-height:1.5}
+/* The stage owns its height from the ratio, so nothing reflows when the bytes
+   land. These are hero images and they load eagerly. */
+.hcstage{position:relative;aspect-ratio:640/400;background:var(--card);border-radius:9px;overflow:hidden}
+.hcimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.hcimg[hidden]{display:none}
+.hctoggle{display:flex;gap:6px;margin:8px 0 0;flex-wrap:wrap}
+.hctoggle button{font-family:inherit;font-size:11.5px;font-weight:600;color:var(--dim);background:var(--card);
+  border:1px solid var(--line);border-radius:999px;padding:5px 12px;cursor:pointer}
+.hctoggle button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.hccap{margin:8px 0 0;font-size:11.5px;color:var(--dim);line-height:1.5}
+.hccap b{color:var(--ink);font-weight:600}
+.hcdisclaim{margin:10px 0 0;font-size:11.5px;color:var(--ink);line-height:1.5;
+  padding-left:10px;border-left:2px solid var(--accent)}
+.hcpending{margin:8px 0 0;font-size:11.5px;color:var(--dim);line-height:1.5}
+.hcev{margin:12px 0 0;font-size:12.5px;color:var(--dim);line-height:1.55}
+.hcact{display:flex;align-items:center;gap:16px;margin:16px 0 0;flex-wrap:wrap}
+.hcgo{font-size:13px;font-weight:600;color:#fff;background:var(--ink);border-radius:999px;
+  padding:9px 18px;text-decoration:none}
+.hcletter{font-size:12.5px;font-weight:600;color:var(--dim);text-decoration:none}
+.hcletter:hover{color:var(--ink);text-decoration:underline}
+.hcnone{display:flex;flex-direction:column;justify-content:center;gap:8px;aspect-ratio:640/400;
+  padding:24px;background:var(--card);border:1px dashed var(--line2);border-radius:9px}
+.hcnonel{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.hcnonen{margin:0;font-size:13.5px;color:var(--ink);line-height:1.55}
 
 /* The stat band. Numbers as the design, each one a link to its own evidence. */
 .statband{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:0 0 24px}

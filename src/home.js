@@ -6,7 +6,7 @@
 // corner's page. Getting that math right is what buys a clickable map for the
 // cost of a single image request.
 
-import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER, STATBAND } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER, STATBAND, HERO_CORNER } from "./page.js";
 import { TIER_LABEL, TIER_NOTE } from "./city.js";
 
 const MAP_W = 640;
@@ -100,7 +100,7 @@ function severityLine(c) {
   return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
 
-export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null, press = null, spendUsd = null) => {
+export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null, press = null, spendUsd = null, embed = null) => {
   // A corner without finite geometry poisons every pin: fitView produces a NaN
   // center and every overlay lands at left:NaN%. One bad row on the board must
   // cost that row its pin, not the whole map its anchors. It happened: a board
@@ -263,12 +263,12 @@ ${BASE_CSS}
 <body>
 <div class="wrap">
 ${MASTHEAD({ scored, active: "" })}
-${STATBAND({ scored, audited: auditedCount, headlines: press?.headlines || 0, spendUsd })}
 <header>
   <div class="corner"><b>San Francisco</b><span class="csub">${scored ? `${n(scored)} corners graded` : `${ranked.length} corners audited`}</span></div>
 </header>
 <main>
 
+<div class="herohead">
 <section class="askhero">
   <h1 class="askq">What's your corner's grade?</h1>
   <form class="find findbig" id="find" role="search">
@@ -279,16 +279,13 @@ ${STATBAND({ scored, audited: auditedCount, headlines: press?.headlines || 0, sp
   </form>
   <p class="scope" id="scope">${scopeLine}</p>
 </section>
+${HERO_CORNER(embed)}
+</div>
+${STATBAND({ scored, audited: auditedCount, headlines: press?.headlines || 0, spendUsd })}
 
 ${
   today
-    ? `<a class="cotd" href="/c/${esc(today.slug)}">
-  <span class="cotdk">Corner of the day</span>
-  <span class="cotdn">${esc(today.name || today.slug)}</span>
-  <span class="cotds">Audited autonomously this morning, ${esc(today.date)}${today.status === "partial" ? ", with some lanes degraded" : ""}</span>
-  <span class="cotdg g${esc(today.grade || "A")}">${esc(today.grade || "?")}</span>
-</a>
-${city?.queueLength ? `<p class="cotdq">${n(city.queueLength)} corners in line, worst first.</p>` : ""}
+    ? `${city?.queueLength ? `<p class="cotdq">${n(city.queueLength)} corners in line, worst first.</p>` : ""}
 ${
   voices?.commissioned
     ? `<p class="cotdq">Resident voices commissioned autonomously at ${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}. ${n(voices.withQuote)} produced an account that cleared the relevance filter; the rest are recorded as scraped and empty, which is a result rather than a gap.</p>`

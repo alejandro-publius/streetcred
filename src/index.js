@@ -25,6 +25,7 @@ import {
   cityNews, cityVoices, cityTimeline, cityRun, cityHazards, cityLetter,
   TIERS, TIER_LABEL, tierOf, RANK_PAGE_SIZE, tagTiers, putCityMeta,
 } from "./city.js";
+import { evidenceLine } from "./page.js";
 import { imageryFor } from "./imagery.js";
 import { corroborate, HAZARD_VERSION } from "./hazards.js";
 import { credCheck, isSafetyCoverage, CRED_VERSION } from "./cred.js";
@@ -1713,9 +1714,46 @@ export default {
         // The spend the band shows is the provider's own figure when one has
         // been reconciled, and our ledger only as a fallback. They disagreed
         // once and the invoice is what settles.
+        // The corner of the day, assembled for the hero. Every field comes from
+        // KV that the audit pipeline already wrote: no provider call happens
+        // here, and the frames are stored bytes served by /gen.
+        const embed = await (async () => {
+          const latest = [...(cotdLog || [])].filter((e) => e && e.slug).pop();
+          if (!latest) return null;
+          const [ec, escore, ecred, eimg] = await Promise.all([
+            cornerBySlug(env, latest.slug).catch(() => null),
+            getScore(env, latest.slug, SCORE_VERSION).catch(() => null),
+            getCredCached(env, latest.slug, CRED_VERSION).catch(() => null),
+            getImageryStatus(env, latest.slug).catch(() => null),
+          ]);
+          const states = eimg?.states || [];
+          const base = `/gen/${latest.slug}`;
+          // A frame is only offered if it is actually stored. The embed never
+          // borrows another corner's imagery and never re-shows yesterday's.
+          const frames = {
+            today: eimg && eimg.status !== "nocoverage" ? `${base}/today.jpg` : null,
+            hazards: states.includes("hazards") ? `${base}/hazards.jpg` : null,
+            fix: states.includes("fix") ? `${base}/fix.jpg` : null,
+          };
+          const hasGenerated = Boolean(frames.hazards || frames.fix);
+          return {
+            slug: latest.slug,
+            name: ec?.name || latest.name || latest.slug,
+            date: latest.date,
+            // "This morning" is only true if the audit ran this morning in
+            // Pacific, which is the timezone the claim is about.
+            auditedToday: latest.date === pacificDay(),
+            partial: latest.status === "partial",
+            grade: escore?.grade || latest.grade || null,
+            evidence: evidenceLine(ecred, ec?.district),
+            frames,
+            state: hasGenerated ? "full" : frames.today ? "text-only" : "none",
+          };
+        })();
+
         const invoice = await (env.STORE?.get("apify:invoice", "json").catch(() => null) ?? null);
         const spendUsd = invoice?.cycleUsd ?? actorCosts.reduce((n2, c2) => n2 + (Number(c2.costUsd) || 0), 0);
-        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressSummary, spendUsd), {
+        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressSummary, spendUsd, embed), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
