@@ -5,7 +5,7 @@
 // enforces it. Nothing on this page is aspirational: if the product does not
 // do a thing, this page says it does not do it.
 
-import { FONT_LINK, BASE_CSS, META, MASTHEAD } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 import { DISTRIBUTION, DISTRIBUTION_DATE } from "./distribution.js";
 import { SERVICE_NAMES } from "./data.js";
 
@@ -249,6 +249,7 @@ Service health: <a href="/status">/status</a> &middot;
 The agent's decisions: <a href="/watchdog">/watchdog</a></p>
 </div>
 </main>
+${FOOTER()}
 ${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>

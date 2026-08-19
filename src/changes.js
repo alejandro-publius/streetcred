@@ -4,7 +4,7 @@
 // reader holding last week's screenshot can find out what happened between
 // then and now, instead of having to choose which of two numbers to distrust.
 
-import { FONT_LINK, BASE_CSS, META, MASTHEAD } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 
 const esc = (t) =>
   String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
@@ -73,6 +73,7 @@ the reason and the source will be recorded here whether or not anyone is watchin
 }
 </div>
 </main>
+${FOOTER()}
 ${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>

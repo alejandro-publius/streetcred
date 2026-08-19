@@ -56,6 +56,41 @@ export const META = ({ title, description, url, card = "summary" }) => {
 <meta name="twitter:description" content="${e(description)}">`;
 };
 
+// The footer, one component for every route.
+//
+// Three columns of orientation, then the honesty lines, which close the page
+// unchanged on every route. Those lines are the product's contract with the
+// reader: what the imagery is, and that nothing here is sent to anybody. They
+// are reproduced verbatim and they stay last, where a reader finishes.
+//
+// The event line finally earns its click: "Built at Build Club, August 17 2026"
+// is the anchor for the repository, because that sentence was the one place the
+// page claimed provenance and offered no way to check it.
+export const FOOTER = () => `<footer>
+<div class="fcols">
+  <div class="fcol">
+    <span class="fh">Product</span>
+    <a href="/#find">Find your corner</a>
+    <a href="/watchlist">Watchlist</a>
+    <a href="/methodology">How it is scored</a>
+  </div>
+  <div class="fcol">
+    <span class="fh">Trust</span>
+    <a href="/status">Status and cost ledger</a>
+    <a href="/changes">Changes</a>
+    <a href="/watchdog">Watchdog</a>
+  </div>
+  <div class="fcol">
+    <span class="fh">Source</span>
+    <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub repo</a>
+    <a href="https://data.sfgov.org/Public-Safety/Traffic-Crashes-Resulting-in-Injury/ubvf-ztfx" target="_blank" rel="noopener">DataSF collisions</a>
+    <a href="https://data.sfgov.org/City-Infrastructure/311-Cases/vw6y-z8j6" target="_blank" rel="noopener">DataSF 311 cases</a>
+  </div>
+</div>
+<p class="fhonest">Exa finds it, Apify hears it, Gemini shows it and writes it. <a href="${REPO_URL}" target="_blank" rel="noopener">Built at Build Club, August 17 2026</a>.<br>
+Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.</p>
+</footer>`;
+
 export const REPO_URL = "https://github.com/alejandro-publius/streetcred";
 
 // The product level band, above every page's own header.
@@ -699,6 +734,15 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
   letter-spacing:.12em;text-transform:uppercase;color:var(--dim);background:var(--panel);
   border:1px dashed var(--line2);border-radius:999px;padding:5px 12px;opacity:.85;pointer-events:none}
 footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
+.fcols{display:flex;gap:40px;flex-wrap:wrap;margin:0 0 22px}
+.fcol{display:flex;flex-direction:column;gap:6px;min-width:150px}
+.fh{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);margin-bottom:2px}
+.fcol a{font-size:12.5px;color:var(--dim);text-decoration:none}
+.fcol a:hover{color:var(--ink);text-decoration:underline}
+/* The honesty lines close the page. Never collapsed, never moved above the
+   columns, never smaller than the links they follow. */
+.fhonest{margin:0;font-size:12.5px;color:var(--dim);line-height:1.6}
+.fhonest a{color:var(--dim)}
 footer a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
 footer a:hover{color:var(--ink)}
 
@@ -1003,8 +1047,7 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
 </main>
 </main>
 ${og.preview ? '<div class="pvw">Preview</div>' : ''}
-<footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
-Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/watchlist">Press watchlist</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
+${FOOTER()}
 </div>
 
 <script>

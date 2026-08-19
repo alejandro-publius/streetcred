@@ -6,7 +6,7 @@
 // corner's page. Getting that math right is what buys a clickable map for the
 // cost of a single image request.
 
-import { FONT_LINK, BASE_CSS, META, MASTHEAD } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 import { TIER_LABEL, TIER_NOTE } from "./city.js";
 
 const MAP_W = 640;
@@ -395,8 +395,7 @@ ${
 
 </main>
 ${preview ? '<div class="pvw">Preview</div>' : ''}
-<footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
-Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/watchlist">Press watchlist</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
+${FOOTER()}
 </div>
 
 <script>

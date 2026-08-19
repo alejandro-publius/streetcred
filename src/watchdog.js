@@ -11,7 +11,7 @@
 // When the journal is empty the page says the agent has not run yet, because
 // the alternative is a dashboard of zeroes that looks like a working system.
 
-import { FONT_LINK, BASE_CSS, META, MASTHEAD } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 import { journalStats } from "./agent.js";
 
 const esc = (t) =>
@@ -292,6 +292,7 @@ ${entries.map(entryHtml).join("\n")}`
 </p>
 
 </main>
+${FOOTER()}
 ${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>

@@ -5,7 +5,7 @@
 // that got lucky, so the rejects are here with their reasons, and the count of
 // phrases that named no street at all is here too.
 
-import { FONT_LINK, BASE_CSS, META, MASTHEAD } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 
 const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 
@@ -145,8 +145,7 @@ ${rejects
 </div>
 
 </main>
-<footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
-A corner on this list has been graded from city records and named in coverage. Nothing here has been audited.<br><a href="/">The scoreboard</a> &middot; <a href="/methodology">Methodology</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
+${FOOTER()}
 ${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>

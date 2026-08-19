@@ -2,7 +2,7 @@
 // changelog recorded. No self-assessment anywhere on this page: every row is a
 // stored record something else wrote, and the page only counts.
 
-import { FONT_LINK, BASE_CSS, META, MASTHEAD } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 
 const esc = (t) =>
   String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
@@ -179,6 +179,7 @@ site through a service binding, so an edge-level outage in front of a healthy Wo
 here; that caveat is part of the record too.</p>
 </div>
 </main>
+${FOOTER()}
 ${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>
