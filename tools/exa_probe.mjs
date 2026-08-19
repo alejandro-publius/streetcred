@@ -43,4 +43,14 @@ console.log(".dev.vars key");
 console.log("  unit price   $" + unit);
 console.log("  plan tier    " + (exaPlanFor(unit) || "unknown, matches no known tier"));
 console.log("  known tiers  " + Object.entries(EXA_PLAN_PRICES).map(([n, u]) => `${n} $${u}`).join(", "));
-console.log("  account      NOT DETERMINED. Price identifies a tier, never a workspace.");
+console.log("  account      not determined by price. Price identifies a tier, never a workspace.");
+
+// The Websets endpoint is Pro only, and its refusal names the team it refused.
+// That is the one place Exa's API states the account, found only because this
+// pass went looking for Monitors. It corroborates a dashboard observation; it
+// does not replace one, because it names the team a key belongs to and not
+// what any particular call was billed against.
+const w = await fetch("https://api.exa.ai/websets/v0/websets", { headers: { "x-api-key": key } });
+const body = await w.json().catch(() => null);
+const team = /your team \(([^)]+)\)/i.exec(String(body?.message || ""));
+console.log("  team         " + (team ? team[1] : "not stated by the API"));

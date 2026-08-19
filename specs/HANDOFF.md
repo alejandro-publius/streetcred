@@ -363,13 +363,17 @@ The first twelve are inherited and all still true. 13 onward are new.
     after a known call, which is what `tools/exa_verify.mjs` records and what
     `pressBatch` now refuses to spend without.
 
-35. **Exa's API has no account or usage endpoint.** Checked directly with a
-    live key: `/account`, `/me`, `/usage`, `/organizations`, `/billing/usage`
-    and the `v1` forms of each all return 404 HTML. There is no programmatic
-    way to ask which workspace a key bills. That is why the gate has to be a
-    human refreshing a specific workspace's Usage page, and why the price
-    inference that replaced it was reaching for the only signal available
-    rather than the right one.
+35. **Exa's API has no account or usage endpoint, but its Websets refusal
+    names the team.** `/account`, `/me`, `/usage`, `/organizations`,
+    `/billing/usage` and the `v1` forms all 404. What does state the account is
+    the Pro-only Websets endpoint: `GET /websets/v0/websets` answers 401 with
+    "Your team (Alex Schroeder's Personal) does not have access to the API".
+    `tools/exa_probe.mjs` reads it. This was found while looking for Monitors,
+    after a gotcha had already been written here saying no such signal existed,
+    so treat "there is no way to check" as a claim that needs re-testing rather
+    than a fact. It corroborates a dashboard observation and does not replace
+    one: it names the team a key belongs to, not what a given call was billed
+    against.
 
 36. **Exa returns social posts as news.** A Facebook post came back as the top
     result for a Tenderloin corner. A lane that publishes what it keeps under
