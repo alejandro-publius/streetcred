@@ -60,6 +60,15 @@ const CACHE_VERSION = "v11";
 // score semantics change, even if nothing else does.
 const LETTER_VERSION = "v6";
 
+// The quota backoff, remembered in the isolate as well as in KV.
+//
+// KV is eventually consistent, so the flag a request writes is not visible to
+// the next request for up to a minute. Without this, every time the hour long
+// flag expires there is a window where several requests each pay a full model
+// round trip to rediscover the same refusal. The isolate remembers instantly;
+// KV is what carries the fact to the other colos.
+let quotaBackoffUntil = 0;
+
 // Small in-process cache. The Worker isolate holds this between requests, which
 // is all the caching this product needs: every slow artifact (imagery, scraped
 // voices) is already baked into static assets at build time.
@@ -1088,14 +1097,21 @@ async function ogFor(c, env) {
   // it. Two more KV reads to confirm two records that by construction do not
   // exist would double the cost of the commonest page on the site.
   if (isScored(c)) return { score: cityScore(c), cred: cityCred(c), tier: TIERS.SCORED };
-  const [score, cred, imagery] = await Promise.all([
+  const [score, cred, imagery, letter] = await Promise.all([
     getScore(env, c.slug, SCORE_VERSION).catch(() => null),
     getCredCached(env, c.slug, CRED_VERSION).catch(() => null),
     // Which of the two warmed tiers this is, decided by whether both generated
     // states exist as bytes rather than by a label somebody set once.
     getImageryStatus(env, c.slug).catch(() => null),
+    // The last letter that passed verification here. Rendered into the HTML
+    // when one exists, so the page's conclusion does not depend on a model
+    // call completing while somebody reads it.
+    getVerifiedLetter(env, c.slug).catch(() => null),
   ]);
-  return { score, cred, tier: tierOf(c, imagery) };
+  // Whether this corner actually has a generated fix image. The page's own
+  // subtitle promises "a picture of the fix", and it must not promise one it
+  // is not showing. It comes back by itself when generation does.
+  return { score, cred, letter, tier: tierOf(c, imagery), showsFix: Boolean(imagery?.states?.includes("fix")) };
 }
 
 // ---------------------------------------------------------------- generated imagery
@@ -1563,6 +1579,10 @@ export default {
         });
       }
 
+      // The citywide count the masthead prints on every page. One live source,
+      // read here rather than written down once per template.
+      const mastScored = async () => (await getCityMeta(env).catch(() => null))?.totalScored ?? 0;
+
       // The Press Watchlist. Read only: the pass that builds it runs on the
       // cron, because six semantic searches is not something a page load
       // should start.
@@ -1574,7 +1594,7 @@ export default {
         if (p === "/api/watchlist") {
           return json(w || { source: "empty", reason: "the watchlist has not been built yet" });
         }
-        return new Response(WATCHLIST_PAGE(w, origin, hub), {
+        return new Response(WATCHLIST_PAGE(w, origin, hub, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1589,7 +1609,7 @@ export default {
       }
 
       if (p === "/methodology" || p === "/methodology/") {
-        return new Response(METHODOLOGY(origin), {
+        return new Response(METHODOLOGY(origin, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1598,7 +1618,7 @@ export default {
       if (p === "/changes" || p === "/api/changes") {
         const changes = (await getChanges(env).catch(() => [])).slice(0, 50);
         if (p === "/api/changes") return json({ source: "live", changes });
-        return new Response(CHANGES(changes, origin), {
+        return new Response(CHANGES(changes, origin, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1618,7 +1638,7 @@ export default {
         const spend = exa && apify
           ? { exa, apify, costs, invoice, apifyUsd: costs.reduce((n, c) => n + (Number(c.costUsd) || 0), 0) }
           : null;
-        return new Response(STATUS(synth, incidents, changes, origin, spend), {
+        return new Response(STATUS(synth, incidents, changes, origin, spend, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1628,7 +1648,7 @@ export default {
           getJournal(env).catch(() => []),
           getAgentRejects(env).catch(() => 0),
         ]);
-        return new Response(WATCHDOG(journal, rejects, origin), {
+        return new Response(WATCHDOG(journal, rejects, origin, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1667,7 +1687,7 @@ export default {
         if (legacy) {
           return Response.redirect(`${origin}/c/${canonicalSlug(legacy)}`, 301);
         }
-        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist, voicesSummary] = await Promise.all([
+        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist, voicesSummary, pressSummary, actorCosts] = await Promise.all([
           getHinList(env),
           getCotdLog(env).catch(() => []),
           // Read only. The homepage must never wait on a findSimilar call, so
@@ -1680,6 +1700,8 @@ export default {
           getQueue(env).catch(() => null),
           getWatchlist(env, WATCHLIST_VERSION).catch(() => null),
           getVoicesSummary(env).catch(() => null),
+          env.STORE?.get("press:summary", "json").catch(() => null) ?? null,
+          getActorCosts(env).catch(() => []),
         ]);
         const city = meta
           ? {
@@ -1688,13 +1710,18 @@ export default {
               queueLength: Array.isArray(queue) ? queue.length : 0,
             }
           : null;
-        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary), {
+        // The spend the band shows is the provider's own figure when one has
+        // been reconciled, and our ledger only as a fallback. They disagreed
+        // once and the invoice is what settles.
+        const invoice = await (env.STORE?.get("apify:invoice", "json").catch(() => null) ?? null);
+        const spendUsd = invoice?.cycleUsd ?? actorCosts.reduce((n2, c2) => n2 + (Number(c2.costUsd) || 0), 0);
+        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressSummary, spendUsd), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
 
       if (/^\/c\/[A-Za-z0-9-]+\/?$/.test(p)) {
-        const og = { ...(await ogFor(c, env)), origin, preview: Boolean(env.PREVIEW) };
+        const og = { ...(await ogFor(c, env)), origin, preview: Boolean(env.PREVIEW), scored: await mastScored() };
         // A corner nobody has opened has no cached verdict yet, so warm it in
         // the background. The response never waits on it.
         if (!og.cred) ctx.waitUntil(getCred(c, env, origin).catch(() => {}));
@@ -1847,7 +1874,10 @@ export default {
         // request serves this corner's last verified letter and touches
         // nothing else: no model call, no retry gauntlet, no 17 second wait
         // to rediscover a fact the last request already established.
-        const backoff = await getLetterBackoff(env).catch(() => null);
+        const backoff =
+          quotaBackoffUntil > Date.now()
+            ? { at: new Date().toISOString(), until: new Date(quotaBackoffUntil).toISOString(), reason: "model quota, remembered in this isolate" }
+            : await getLetterBackoff(env).catch(() => null);
         if (backoff) {
           const stored = await getVerifiedLetter(env, c.slug).catch(() => null);
           if (stored?.text) {
@@ -1879,6 +1909,7 @@ export default {
               // this corner, so it is recorded once and every other request
               // for the next hour reads it instead of rediscovering it.
               if (e?.quota) {
+                quotaBackoffUntil = Date.now() + 3600 * 1000;
                 await setLetterBackoff(env, e.message).catch(() => {});
                 const stored = await getVerifiedLetter(env, c.slug).catch(() => null);
                 if (stored?.text) {

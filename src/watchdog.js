@@ -11,7 +11,7 @@
 // When the journal is empty the page says the agent has not run yet, because
 // the alternative is a dashboard of zeroes that looks like a working system.
 
-import { LOGO, FONT_LINK, BASE_CSS } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 import { journalStats } from "./agent.js";
 
 const esc = (t) =>
@@ -144,7 +144,7 @@ function weeklyPrecision(entries) {
     .filter((w) => w.pct !== null);
 }
 
-export const WATCHDOG = (journal = [], rejects = 0, origin = "") => {
+export const WATCHDOG = (journal = [], rejects = 0, origin = "", preview = false, scored = 0) => {
   const entries = Array.isArray(journal) ? journal : [];
   const s = journalStats(entries);
   const trend = weeklyPrecision(entries);
@@ -185,15 +185,8 @@ export const WATCHDOG = (journal = [], rejects = 0, origin = "") => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Corner Watchdog</title>
 <link rel="icon" href="/logo.svg">
-<link rel="canonical" href="${origin}/watchdog">
-<meta name="description" content="${esc(desc)}">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="StreetCred">
-<meta property="og:title" content="${esc(title)}">
-<meta property="og:description" content="${esc(desc)}">
-<meta property="og:url" content="${origin}/watchdog">
+${META({ title: "The watchdog \u00b7 StreetCred", description: desc, url: `${origin}/watchdog` })}
 ${FONT_LINK}
 <style>
 ${BASE_CSS}
@@ -251,9 +244,8 @@ ${BASE_CSS}
 </head>
 <body>
 <div class="wrap">
+${MASTHEAD({ scored, active: "" })}
 <header>
-  ${LOGO}
-  <div class="mark">Street<span>Cred</span></div>
   <div class="switcher">
     <a href="/">The city</a>
     <a href="/watchdog" class="on">The watchdog</a>
@@ -300,6 +292,8 @@ ${entries.map(entryHtml).join("\n")}`
 </p>
 
 </main>
+${FOOTER()}
+${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>
 </html>`;

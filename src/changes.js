@@ -4,22 +4,24 @@
 // reader holding last week's screenshot can find out what happened between
 // then and now, instead of having to choose which of two numbers to distrust.
 
-import { LOGO, FONT_LINK, BASE_CSS } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 
 const esc = (t) =>
   String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 
 const day = (ts) => String(ts || "").slice(0, 10);
 
-export const CHANGES = (changes = [], origin = "") => `<!doctype html>
+export const CHANGES = (changes = [], origin = "", preview = false, scored = 0) => `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Grade changes, StreetCred</title>
 <link rel="icon" href="/logo.svg">
-<link rel="canonical" href="${origin}/changes">
-<meta name="description" content="Every stored grade or index change on StreetCred, newest first, with the reason and the source of the change.">
+${META({
+  title: "Grade changes \u00b7 StreetCred",
+  description: "Every stored grade or index change on StreetCred, newest first, with the reason and the source, so a grade cannot move without a public record of it moving.",
+  url: `${origin}/changes`,
+})}
 ${FONT_LINK}
 <style>
 ${BASE_CSS}
@@ -40,9 +42,8 @@ ${BASE_CSS}
 </head>
 <body>
 <div class="wrap">
+${MASTHEAD({ scored, active: "changes" })}
 <header>
-  ${LOGO}
-  <div class="mark">Street<span>Cred</span></div>
   <div class="switcher">
     <a href="/">The city</a>
     <a href="/methodology">Methodology</a>
@@ -72,6 +73,8 @@ the reason and the source will be recorded here whether or not anyone is watchin
 }
 </div>
 </main>
+${FOOTER()}
+${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>
 </html>`;

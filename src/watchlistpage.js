@@ -5,29 +5,27 @@
 // that got lucky, so the rejects are here with their reasons, and the count of
 // phrases that named no street at all is here too.
 
-import { LOGO, FONT_LINK, BASE_CSS } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 
 const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 
 const when = (iso) => String(iso || "").slice(0, 10);
 
-export const WATCHLIST_PAGE = (w, origin = "", hub = null) => {
+export const WATCHLIST_PAGE = (w, origin = "", hub = null, preview = false, scored = 0) => {
   const entries = w?.entries || [];
   const rejects = w?.rejects || [];
-  const title = "The Press Watchlist, StreetCred";
+  const title = "Press watchlist \u00b7 StreetCred";
   const desc = entries.length
-    ? `${entries.length} San Francisco corners named in current coverage and verified against the graded city index.`
-    : "Corners named in current San Francisco coverage, verified against the graded city index.";
+    ? `${entries.length} San Francisco corners named in current news coverage, each one verified against the graded city index before it appears here, with every rejected candidate published and its reason given.`
+    : "Corners named in current San Francisco news coverage, each verified against the graded city index before it appears, with every rejected candidate published and its reason given.";
 
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title}</title>
 <link rel="icon" href="/logo.svg">
-<link rel="canonical" href="${origin}/watchlist">
-<meta name="description" content="${esc(desc)}">
+${META({ title, description: desc, url: `${origin}/watchlist` })}
 ${FONT_LINK}
 <style>
 ${BASE_CSS}
@@ -60,9 +58,8 @@ ${BASE_CSS}
 </head>
 <body>
 <div class="wrap">
+${MASTHEAD({ scored, active: "watchlist" })}
 <header>
-  ${LOGO}
-  <div class="mark">Street<span>Cred</span></div>
   <div class="corner"><b>The Press Watchlist</b><span class="csub">${w?.builtAt ? `Built ${when(w.builtAt)}` : "Not built yet"}</span></div>
 </header>
 <main>
@@ -148,8 +145,8 @@ ${rejects
 </div>
 
 </main>
-<footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
-A corner on this list has been graded from city records and named in coverage. Nothing here has been audited.<br><a href="/">The scoreboard</a> &middot; <a href="/methodology">Methodology</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
+${FOOTER()}
+${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>
 </html>`;

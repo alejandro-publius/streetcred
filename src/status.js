@@ -2,7 +2,7 @@
 // changelog recorded. No self-assessment anywhere on this page: every row is a
 // stored record something else wrote, and the page only counts.
 
-import { LOGO, FONT_LINK, BASE_CSS } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 
 const esc = (t) =>
   String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
@@ -21,22 +21,36 @@ const when = (ts) => {
   }
 };
 
-export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null) => {
+export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null, preview = false, scored = 0) => {
   const runs = Array.isArray(synth) ? synth : [];
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
   const week = runs.filter((r) => new Date(r.ts).getTime() > weekAgo);
   const uptime = week.length ? Math.round((1000 * week.filter((r) => r.ok).length) / week.length) / 10 : null;
   const latest = runs[0] || null;
 
+  // The number is never edited, only explained. A run that returned the same
+  // failing status on every endpoint in a few milliseconds did not find a
+  // broken site: it found no site at all, which is what a deploy window looks
+  // like from outside. That is worth saying next to the number, and the run
+  // still counts against it.
+  const failed = week.filter((r) => !r.ok);
+  const looksLikeDeploy = (r) => {
+    const rs = r.results || [];
+    return rs.length > 1 && rs.every((x) => !x.ok && x.status === rs[0].status && x.ms < 100);
+  };
+  const day = (ts) => String(ts || "").slice(0, 10);
+
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Status, StreetCred</title>
 <link rel="icon" href="/logo.svg">
-<link rel="canonical" href="${origin}/status">
-<meta name="description" content="Synthetic monitor results, verifier incidents, and recent grade changes.">
+${META({
+  title: "Status \u00b7 StreetCred",
+  description: "Synthetic uptime checks, letter verifier incidents, and the running cost ledger for every autonomous run this site commissions, published whether or not anyone is looking.",
+  url: `${origin}/status`,
+})}
 ${FONT_LINK}
 <style>
 ${BASE_CSS}
@@ -61,9 +75,8 @@ ${BASE_CSS}
 </head>
 <body>
 <div class="wrap">
+${MASTHEAD({ scored, active: "status" })}
 <header>
-  ${LOGO}
-  <div class="mark">Street<span>Cred</span></div>
   <div class="switcher">
     <a href="/">The city</a>
     <a href="/methodology">Methodology</a>
@@ -83,6 +96,25 @@ ${
        <p class="note">The monitor runs at 7 minutes past each hour. This page fills itself in.</p>`
     : `<div class="big ${uptime >= 99 ? "ok" : "bad"}">${uptime}%</div>
        <p class="note">${week.length} runs in the last 7 days, ${week.filter((r) => !r.ok).length} with at least one failing check.</p>
+       ${
+         failed.length
+           ? `<p class="note">Every failing run is counted and none is trimmed, so here is what they were.
+${failed
+  .map((r) =>
+    looksLikeDeploy(r)
+      ? `The run on ${esc(day(r.ts))} returned ${r.results[0].status} on all ${r.results.length} endpoints in under
+         ${Math.max(...r.results.map((x) => x.ms))}ms, and a passing run followed. Nothing answered at all for that
+         moment, which is the shape of a deploy window rather than a broken site. It still counts against the number
+         above.`
+      : `The run on ${esc(day(r.ts))} had ${r.results.filter((x) => !x.ok).length} failing check(s).`,
+  )
+  .join(" ")}
+Separately, on 2026-08-18 the letter endpoint was taking up to 43 seconds whenever the model had no daily
+allowance left, because a spent quota was being retried like a temporary one. That never failed a check, it
+only made one slow, and it was fixed the same day: the letter route now answers in about 200ms while the
+model is unavailable.</p>`
+           : ""
+       }
        <div class="hist">${week
          .slice(0, 84)
          .reverse()
@@ -178,6 +210,8 @@ site through a service binding, so an edge-level outage in front of a healthy Wo
 here; that caveat is part of the record too.</p>
 </div>
 </main>
+${FOOTER()}
+${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>
 </html>`;

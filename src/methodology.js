@@ -5,7 +5,7 @@
 // enforces it. Nothing on this page is aspirational: if the product does not
 // do a thing, this page says it does not do it.
 
-import { LOGO, FONT_LINK, BASE_CSS } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 import { DISTRIBUTION, DISTRIBUTION_DATE } from "./distribution.js";
 import { SERVICE_NAMES } from "./data.js";
 
@@ -15,15 +15,17 @@ const p90 = DISTRIBUTION[Math.floor(0.9 * (n - 1))];
 const max = DISTRIBUTION[n - 1];
 const zeroes = DISTRIBUTION.filter((v) => v === 0).length;
 
-export const METHODOLOGY = (origin = "") => `<!doctype html>
+export const METHODOLOGY = (origin = "", preview = false, scored = 0) => `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Methodology, StreetCred</title>
 <link rel="icon" href="/logo.svg">
-<link rel="canonical" href="${origin}/methodology">
-<meta name="description" content="Every data source, window, radius, filter, formula and known limitation behind StreetCred's grades, stated plainly.">
+${META({
+  title: "Methodology \u00b7 StreetCred",
+  description: "Every data source, window, radius, filter, formula and known limitation behind StreetCred's grades, stated plainly enough to be checked.",
+  url: `${origin}/methodology`,
+})}
 ${FONT_LINK}
 <style>
 ${BASE_CSS}
@@ -44,9 +46,8 @@ ${BASE_CSS}
 </head>
 <body>
 <div class="wrap">
+${MASTHEAD({ scored, active: "methodology" })}
 <header>
-  ${LOGO}
-  <div class="mark">Street<span>Cred</span></div>
   <div class="switcher">
     <a href="/">The city</a>
     <a href="/watchdog">The watchdog</a>
@@ -248,6 +249,8 @@ Service health: <a href="/status">/status</a> &middot;
 The agent's decisions: <a href="/watchdog">/watchdog</a></p>
 </div>
 </main>
+${FOOTER()}
+${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>
 </html>`;

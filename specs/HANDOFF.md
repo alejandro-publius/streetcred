@@ -331,6 +331,66 @@ The first twelve are inherited and all still true. 13 onward are new.
     BILLING_QUEUE already states for imagery: operator budgets are separate and
     stricter, never a bypass.
 
+## Polish pass rollback
+
+The polish pass of 2026-08-19 is visual and copy only: no scoring, data, API
+behaviour, cron or cap changed. It was built on branch `polish/pass-1` and
+verified on a preview Worker before main was touched.
+
+**Production deployment live before the pass:**
+`f75ce774-e045-4aba-9d2d-6969b2c9e878`, deployed 2026-08-19T00:08:50Z.
+
+**Path A, instant:**
+
+```
+npx wrangler rollback f75ce774-e045-4aba-9d2d-6969b2c9e878
+```
+
+**Path B, from source:**
+
+```
+git checkout pre-polish-aug18 && npx wrangler deploy
+```
+
+The tag `pre-polish-aug18` is permanent. Do not delete it.
+
+**Preview:** https://streetcred-preview.thealexschroeder.workers.dev, deployed
+from `polish/pass-1` with `npx wrangler deploy --env preview`. Every page on it
+carries a dashed PREVIEW badge, so a preview screenshot can never be mistaken
+for production. It has no cron triggers. It shares production's KV namespace
+deliberately, so it reads exactly what production reads; that also means the
+lanes that write to KV write to the real store, which is why verification on it
+reads pages and never touches the imagery lane.
+
+## Deferred from polish pass
+
+- **`score:24th-and-valencia` is stored at v1** while the scoring code is at v3,
+  so `getScore` returns null for it and the corner's title renders without its
+  grade letter. That is the specified behaviour for a missing value (omit
+  rather than pad), and the page itself is unaffected because the client
+  recomputes. Fixing the record means writing a score, which this pass forbids.
+  One page load of `/api/score?x=24th-and-valencia` upgrades it, or
+  `node tools/rescore.js`. Sampled 10 audited corners: this is the only stale
+  one.
+- **og:image was kept, not removed.** The pass specified text-only meta on the
+  grounds that image cards are queued behind billing. They are not: corner and
+  root cards are served from static grade cards and stored Street View frames
+  with zero generation, and `shareCard()` deliberately never uses the annotated
+  or generated states. Removing working share images before judging would be a
+  downgrade, so no og:image was added anywhere and the existing ones stay. The
+  five trust surfaces have none.
+
+- **The preview Worker has no secrets, and that is deliberate.**
+  `wrangler secret list --env preview` returns an empty list: secrets do not
+  inherit across environments. So on preview the press lane, the letter, the
+  resident voices and the static map all degrade to their sample or empty
+  states, because the keys they need are not there. This is worth knowing
+  before reading any preview result: it verifies HTML, meta, layout, links and
+  honesty copy faithfully, and it cannot verify anything that needs a key.
+  Those cells are verified against production instead. The alternative, copying
+  live keys onto a second public Worker, would put a spendable surface on the
+  internet to check a visual change, which is a bad trade.
+
 ## Open items for the human
 
 Unchanged from the morning report, minus nothing:

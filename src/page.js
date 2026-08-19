@@ -34,6 +34,136 @@ export const LOGO = `<svg viewBox="0 0 64 64" width="38" height="38" aria-hidden
 
 // Shared with the city view in home.js, so the two pages cannot drift apart
 // on type, palette, or spacing.
+// One meta block for every route, so a tag added here reaches all nine page
+// types and a count is never written down twice.
+//
+// Text only. No og:image is emitted from here: the corner page carries its own
+// card and adds those tags itself, and no other route has an image worth
+// promising. card defaults to summary because a page with no image should not
+// ask a reader's client to reserve a large one.
+export const META = ({ title, description, url, card = "summary" }) => {
+  const e = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+  return `<title>${e(title)}</title>
+<link rel="canonical" href="${e(url)}">
+<meta name="description" content="${e(description)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="StreetCred">
+<meta property="og:title" content="${e(title)}">
+<meta property="og:description" content="${e(description)}">
+<meta property="og:url" content="${e(url)}">
+<meta name="twitter:card" content="${e(card)}">
+<meta name="twitter:title" content="${e(title)}">
+<meta name="twitter:description" content="${e(description)}">`;
+};
+
+// Four numbers under the masthead on the root, each one a link to the surface
+// that proves it. Nothing here is computed in the template: every value is
+// passed in from what the site already stores, so a number on this band and
+// the number on the page it links to cannot disagree.
+export const STATBAND = ({ scored = 0, audited = 0, headlines = 0, spendUsd = null } = {}) => {
+  const n = (v) => Number(v).toLocaleString("en-US");
+  const cell = (href, value, label, note) =>
+    `<a class="sbcell" href="${href}"><span class="sbnum">${value}</span><span class="sblabel">${label}</span><span class="sbnote">${note}</span></a>`;
+  return `<section class="statband" aria-label="StreetCred at a glance">
+  ${cell("/methodology", n(scored), "intersections graded", "from the city's own records")}
+  ${cell("/", n(audited), "fully audited", "every evidence lane checked")}
+  ${cell("/watchlist", n(headlines), "press citations found", "across the coverage timelines")}
+  ${
+    spendUsd === null
+      ? cell("/status", "0", "letters sent to officials", "this is a drafting tool")
+      : cell("/status", `$${Number(spendUsd).toFixed(2)}`, "spent running itself", "published per run, unattended")
+  }
+</section>`;
+};
+
+// The footer, one component for every route.
+//
+// Three columns of orientation, then the honesty lines, which close the page
+// unchanged on every route. Those lines are the product's contract with the
+// reader: what the imagery is, and that nothing here is sent to anybody. They
+// are reproduced verbatim and they stay last, where a reader finishes.
+//
+// The event line finally earns its click: "Built at Build Club, August 17 2026"
+// is the anchor for the repository, because that sentence was the one place the
+// page claimed provenance and offered no way to check it.
+export const FOOTER = () => `<footer>
+<div class="fcols">
+  <div class="fcol">
+    <span class="fh">Product</span>
+    <a href="/#find">Find your corner</a>
+    <a href="/watchlist">Watchlist</a>
+    <a href="/methodology">How it is scored</a>
+  </div>
+  <div class="fcol">
+    <span class="fh">Trust</span>
+    <a href="/status">Status and cost ledger</a>
+    <a href="/changes">Changes</a>
+    <a href="/watchdog">Watchdog</a>
+  </div>
+  <div class="fcol">
+    <span class="fh">Source</span>
+    <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub repo</a>
+    <a href="https://data.sfgov.org/Public-Safety/Traffic-Crashes-Resulting-in-Injury/ubvf-ztfx" target="_blank" rel="noopener">DataSF collisions</a>
+    <a href="https://data.sfgov.org/City-Infrastructure/311-Cases/vw6y-z8j6" target="_blank" rel="noopener">DataSF 311 cases</a>
+  </div>
+</div>
+<p class="fhonest">Exa finds it, Apify hears it, Gemini shows it and writes it. <a href="${REPO_URL}" target="_blank" rel="noopener">Built at Build Club, August 17 2026</a>.<br>
+Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.</p>
+</footer>`;
+
+export const REPO_URL = "https://github.com/alejandro-publius/streetcred";
+
+// The product level band, above every page's own header.
+//
+// It exists because the trust surfaces were reachable only from a footer, and
+// a judge who lands on a corner page had no way to see that a watchlist, a
+// methodology and a cost ledger exist at all. The count comes from the caller
+// so it is the same live number the page prints rather than a second copy.
+//
+// The search here is a link rather than a second typeahead. public/typeahead.js
+// binds to one input by id, so mounting a compact second instance would need
+// the component to support multiple mounts, which is a behaviour change and
+// this pass is visual only. The link lands on the real search on the root.
+export const MASTHEAD = ({ scored = 0, active = "" } = {}) => {
+  const n = (v) => Number(v).toLocaleString("en-US");
+  const link = (href, label, key) =>
+    `<a href="${href}"${key === active ? ' class="on" aria-current="page"' : ""}>${label}</a>`;
+  return `<nav class="mast" aria-label="StreetCred">
+  <a class="mastmark" href="/" aria-label="StreetCred home">Street<span>Cred</span></a>
+  ${scored ? `<span class="mastcount">${n(scored)} SF intersections scored</span>` : ""}
+  <a class="mastfind" href="/#find">Find your corner</a>
+  <nav class="mastnav" aria-label="Trust surfaces">
+    ${link("/watchlist", "Watchlist", "watchlist")}
+    ${link("/methodology", "Methodology", "methodology")}
+    ${link("/status", "Status", "status")}
+    ${link("/changes", "Changes", "changes")}
+  </nav>
+  <a class="mastgh" href="${REPO_URL}" target="_blank" rel="noopener" aria-label="Source on GitHub">
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+  </a>
+  <button class="mastmenu" id="mastmenu" type="button" aria-expanded="false" aria-controls="mastnav-collapsed">Menu</button>
+</nav>
+<nav class="mastdrop" id="mastnav-collapsed" hidden aria-label="Trust surfaces">
+  ${link("/watchlist", "Watchlist", "watchlist")}
+  ${link("/methodology", "Methodology", "methodology")}
+  ${link("/status", "Status", "status")}
+  ${link("/changes", "Changes", "changes")}
+  <a href="/#find">Find your corner</a>
+  <a href="${REPO_URL}" target="_blank" rel="noopener">Source on GitHub</a>
+</nav>
+<script>
+(function(){
+  var b=document.getElementById("mastmenu"),d=document.getElementById("mastnav-collapsed");
+  if(!b||!d) return;
+  b.addEventListener("click",function(){
+    var open=d.hidden===false;
+    d.hidden=open;
+    b.setAttribute("aria-expanded",String(!open));
+  });
+})();
+</script>`;
+};
+
 export const FONT_LINK = `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Lora:ital@0;1&display=swap" rel="stylesheet">`;
@@ -98,6 +228,36 @@ export const BASE_CSS = `:root{
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Poppins,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1120px;margin:0 auto;padding:28px 22px 64px}
+/* The product level band. Slim, above every page's own header, existing palette
+   only. Below 700px it keeps the wordmark and the count and hands the links to
+   a disclosure button, because five links and a count do not fit a phone
+   without either wrapping into a second band or shrinking past legibility. */
+.mast{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  padding:8px 0 16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+.mastmark{font-size:15px;font-weight:700;letter-spacing:-.01em;text-decoration:none;color:var(--ink);white-space:nowrap}
+.mastmark span{color:#a04d0c}
+.mastcount{font-size:12px;color:var(--dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+.mastfind{font-size:12px;font-weight:600;text-decoration:none;color:var(--ink);
+  border:1px solid var(--line2);border-radius:999px;padding:4px 11px;white-space:nowrap}
+.mastfind:hover{border-color:var(--ink)}
+.mastnav{display:flex;gap:16px;margin-left:auto;flex-wrap:wrap}
+.mastnav a{font-size:12px;font-weight:600;text-decoration:none;color:var(--dim);white-space:nowrap}
+.mastnav a:hover{color:var(--ink)}
+.mastnav a.on{color:var(--ink)}
+.mastgh{display:inline-flex;align-items:center;color:var(--dim)}
+.mastgh:hover{color:var(--ink)}
+.mastmenu{display:none;margin-left:auto;font-family:inherit;font-size:12px;font-weight:600;
+  color:var(--ink);background:var(--card);border:1px solid var(--line2);border-radius:999px;
+  padding:5px 13px;cursor:pointer}
+.mastdrop{display:none}
+@media(max-width:700px){
+  .mastnav,.mastfind{display:none}
+  .mastmenu{display:block}
+  .mastdrop:not([hidden]){display:flex;flex-direction:column;gap:2px;margin:-8px 0 18px;
+    padding:10px 0;border-bottom:1px solid var(--line)}
+  .mastdrop a{font-size:13px;font-weight:600;text-decoration:none;color:var(--ink);padding:7px 2px}
+}
+
 /* The header wraps rather than stacking. Separate row and column gaps do the
    work: items sitting together get 14px, and anything that wraps onto its own
    row clears 24px, which is the gap the title block has to keep from the
@@ -124,7 +284,7 @@ header{display:flex;align-items:center;column-gap:14px;row-gap:24px;padding-bott
 .switcher a.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .find{display:flex;align-items:center;gap:7px;margin-left:6px;position:relative}
 .find input{font-family:inherit;font-size:13px;color:var(--ink);background:var(--panel);
-  border:1px solid var(--line);border-radius:999px;padding:8px 15px;width:200px;outline:none}
+  border:1px solid var(--line);border-radius:999px;padding:8px 15px;width:200px}
 .find input:focus{border-color:var(--accent)}
 .find input::placeholder{color:var(--dim)}
 /* Typeahead. A listbox under the find input, same vocabulary as the board:
@@ -594,6 +754,43 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
   letter-spacing:.12em;text-transform:uppercase;color:var(--dim);background:var(--panel);
   border:1px dashed var(--line2);border-radius:999px;padding:5px 12px;opacity:.85;pointer-events:none}
 footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
+/* A lane's own count, in its header. Same numbers the lane body renders, so a
+   reader can see the size of the evidence before reading it. */
+/* The placeholder that replaces an image element with nothing in it. */
+.imgph{display:flex;flex-direction:column;justify-content:center;gap:8px;min-height:208px;
+  padding:24px;background:var(--card);border:1px dashed var(--line2);border-radius:12px}
+.imgphl{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.ldrafting{margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--dim)}
+.imgphn{margin:0;font-size:13.5px;color:var(--ink);line-height:1.55;max-width:52ch}
+
+.lanenums{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;margin-left:auto;margin-right:8px}
+.eyebrow .lanenums{margin-left:16px;margin-right:0}
+
+/* The stat band. Numbers as the design, each one a link to its own evidence. */
+.statband{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:0 0 24px}
+.sbcell{display:flex;flex-direction:column;gap:2px;padding:16px;text-decoration:none;color:inherit;
+  background:var(--panel);border:1.5px solid var(--line3);border-radius:12px;
+  transition:border-color 150ms ease-out}
+.sbcell:hover{border-color:var(--ink)}
+.sbnum{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.15;color:var(--ink)}
+.sblabel{font-size:12.5px;font-weight:600;color:var(--ink)}
+.sbnote{font-size:11.5px;color:var(--dim);line-height:1.45}
+@media(max-width:820px){.statband{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:380px){.statband{grid-template-columns:1fr}}
+
+/* Every number on the site lines up in a column. One rule, everywhere. */
+.sbnum,.scoren,.ridx,.stat .n,.wlidx,.big,.mastcount,.n,.wlstat b{font-variant-numeric:tabular-nums}
+
+.fcols{display:flex;gap:40px;flex-wrap:wrap;margin:0 0 24px}
+.fcol{display:flex;flex-direction:column;gap:8px;min-width:152px}
+.fh{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);margin-bottom:2px}
+.fcol a{font-size:12.5px;color:var(--dim);text-decoration:none}
+.fcol a:hover{color:var(--ink);text-decoration:underline}
+/* The honesty lines close the page. Never collapsed, never moved above the
+   columns, never smaller than the links they follow. */
+.fhonest{margin:0;font-size:12.5px;color:var(--dim);line-height:1.6}
+.fhonest a{color:var(--dim)}
 footer a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
 footer a:hover{color:var(--ink)}
 
@@ -609,7 +806,19 @@ footer a:hover{color:var(--ink)}
   .eyebrow::after{transform:scaleX(1);transition:none}
   .scoreg,.panel,.stat,.scorewrap,#overlay,.stack .lg img{transition:none}
   .panel:hover,.stat:hover,.scorewrap:hover{transform:none;box-shadow:none}
+  /* Everything added in the polish pass, and anything added after it. A
+     blanket rule rather than a list, so a transition introduced later is
+     covered without anybody remembering to come back here. */
+  *,*::before,*::after{animation-duration:0.001ms;animation-iteration-count:1;
+    transition-duration:0.001ms;scroll-behavior:auto}
 }
+
+/* One focus ring for the whole site, in the accent, on everything focusable.
+   Keyboard users get the same affordance on a footer link as on the primary
+   button, and no rule anywhere removes an outline without replacing it. */
+a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible,
+[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+.find input:focus-visible{outline-offset:1px}
 
 @media(max-width:860px){
   .cols,.stack{grid-template-columns:1fr}
@@ -651,19 +860,25 @@ export const PAGE = (c, og = {}) => {
   const grade = og.score?.grade;
   const verdict = og.cred?.verdict;
   const records = og.cred?.lanes?.find((l) => l.key === "records");
-  // Falls back to the plain product line when a corner has not been scored yet,
-  // rather than shipping a title with a hole in it.
-  const ogTitle = Number.isFinite(idx)
-    ? `${c.name} scores ${idx}/100 on StreetCred`
-    : `${c.name} on StreetCred`;
-  const ogDesc = [
-    records?.detail,
-    verdict,
-    "Evidence graded and traced, letter drafted.",
-  ]
+  // Title and description are built from this corner's own stored numbers, and
+  // the tab title and the share title are now the same string rather than two
+  // that drifted. Anything missing is left out rather than padded: a corner
+  // with no grade yet says so by omission.
+  const ogTitle = grade ? `${c.name} \u00b7 StreetCred grade ${grade}` : `${c.name} \u00b7 StreetCred`;
+  const bits = [];
+  if (Number.isFinite(idx)) bits.push(`Grade ${grade}, worse than ${idx}% of San Francisco intersections`);
+  if (records?.detail) bits.push(records.detail);
+  if (c.district) bits.push(`District ${c.district}`);
+  // The one sentence of evidence the Worker can state without a network call,
+  // built from the cred record it already read. Same numbers the stats lane
+  // will render, because cred was computed from them.
+  const serverThesis = [records?.detail, c.district ? `District ${c.district}` : null]
     .filter(Boolean)
     .join(". ")
     .replace(/\.\./g, ".");
+  const ogDesc = bits.length
+    ? `${c.name}, San Francisco. ${bits.join(". ")}.`.replace(/\.\./g, ".")
+    : `${c.name}, San Francisco, graded on the city's own crash and 311 records.`;
   // Absolute, because crawlers do not resolve relative og:url or og:image.
   const base = og.origin || "";
   const url = `${base}/c/${c.slug}`;
@@ -674,22 +889,12 @@ export const PAGE = (c, og = {}) => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>StreetCred, ${c.short}</title>
 <link rel="icon" href="/logo.svg">
-<link rel="canonical" href="${url}">
-<meta name="description" content="${esc(ogDesc)}">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="StreetCred">
-<meta property="og:title" content="${esc(ogTitle)}">
-<meta property="og:description" content="${esc(ogDesc)}">
-<meta property="og:url" content="${url}">
+${META({ title: ogTitle, description: ogDesc, url, card: "summary_large_image" })}
 <meta property="og:image" content="${img}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Street View photograph of ${esc(c.name)}">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${esc(ogTitle)}">
-<meta name="twitter:description" content="${esc(ogDesc)}">
+<meta property="og:image:alt" content="Share card for ${esc(c.name)}, showing its StreetCred grade">
 <meta name="twitter:image" content="${img}">
 ${FONT_LINK}
 <style>
@@ -698,10 +903,9 @@ ${BASE_CSS}
 </head>
 <body>
 <div class="wrap">
+${MASTHEAD({ scored: og.scored || 0, active: "" })}
 <header>
   <div class="hctl">
-    ${LOGO}
-    <div class="mark">Street<span>Cred</span></div>
     <nav class="switcher" aria-label="Choose a corner">
       ${Object.values(CORNERS)
         .map(
@@ -744,14 +948,29 @@ ${BASE_CSS}
 </header>
 <main>
 
-<p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
+<p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in ${
+  og.showsFix ? "a picture of the fix and a letter to the Supervisor" : "a letter to the Supervisor"
+}. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
 
-<section class="verdict" id="verdict" hidden aria-label="The verdict for this corner">
-  <span class="vg" id="vg" aria-hidden="true"></span>
+<!-- Rendered by the Worker, not waited for. An evidence product that shows its
+     evidence only to clients that run JavaScript is showing it to fewer readers
+     than it thinks: link preview bots, reader modes and anyone fetching the URL
+     see this. The numbers come from the same stored cred record the client lane
+     renders, so nothing flips when the client arrives. -->
+<section class="verdict" id="verdict"${og.score || og.cred ? "" : " hidden"} aria-label="The verdict for this corner">
+  <span class="vg${grade ? ` g${grade}` : ""}" id="vg" aria-hidden="true">${grade || ""}</span>
   <div class="vmain">
-    <p class="vline" id="vline"></p>
-    <p class="vthesis" id="vthesis"></p>
-    <p class="vcred" id="vcred"></p>
+    <p class="vline" id="vline">${
+      grade && Number.isFinite(idx) ? `${grade} \u00b7 worse than ${idx}% of San Francisco intersections` : ""
+    }</p>
+    <p class="vthesis" id="vthesis">${esc(serverThesis)}</p>
+    <p class="vcred" id="vcred">${
+      og.cred?.lanes
+        ? og.cred.lanes
+            .map((l) => `<i class="${l.hit ? "on" : l.pending ? "pending" : ""}" title="${esc(l.label)}"></i>`)
+            .join("") + `<span>${esc(og.cred.verdict || "")}</span>`
+        : ""
+    }</p>
   </div>
   <a class="vgo" id="vgo" href="#letterpanel">Get the letter</a>
 </section>
@@ -786,10 +1005,17 @@ ${BASE_CSS}
       <button data-state="fix" aria-pressed="false"${c.generated ? " disabled" : ""}>Proposed fix</button>
     </div>
 
-    <div class="hero single" id="hero">
-      <img id="base" alt="${c.name} today, from Street View">
-      <img id="overlay" alt="">
+    <div class="hero single" id="hero" hidden>
+      <img id="base" hidden alt="${esc(c.name)} today, photographed by Google Street View">
+      <img id="overlay" hidden alt="Annotated comparison view of ${esc(c.name)}">
       <div id="handle" role="separator" tabindex="0" aria-label="Comparison slider, arrow keys move it" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
+    </div>
+    <!-- Stands in for the photograph until one is loaded, and stays if none
+         arrives. A card that says what is missing and why beats an image
+         element with nothing in it. -->
+    <div class="imgph" id="imgph">
+      <span class="imgphl">The corner, three ways</span>
+      <p class="imgphn" id="imgphn">Loading the Street View photograph for this corner.</p>
     </div>
     <p class="cap" aria-live="polite"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
     <div class="impact" id="impact" hidden>
@@ -803,7 +1029,7 @@ ${BASE_CSS}
   </div>
 </div>
 
-<div class="eyebrow"><span>Official record</span></div>
+<div class="eyebrow"><span>Official record</span><span class="lanenums" id="recnums"></span></div>
 <div class="scorewrap" id="scorewrap" hidden>
   <div class="scorefig">
     <div class="scoren" id="scoren">0<small>/100</small></div>
@@ -847,7 +1073,7 @@ ${BASE_CSS}
 <div class="cols">
   <div>
     <div class="panel lane-press">
-      <div class="phs"><h2 id="newshead">Press coverage</h2><span class="tag" id="newstag">found live, cited</span></div>
+      <div class="phs"><h2 id="newshead">Press coverage</h2><span class="lanenums" id="newsnums"></span><span class="tag" id="newstag">found live, cited</span></div>
       <div class="pbody">
         <div class="tl" id="tl" hidden>
           <div class="tlhead"><span class="tlttl">Coverage by year</span><span class="tag tlfirst" id="tlfirst" hidden></span></div>
@@ -861,7 +1087,7 @@ ${BASE_CSS}
       </div>
     </div>
     <div class="panel lane-voices">
-      <div class="phs"><h2>Resident voices</h2><span class="tag" id="voicestag">scraped</span></div>
+      <div class="phs"><h2>Resident voices</h2><span class="lanenums" id="voicenums"></span><span class="tag" id="voicestag">scraped</span></div>
       <div class="pbody">
         <p class="funnel" id="voicefunnel" hidden></p>
         <div id="voices"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
@@ -878,7 +1104,11 @@ ${BASE_CSS}
           <div><div class="k">Funding route</div><div class="v" id="fixgrant">${c.fix.grant}</div></div>
         </div>
         <div class="draft">NOT SENT TO ANY OFFICIAL</div>
-        <div class="letter" id="letter"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+        <div class="letter" id="letter">${
+          og.letter?.text
+            ? esc(og.letter.text)
+            : '<p class="ldrafting">Drafting from the four sources</p><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div>'
+        }</div>
         <div class="lfoot"><button id="copy">Copy letter</button><button id="download" class="dl" type="button">Download as text</button><span class="tag" id="lettertag">drafted</span><span>by Gemini</span></div>
         <p class="vnote">Every figure in this letter is checked against the source records before it is shown. A draft that states something the records do not support is rejected and rewritten.</p>
       </div>
@@ -910,8 +1140,7 @@ ${BASE_CSS}
 </main>
 </main>
 ${og.preview ? '<div class="pvw">Preview</div>' : ''}
-<footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
-Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.<br><a href="/methodology">Methodology</a> &middot; <a href="/watchlist">Press watchlist</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
+${FOOTER()}
 </div>
 
 <script>
@@ -982,16 +1211,24 @@ document.querySelectorAll(".eyebrow").forEach(e => onFirstView(e, () => e.classL
 function render(){
   if(!IMG) return;
   const hero = el("hero");
+  const ph = el("imgph");
   // A corner with no Street View coverage is still a corner with collisions.
-  // Drop the stage, keep every records lane below it untouched.
+  // The stage becomes a card that says so, and every records lane below it is
+  // untouched. What never happens is an image element with no source in it.
   if(!IMG.today){
     hero.hidden = true;
+    if(ph){
+      ph.hidden = false;
+      el("imgphn").textContent = IMG.note || "Street View has no photograph of this corner.";
+    }
     document.querySelector(".toggle").hidden = true;
     el("capk").textContent = "No photograph";
     el("capv").textContent = IMG.note || "Street View has no imagery for this corner.";
     return;
   }
+  if(ph) ph.hidden = true;
   hero.hidden = false;
+  el("base").hidden = false;
   el("base").src = IMG.today;
   // Alt text from data, not boilerplate: the audit names what it marked.
   el("base").alt = "Street View of " + CORNER_GEO.name + " today";
@@ -1003,13 +1240,14 @@ function render(){
     ovImg.alt = "Automated hazard audit of " + CORNER_GEO.name + " " + marked;
   } else if(state === "fix"){
     ovImg.alt = "AI visualization of the proposed fix at " + CORNER_GEO.name + ". Not a photograph.";
-  } else { ovImg.alt = ""; }
-  if(state === "today" || !IMG[state]){ hero.classList.add("single"); }
+  } else { ovImg.alt = "Annotated comparison view of " + CORNER_GEO.name; }
+  if(state === "today" || !IMG[state]){ hero.classList.add("single"); el("overlay").hidden = true; }
   else {
     hero.classList.remove("single");
     // Crossfade rather than a hard swap, so switching states reads as the same
     // photograph being re-examined rather than as a different picture.
     const ov = el("overlay");
+    ov.hidden = false;
     if(ov.getAttribute("src") !== IMG[state]){
       if(!REDUCED) ov.style.opacity = "0";
       ov.onload = () => { ov.style.opacity = "1"; };
@@ -1318,6 +1556,15 @@ LANE_LOADERS.stats = () => fetch("/api/stats" + X).then(r => r.json()).then(d =>
       cap.hidden = true; cap.textContent = "";
     }
   }
+  // The same numbers the tiles below show, said once in the section header.
+  var rn = el("recnums");
+  if(rn){
+    var parts = [];
+    if(typeof d.crashes === "number") parts.push(d.crashes + (d.crashes === 1 ? " collision" : " collisions"));
+    if(d.fatal) parts.push(d.fatal + " fatal");
+    if(typeof d.reports311 === "number") parts.push(d.reports311 + (d.reports311 === 1 ? " street report" : " street reports"));
+    rn.textContent = parts.join(", ");
+  }
   onFirstView(el("stats"), () => {
     el("stats").querySelectorAll(".n").forEach(node => {
       const to = node.getAttribute("data-to");
@@ -1492,6 +1739,13 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
   // Worker at fetch time; a cached payload keeps the stamp of the fetch that
   // produced it, which is the honest reading of "retrieved".
   const got = d.fetchedAt ? new Date(d.fetchedAt).toISOString().slice(0,10) : null;
+  var nn = el("newsnums");
+  if(nn){
+    var kept = (d.items||[]).length;
+    nn.textContent = typeof d.found === "number"
+      ? kept + " cited from " + d.found + " found"
+      : kept + (kept === 1 ? " citation" : " citations");
+  }
   el("news").innerHTML = (d.items||[]).map(x =>
     '<a href="' + esc(x.url) + '" target="_blank" rel="noopener"' +
     (got ? ' title="Retrieved by StreetCred on ' + got + '"' : '') + '><div class="t">' + esc(x.title) +
@@ -1790,6 +2044,8 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
       '<p class="empty">Accounts were scraped here, but none of the rendered quotes describe the street itself, so none are shown as evidence.</p>';
     return;
   }
+  var vn = el("voicenums");
+  if(vn && typeof d.candidates === "number") vn.textContent = items.length + " kept from " + d.candidates + " read";
   mark("voicestag", d.source);
   el("voices").innerHTML = items.map(v =>
     '<div class="voice"><p>&ldquo;' + esc(v.text) + '&rdquo;</p><div class="m">' +
