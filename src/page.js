@@ -56,6 +56,26 @@ export const META = ({ title, description, url, card = "summary" }) => {
 <meta name="twitter:description" content="${e(description)}">`;
 };
 
+// Four numbers under the masthead on the root, each one a link to the surface
+// that proves it. Nothing here is computed in the template: every value is
+// passed in from what the site already stores, so a number on this band and
+// the number on the page it links to cannot disagree.
+export const STATBAND = ({ scored = 0, audited = 0, headlines = 0, spendUsd = null } = {}) => {
+  const n = (v) => Number(v).toLocaleString("en-US");
+  const cell = (href, value, label, note) =>
+    `<a class="sbcell" href="${href}"><span class="sbnum">${value}</span><span class="sblabel">${label}</span><span class="sbnote">${note}</span></a>`;
+  return `<div class="statband">
+  ${cell("/methodology", n(scored), "intersections graded", "from the city's own records")}
+  ${cell("/", n(audited), "fully audited", "every evidence lane checked")}
+  ${cell("/watchlist", n(headlines), "press citations found", "across the coverage timelines")}
+  ${
+    spendUsd === null
+      ? cell("/status", "0", "letters sent to officials", "this is a drafting tool")
+      : cell("/status", `$${Number(spendUsd).toFixed(2)}`, "spent running itself", "published per run, unattended")
+  }
+</div>`;
+};
+
 // The footer, one component for every route.
 //
 // Three columns of orientation, then the honesty lines, which close the page
@@ -734,6 +754,26 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
   letter-spacing:.12em;text-transform:uppercase;color:var(--dim);background:var(--panel);
   border:1px dashed var(--line2);border-radius:999px;padding:5px 12px;opacity:.85;pointer-events:none}
 footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
+/* A lane's own count, in its header. Same numbers the lane body renders, so a
+   reader can see the size of the evidence before reading it. */
+.lanenums{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;margin-left:auto;margin-right:10px}
+.eyebrow .lanenums{margin-left:12px;margin-right:0}
+
+/* The stat band. Numbers as the design, each one a link to its own evidence. */
+.statband{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 26px}
+.sbcell{display:flex;flex-direction:column;gap:2px;padding:14px 16px;text-decoration:none;color:inherit;
+  background:var(--panel);border:1.5px solid var(--line3);border-radius:12px;
+  transition:border-color 150ms ease-out}
+.sbcell:hover{border-color:var(--ink)}
+.sbnum{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.15;color:var(--ink)}
+.sblabel{font-size:12.5px;font-weight:600;color:var(--ink)}
+.sbnote{font-size:11.5px;color:var(--dim);line-height:1.45}
+@media(max-width:820px){.statband{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:380px){.statband{grid-template-columns:1fr}}
+
+/* Every number on the site lines up in a column. One rule, everywhere. */
+.sbnum,.scoren,.ridx,.stat .n,.wlidx,.big,.mastcount,.n,.wlstat b{font-variant-numeric:tabular-nums}
+
 .fcols{display:flex;gap:40px;flex-wrap:wrap;margin:0 0 22px}
 .fcol{display:flex;flex-direction:column;gap:6px;min-width:150px}
 .fh{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);margin-bottom:2px}
@@ -940,7 +980,7 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
   </div>
 </div>
 
-<div class="eyebrow"><span>Official record</span></div>
+<div class="eyebrow"><span>Official record</span><span class="lanenums" id="recnums"></span></div>
 <div class="scorewrap" id="scorewrap" hidden>
   <div class="scorefig">
     <div class="scoren" id="scoren">0<small>/100</small></div>
@@ -984,7 +1024,7 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
 <div class="cols">
   <div>
     <div class="panel lane-press">
-      <div class="phs"><h2 id="newshead">Press coverage</h2><span class="tag" id="newstag">found live, cited</span></div>
+      <div class="phs"><h2 id="newshead">Press coverage</h2><span class="lanenums" id="newsnums"></span><span class="tag" id="newstag">found live, cited</span></div>
       <div class="pbody">
         <div class="tl" id="tl" hidden>
           <div class="tlhead"><span class="tlttl">Coverage by year</span><span class="tag tlfirst" id="tlfirst" hidden></span></div>
@@ -998,7 +1038,7 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
       </div>
     </div>
     <div class="panel lane-voices">
-      <div class="phs"><h2>Resident voices</h2><span class="tag" id="voicestag">scraped</span></div>
+      <div class="phs"><h2>Resident voices</h2><span class="lanenums" id="voicenums"></span><span class="tag" id="voicestag">scraped</span></div>
       <div class="pbody">
         <p class="funnel" id="voicefunnel" hidden></p>
         <div id="voices"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
@@ -1454,6 +1494,15 @@ LANE_LOADERS.stats = () => fetch("/api/stats" + X).then(r => r.json()).then(d =>
       cap.hidden = true; cap.textContent = "";
     }
   }
+  // The same numbers the tiles below show, said once in the section header.
+  var rn = el("recnums");
+  if(rn){
+    var parts = [];
+    if(typeof d.crashes === "number") parts.push(d.crashes + (d.crashes === 1 ? " collision" : " collisions"));
+    if(d.fatal) parts.push(d.fatal + " fatal");
+    if(typeof d.reports311 === "number") parts.push(d.reports311 + (d.reports311 === 1 ? " street report" : " street reports"));
+    rn.textContent = parts.join(", ");
+  }
   onFirstView(el("stats"), () => {
     el("stats").querySelectorAll(".n").forEach(node => {
       const to = node.getAttribute("data-to");
@@ -1628,6 +1677,13 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
   // Worker at fetch time; a cached payload keeps the stamp of the fetch that
   // produced it, which is the honest reading of "retrieved".
   const got = d.fetchedAt ? new Date(d.fetchedAt).toISOString().slice(0,10) : null;
+  var nn = el("newsnums");
+  if(nn){
+    var kept = (d.items||[]).length;
+    nn.textContent = typeof d.found === "number"
+      ? kept + " cited from " + d.found + " found"
+      : kept + (kept === 1 ? " citation" : " citations");
+  }
   el("news").innerHTML = (d.items||[]).map(x =>
     '<a href="' + esc(x.url) + '" target="_blank" rel="noopener"' +
     (got ? ' title="Retrieved by StreetCred on ' + got + '"' : '') + '><div class="t">' + esc(x.title) +
@@ -1926,6 +1982,8 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
       '<p class="empty">Accounts were scraped here, but none of the rendered quotes describe the street itself, so none are shown as evidence.</p>';
     return;
   }
+  var vn = el("voicenums");
+  if(vn && typeof d.candidates === "number") vn.textContent = items.length + " kept from " + d.candidates + " read";
   mark("voicestag", d.source);
   el("voices").innerHTML = items.map(v =>
     '<div class="voice"><p>&ldquo;' + esc(v.text) + '&rdquo;</p><div class="m">' +

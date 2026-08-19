@@ -6,7 +6,7 @@
 // corner's page. Getting that math right is what buys a clickable map for the
 // cost of a single image request.
 
-import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER, STATBAND } from "./page.js";
 import { TIER_LABEL, TIER_NOTE } from "./city.js";
 
 const MAP_W = 640;
@@ -100,7 +100,7 @@ function severityLine(c) {
   return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
 
-export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null) => {
+export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null, press = null, spendUsd = null) => {
   // A corner without finite geometry poisons every pin: fitView produces a NaN
   // center and every overlay lands at left:NaN%. One bad row on the board must
   // cost that row its pin, not the whole map its anchors. It happened: a board
@@ -263,6 +263,7 @@ ${BASE_CSS}
 <body>
 <div class="wrap">
 ${MASTHEAD({ scored, active: "" })}
+${STATBAND({ scored, audited: auditedCount, headlines: press?.headlines || 0, spendUsd })}
 <header>
   <div class="corner"><b>San Francisco</b><span class="csub">${scored ? `${n(scored)} corners graded` : `${ranked.length} corners audited`}</span></div>
 </header>

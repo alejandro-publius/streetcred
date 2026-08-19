@@ -1671,7 +1671,7 @@ export default {
         if (legacy) {
           return Response.redirect(`${origin}/c/${canonicalSlug(legacy)}`, 301);
         }
-        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist, voicesSummary] = await Promise.all([
+        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist, voicesSummary, pressSummary, actorCosts] = await Promise.all([
           getHinList(env),
           getCotdLog(env).catch(() => []),
           // Read only. The homepage must never wait on a findSimilar call, so
@@ -1684,6 +1684,8 @@ export default {
           getQueue(env).catch(() => null),
           getWatchlist(env, WATCHLIST_VERSION).catch(() => null),
           getVoicesSummary(env).catch(() => null),
+          env.STORE?.get("press:summary", "json").catch(() => null) ?? null,
+          getActorCosts(env).catch(() => []),
         ]);
         const city = meta
           ? {
@@ -1692,7 +1694,12 @@ export default {
               queueLength: Array.isArray(queue) ? queue.length : 0,
             }
           : null;
-        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary), {
+        // The spend the band shows is the provider's own figure when one has
+        // been reconciled, and our ledger only as a fallback. They disagreed
+        // once and the invoice is what settles.
+        const invoice = await (env.STORE?.get("apify:invoice", "json").catch(() => null) ?? null);
+        const spendUsd = invoice?.cycleUsd ?? actorCosts.reduce((n2, c2) => n2 + (Number(c2.costUsd) || 0), 0);
+        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressSummary, spendUsd), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }

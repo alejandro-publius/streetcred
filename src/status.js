@@ -28,6 +28,18 @@ export const STATUS = (synth = [], incidents = [], changes = [], origin = "", sp
   const uptime = week.length ? Math.round((1000 * week.filter((r) => r.ok).length) / week.length) / 10 : null;
   const latest = runs[0] || null;
 
+  // The number is never edited, only explained. A run that returned the same
+  // failing status on every endpoint in a few milliseconds did not find a
+  // broken site: it found no site at all, which is what a deploy window looks
+  // like from outside. That is worth saying next to the number, and the run
+  // still counts against it.
+  const failed = week.filter((r) => !r.ok);
+  const looksLikeDeploy = (r) => {
+    const rs = r.results || [];
+    return rs.length > 1 && rs.every((x) => !x.ok && x.status === rs[0].status && x.ms < 100);
+  };
+  const day = (ts) => String(ts || "").slice(0, 10);
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -84,6 +96,25 @@ ${
        <p class="note">The monitor runs at 7 minutes past each hour. This page fills itself in.</p>`
     : `<div class="big ${uptime >= 99 ? "ok" : "bad"}">${uptime}%</div>
        <p class="note">${week.length} runs in the last 7 days, ${week.filter((r) => !r.ok).length} with at least one failing check.</p>
+       ${
+         failed.length
+           ? `<p class="note">Every failing run is counted and none is trimmed, so here is what they were.
+${failed
+  .map((r) =>
+    looksLikeDeploy(r)
+      ? `The run on ${esc(day(r.ts))} returned ${r.results[0].status} on all ${r.results.length} endpoints in under
+         ${Math.max(...r.results.map((x) => x.ms))}ms, and a passing run followed. Nothing answered at all for that
+         moment, which is the shape of a deploy window rather than a broken site. It still counts against the number
+         above.`
+      : `The run on ${esc(day(r.ts))} had ${r.results.filter((x) => !x.ok).length} failing check(s).`,
+  )
+  .join(" ")}
+Separately, on 2026-08-18 the letter endpoint was taking up to 43 seconds whenever the model had no daily
+allowance left, because a spent quota was being retried like a temporary one. That never failed a check, it
+only made one slow, and it was fixed the same day: the letter route now answers in about 200ms while the
+model is unavailable.</p>`
+           : ""
+       }
        <div class="hist">${week
          .slice(0, 84)
          .reverse()

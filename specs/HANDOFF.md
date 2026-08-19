@@ -380,6 +380,15 @@ reads pages and never touches the imagery lane.
   downgrade, so no og:image was added anywhere and the existing ones stay. The
   five trust surfaces have none.
 
+- **The press lane is serving its sample payload on 16th and Mission.**
+  `/api/news` returns `source: "sample"`, which the page tags visibly, so
+  nothing false is shown. The health probe's own Exa search still passes, so
+  this is not a dead key; the likeliest cause is that the live search returned
+  nothing that cleared the corner filter on that run. Diagnosing it further
+  means spending Exa searches, which the polish pass forbids, and fixing it is
+  an API change rather than a visual one. Worth a look before judging: it is
+  the flagship corner's press panel.
+
 ## Open items for the human
 
 Unchanged from the morning report, minus nothing:
