@@ -1048,12 +1048,10 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 .hcwhen{margin:4px 0 12px;font-size:11.5px;color:var(--dim);line-height:1.5}
 /* The stage is the shared slider at embed size. It owns its height from the
    ratio, so nothing reflows when the bytes land, and both frames load eagerly
-   because both panes have to be there before anyone drags anything. The knob
-   shrinks a little: 38px is right over a 900px frame and heavy over a 360px
-   one. */
+   because both panes have to be there before anyone drags anything. Only the
+   corner radius is local: the handle keeps the corner page's dimensions, so
+   the thing a visitor drags here is the thing they will drag there. */
 .herocorner .hero{border-radius:9px}
-.herocorner .shdl::after{width:30px;height:30px}
-.herocorner .shdl::before{font-size:15px}
 .hctoggle{display:flex;gap:6px;margin:8px 0 0;flex-wrap:wrap}
 .hctoggle button{font-family:inherit;font-size:11.5px;font-weight:600;color:var(--dim);background:var(--card);
   border:1px solid var(--line);border-radius:999px;padding:5px 12px;cursor:pointer}
