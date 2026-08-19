@@ -1024,7 +1024,12 @@ async function health(env, origin, opts = {}) {
     }),
   ]);
   const out = Object.fromEntries(results);
-  const seen = probe || (await getExaProbe(env).catch(() => null));
+  // Only this run's probe describes this run. Falling back to the last stored
+  // one printed a price and a plan tier directly beside "http 401", which
+  // reads as though the failed call had produced them. A stale reading is
+  // reported as stale, with the date it was taken, or not at all.
+  const stored = probe ? null : await getExaProbe(env).catch(() => null);
+  const seen = probe;
   return {
     // A probe that was deliberately not run is not a failing probe. It is also
     // not a passing one, so it is named rather than folded into either.
@@ -1039,6 +1044,7 @@ async function health(env, origin, opts = {}) {
     // nobody had confirmed.
     exaUnitUsd: seen?.unitUsd ?? null,
     exaPlan: seen?.plan ?? null,
+    lastGoodProbe: stored ? { unitUsd: stored.unitUsd, plan: stored.plan, at: stored.at } : null,
     exaAccountVerified: Boolean((await exaBudget(env).catch(() => null))?.accountVerified),
   };
 }
