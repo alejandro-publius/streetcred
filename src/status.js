@@ -156,7 +156,8 @@ ${
   scan
     ? `<div class="tape${scan.live ? " live" : ""}">
 <div class="scancard">
-  <div class="phs"><h2>Press scan${scan.live ? ", running now" : ""}</h2></div>
+  <div class="phs"><h2>Press scan${scan.live ? ", running now" : ""}</h2>
+    <span class="tag src"><img src="/logos/exa.svg" alt="" width="35" height="11" loading="lazy">Press via Exa</span></div>
   <div class="srow"><span class="ep">Corners checked</span>
     <span class="ms">${(scan.done || 0).toLocaleString("en-US")} over ${(scan.chunks || 0).toLocaleString("en-US")} chunk${scan.chunks === 1 ? "" : "s"}</span></div>
   <div class="srow"><span class="ep">Coverage found</span>

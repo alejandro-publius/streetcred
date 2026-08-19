@@ -883,6 +883,16 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
    audit pending). Live tags are solid, degraded tags are provisional at a
    glance, and no tag is ever the only thing carrying the information: the
    text inside it says the same thing the style does. */
+/* Source badge. Same box as the imagery card's tag, with the provider's mark
+   set into it: the imagery card names Street View and Gemini, so the press
+   card should name what finds the press. Attribution, not a plug, so it is a
+   badge and not a link. The mark is capped to the cap height of the label
+   beside it so the two read as one object rather than a logo with text after
+   it. */
+.tag.src{display:inline-flex;align-items:center;gap:6px;
+  background:rgba(106,155,204,.14);color:#3d6690}
+.tag.src img{height:11px;width:auto;display:block;opacity:.85}
+
 .tag{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;
   border-radius:5px;background:rgba(106,155,204,.14);color:#3d6690;border:1px solid transparent}
 .tag.lane-voices{background:rgba(111,107,97,.12);color:var(--dim)}
@@ -1411,7 +1421,8 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
   <div>
     <div class="tape" id="presstape">
     <div class="panel lane-press">
-      <div class="phs"><h2 id="newshead">Press coverage</h2><span class="lanenums" id="newsnums"></span><span class="tag" id="newstag">found live, cited</span></div>
+      <div class="phs"><h2 id="newshead">Press coverage</h2><span class="lanenums" id="newsnums"></span><span class="tag" id="newstag">found live, cited</span>
+      <span class="tag src"><img src="/logos/exa.svg" alt="" width="35" height="11" loading="lazy">Press via Exa</span></div>
       <div class="pbody">
         <div class="tl" id="tl" hidden>
           <div class="tlhead"><span class="tlttl">Coverage by year</span><span class="tag tlfirst" id="tlfirst" hidden></span></div>
