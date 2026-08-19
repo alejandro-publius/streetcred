@@ -340,6 +340,11 @@ verified on a preview Worker before main was touched.
 **Production deployment live before the pass:**
 `f75ce774-e045-4aba-9d2d-6969b2c9e878`, deployed 2026-08-19T00:08:50Z.
 
+**Production deployment after the pass:**
+`3d08e64b-f08b-432e-bb2b-d0c6ab9a9a92`, deployed 2026-08-19T03:3x UTC. The full
+route matrix was re-run against the live URL after cutover and every cell was
+green, identical to preview.
+
 **Path A, instant:**
 
 ```
