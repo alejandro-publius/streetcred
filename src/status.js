@@ -149,11 +149,21 @@ ${(latest.results || [])
 <p class="note">The morning run commissions two Apify actor runs per corner and 29 Exa searches for
 the citywide watchlist, unattended, against real credit. Both ledgers are written from the numbers the
 providers themselves report, because an autonomous system spending money without a ledger is the thing
-nobody should ship.</p>
+nobody should ship. The Exa figure is metered in cents: spend is reserved before a call at 0.7 cents a
+search and 0.1 cents a page of contents, then reconciled against the price the provider returns, and
+the cap is enforced on whichever of the two is higher.</p>
 ${
   spend
-    ? `<div class="srow"><span class="ep">Exa searches, batch lanes</span>
-  <span class="ms">${spend.exa.calls} of ${spend.exa.cap} &middot; $${spend.exa.spendUsd.toFixed(3)}</span></div>
+    ? `<div class="srow"><span class="ep">Exa press budget, ${esc(spend.exa.period)}, ${esc(spend.exa.account)} account${
+        spend.exa.exhausted ? ", budget reached" : ""
+      }</span>
+  <span class="ms">$${spend.exa.spentUsd.toFixed(4)} of $${spend.exa.capUsd.toFixed(2)} &middot; ${
+    spend.exa.searches
+  } searches, ${spend.exa.contentPages} pages of contents${
+    spend.exa.deferrals ? `, ${spend.exa.deferrals} deferred at the cap` : ""
+  }</span></div>
+<div class="srow"><span class="ep">Exa spend all time on this account, what the balance is drawn against</span>
+  <span class="ms">$${spend.exa.allTimeUsd.toFixed(4)} &middot; $${spend.exa.priorSpendUsd.toFixed(3)} of it before this counter</span></div>
 <div class="srow"><span class="ep">Apify actor runs, ${esc(spend.apify.month)}</span>
   <span class="ms">${spend.apify.used} of ${spend.apify.cap} &middot; $${spend.apifyUsd.toFixed(3)} ledger</span></div>
 ${

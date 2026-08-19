@@ -471,34 +471,122 @@ export async function setLetterBackoff(env, reason, ttlSec = 3600) {
 //
 // Cumulative, not daily, and it counts from the moment this counter was
 // introduced rather than pretending to know what earlier runs spent.
-export const EXA_CALL_BUDGET = 1500;
+// The meter is denominated in cents, because the thing that runs out is a
+// balance and not a call count. A search and a page of contents cost different
+// amounts, so counting calls priced them the same and was wrong in both
+// directions at once.
+//
+// Two figures are kept and both are needed. Reserved cents are the estimate,
+// added before a call, because a fan-out that checks its budget one call at a
+// time has already overspent by the time it notices. Spent cents are the
+// measurement, added after, from the costDollars every Exa response carries.
+// The cap is checked against the greater of the two, so an estimate running
+// ahead of the measurement can only make the meter more cautious.
+//
+// Per call estimates: a search is 0.7 cents and a page of contents is 0.1
+// cents. The search figure is not a guess. tools/exa_probe.mjs measured this
+// account at exactly $0.007 a search.
+export const EXA_CAP_CENTS = 6500;
+export const EXA_PERIOD = "2026-08";
+export const EXA_SEARCH_CENTS = 0.7;
+export const EXA_CONTENTS_CENTS = 0.1;
+export const EXA_ACCOUNT = "schroeder";
+
+// What this account had already spent when the meter was retuned, from the old
+// call counter. Not erased and not folded into the pass counter: the
+// dashboard's remaining balance is the prior spend plus this counter, and
+// saying so is the only way the two figures can ever be reconciled.
+export const EXA_PRIOR_SPEND_USD = 1.269;
+export const EXA_PRIOR_CALLS = 783;
+
+const round2 = (n) => Math.round(n * 100) / 100;
+const round4 = (n) => Math.round(n * 10000) / 10000;
+
+const exaZero = () => ({
+  period: EXA_PERIOD,
+  account: EXA_ACCOUNT,
+  capCents: EXA_CAP_CENTS,
+  spentCents: 0,
+  reservedCents: 0,
+  searches: 0,
+  contentPages: 0,
+  deferrals: 0,
+  priorSpendUsd: EXA_PRIOR_SPEND_USD,
+  priorCalls: EXA_PRIOR_CALLS,
+  updated: null,
+});
+
+async function readExaMeter(env) {
+  const raw = await rawGet(env, "budget:exa");
+  if (!raw) return exaZero();
+  try {
+    const m = { ...exaZero(), ...JSON.parse(raw) };
+    // A new period starts a new counter rather than inheriting the last one,
+    // and a stored cap never outranks the deployed one.
+    if (m.period !== EXA_PERIOD) return exaZero();
+    m.capCents = EXA_CAP_CENTS;
+    return m;
+  } catch {
+    return exaZero();
+  }
+}
+
+async function writeExaMeter(env, m) {
+  m.updated = new Date().toISOString();
+  await rawPut(env, "budget:exa", JSON.stringify(m));
+  return m;
+}
 
 export async function exaBudget(env) {
-  const calls = parseInt((await rawGet(env, "exa:calls")) || "0", 10) || 0;
-  const spend = parseFloat((await rawGet(env, "exa:spend")) || "0") || 0;
+  const m = await readExaMeter(env);
+  const usedCents = round2(Math.max(m.spentCents, m.reservedCents));
   return {
-    calls,
-    cap: EXA_CALL_BUDGET,
-    remaining: Math.max(0, EXA_CALL_BUDGET - calls),
-    spendUsd: Math.round(spend * 10000) / 10000,
+    ...m,
+    spentCents: round2(m.spentCents),
+    reservedCents: round2(m.reservedCents),
+    usedCents,
+    remainingCents: round2(Math.max(0, m.capCents - usedCents)),
+    spentUsd: round4(m.spentCents / 100),
+    capUsd: m.capCents / 100,
+    exhausted: usedCents >= m.capCents,
+    // What the provider's own dashboard should be showing against the balance.
+    allTimeUsd: round4(m.priorSpendUsd + m.spentCents / 100),
   };
 }
 
-// Reserved in bulk, before the batch runs, because a fan-out that checks its
-// budget one call at a time has already overspent by the time it notices.
-export async function reserveExa(env, n) {
-  const used = parseInt((await rawGet(env, "exa:calls")) || "0", 10) || 0;
-  if (used + n > EXA_CALL_BUDGET) return false;
-  await rawPut(env, "exa:calls", String(used + n));
+// Reserved before the batch runs. Returns false at the cap and records the
+// refusal, so a deferred batch is visible as a deferral rather than as
+// silence.
+export async function reserveExa(env, searches, contentPages = 0) {
+  const n = Math.max(0, Number(searches) || 0);
+  const pages = Math.max(0, Number(contentPages) || 0);
+  const cost = n * EXA_SEARCH_CENTS + pages * EXA_CONTENTS_CENTS;
+  const m = await readExaMeter(env);
+  const used = Math.max(m.spentCents, m.reservedCents);
+  if (used + cost > m.capCents) {
+    m.deferrals += 1;
+    await writeExaMeter(env, m);
+    return false;
+  }
+  m.reservedCents = round2(m.reservedCents + cost);
+  m.searches += n;
+  m.contentPages += pages;
+  await writeExaMeter(env, m);
   return true;
 }
 
 // Exa returns costDollars on every response, so the spend on this feature is a
-// measured number rather than an estimate.
+// measured number rather than an estimate. Recorded in two places on purpose:
+// the all-time figure, which is what the provider's balance is drawn against,
+// and this period's counter, which is what the cap is enforced on.
 export async function recordExaSpend(env, usd) {
-  if (!Number.isFinite(usd) || usd <= 0) return;
+  const n = Number(usd);
+  if (!Number.isFinite(n) || n <= 0) return;
   const spend = parseFloat((await rawGet(env, "exa:spend")) || "0") || 0;
-  await rawPut(env, "exa:spend", String(Math.round((spend + usd) * 1e6) / 1e6));
+  await rawPut(env, "exa:spend", String(Math.round((spend + n) * 1e6) / 1e6));
+  const m = await readExaMeter(env);
+  m.spentCents = round2(m.spentCents + n * 100);
+  await writeExaMeter(env, m);
 }
 
 // Which Exa account the deployed key belongs to.

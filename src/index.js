@@ -470,6 +470,10 @@ async function getNews(c, env) {
   if (r.status === 402) throw new Error("exa 402 credits");
   if (!r.ok) throw new Error(`exa ${r.status}`);
   const d = await r.json();
+  // Metered even though this lane is not reserved: the per-page press lane is
+  // bounded by traffic and the edge cache rather than by the budget, but it
+  // spends the same balance, and a counter that ignores it is not the truth.
+  await recordExaSpend(env, Number(d?.costDollars?.total)).catch(() => {});
   const tokens = streetTokens(c);
   const scored = classify(d.results, tokens);
 

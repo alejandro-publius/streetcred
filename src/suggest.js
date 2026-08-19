@@ -13,6 +13,7 @@
 import { locate, parseQuery, inSF } from "./resolve.js";
 import { DENY, domainOf } from "./newsfilter.js";
 import { candidatesFrom } from "./press.js";
+import { recordExaSpend } from "./store.js";
 
 export const SUGGEST_VERSION = "v1";
 
@@ -37,6 +38,7 @@ export async function buildSuggestion(seed, env, warmedSlugs) {
   });
   if (!r.ok) throw new Error(`exa findSimilar ${r.status}`);
   const d = await r.json();
+  await recordExaSpend(env, Number(d?.costDollars?.total)).catch(() => {});
 
   const results = (d.results || []).filter((x) => x?.title && !DENY.test(x.url || ""));
   const seen = new Set();

@@ -14,6 +14,7 @@
 
 import { classify, streetTokens, domainOf, searchQuery } from "./newsfilter.js";
 import { soql } from "./resolve.js";
+import { recordExaSpend } from "./store.js";
 
 // Deliberately still v1. The earliest-collision comparison below is additive:
 // a stored timeline without it reads fine and can be backfilled with one free
@@ -57,6 +58,7 @@ async function yearSearch(c, env, year, tokens) {
   });
   if (!r.ok) throw new Error(`exa ${r.status}`);
   const d = await r.json();
+  await recordExaSpend(env, Number(d?.costDollars?.total)).catch(() => {});
   const scored = classify(d.results, tokens);
   // The same bar the panel uses: corner level if it exists, corridor level
   // otherwise. A year is only counted from results that would have been shown.

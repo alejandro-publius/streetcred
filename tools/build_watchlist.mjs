@@ -28,7 +28,7 @@ const log = (m) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}
 const env = kvEnv(ROOT, { EXA_API_KEY: devVar(ROOT, "EXA_API_KEY") });
 
 const before = await exaBudget(env);
-log(`exa budget: ${before.calls} of ${before.cap} calls spent, $${before.spendUsd} recorded`);
+log(`exa budget: ${before.searches} searches, $${before.spentUsd} of $${before.capUsd} this period`);
 
 const meta = await env.STORE.get("city:meta", "json");
 const skip = new Set(meta?.audited || []);
@@ -52,7 +52,7 @@ for (const [reason, names] of [...byReason.entries()].sort((a, b) => b[1].length
 }
 
 const after = await exaBudget(env);
-log(`exa budget after: ${after.calls} of ${after.cap} calls, $${after.spendUsd} recorded`);
+log(`exa budget after: ${after.searches} searches, $${after.spentUsd} of $${after.capUsd} this period`);
 
 if (DRY) {
   log("dry run, press:watchlist not written");

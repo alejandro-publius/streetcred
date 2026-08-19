@@ -39,7 +39,7 @@ if (LIMIT) audited = audited.slice(0, LIMIT);
 log(`${audited.length} audited corners to connect`);
 
 const before = await exaBudget(env);
-log(`exa budget: ${before.calls} of ${before.cap} calls, $${before.spendUsd} recorded`);
+log(`exa budget: ${before.searches} searches, $${before.spentUsd} of $${before.capUsd} this period`);
 
 let linked = 0;
 let empty = 0;
@@ -111,5 +111,5 @@ for (const slug of audited) {
 
 const after = await exaBudget(env);
 log(`${linked} corners connected, ${empty} found nothing, ${skipped} had no seed`);
-log(`exa budget after: ${after.calls} of ${after.cap} calls, $${after.spendUsd} recorded`);
+log(`exa budget after: ${after.searches} searches, $${after.spentUsd} of $${after.capUsd} this period`);
 if (DRY) log("dry run, nothing written");

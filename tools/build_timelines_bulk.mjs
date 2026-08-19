@@ -36,7 +36,7 @@ const log = (m) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}
 const env = kvEnv(ROOT, { EXA_API_KEY: devVar(ROOT, "EXA_API_KEY") });
 const meta = await env.STORE.get("city:meta", "json");
 const before = await exaBudget(env);
-log(`exa budget: ${before.calls} of ${before.cap} calls, $${before.spendUsd} recorded`);
+log(`exa budget: ${before.searches} searches, $${before.spentUsd} of $${before.capUsd} this period`);
 
 // Warmed corners worst first, then anything the watchlist is pointing at.
 const ranked = [];
@@ -145,5 +145,5 @@ const after = await exaBudget(env);
 log("");
 log(`${built} strips built (${calls} searches), ${backfilled} backfilled free, ${skipped} already complete, ${failed} failed`);
 log(`${sawFirst + hadFlag} corners where the earliest coverage predates the earliest recorded collision`);
-log(`exa budget after: ${after.calls} of ${after.cap} calls, $${after.spendUsd} recorded`);
+log(`exa budget after: ${after.searches} searches, $${after.spentUsd} of $${after.capUsd} this period`);
 if (DRY) log("dry run, nothing written");
