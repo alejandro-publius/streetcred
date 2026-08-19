@@ -104,20 +104,103 @@ export const evidenceLine = (cred, district) => {
 // Assembled entirely from KV by the caller. No provider call happens here or
 // anywhere downstream of here: the frames are stored bytes served by /gen, the
 // grade and the evidence line come from records the audit already wrote.
+// The comparison slider, markup half.
+//
+// Ids are passed in rather than baked in, because the corner page's script
+// addresses its own elements by name and predates this extraction. Both mounts
+// get the same element order, the same classes and the same handle semantics,
+// so the CSS above and the behavior below apply to either without a branch.
+export const SLIDER = ({
+  root,
+  base,
+  ov,
+  hdl,
+  // A mount that can never compare gets no second pane and no handle at all.
+  // The corner page always can, once its imagery lane answers; the homepage
+  // hero knows at render time whether the corner has a second frame, and a
+  // corner that has only its photograph must not carry an empty image element
+  // and a hidden handle around as evidence of a slider that is not there.
+  compare = true,
+  single = false,
+  hidden = false,
+  imgHidden = false,
+  baseSrc = "",
+  baseAlt = "",
+  ovSrc = "",
+  ovAlt = "",
+  w = 640,
+  h = 400,
+  priority = false,
+} = {}) => {
+  const img = (id, cls, src, alt) =>
+    `<img class="${cls}" id="${id}"${imgHidden ? " hidden" : ""}${src ? ` src="${src}"` : ""}` +
+    ` width="${w}" height="${h}" alt="${alt}"${priority ? ' fetchpriority="high"' : ""}>`;
+  return `<div class="hero${single ? " single" : ""}" id="${root}"${hidden ? " hidden" : ""}>
+      ${img(base, "sbase", baseSrc, baseAlt)}${
+        compare
+          ? `
+      ${img(ov, "sov", ovSrc, ovAlt)}
+      <div class="shdl" id="${hdl}" role="separator" tabindex="0" aria-label="Comparison slider, arrow keys move it" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>`
+          : ""
+      }
+    </div>`;
+};
+
+// The comparison slider, behavior half. Inlined into whichever script mounts
+// it, so there is exactly one implementation of the drag in the codebase.
+// Pointer drag, touch drag and arrow keys all end in the same setter, which is
+// the only reason the three input paths cannot drift apart.
+export const SLIDER_JS = `
+function mountSlider(root, ov, hdl, onSplit){
+  if(!root || !ov || !hdl) return null;
+  var split = 50, drag = false;
+  function set(pct){
+    split = Math.max(0, Math.min(100, pct));
+    ov.style.clipPath = "inset(0 0 0 " + split + "%)";
+    hdl.style.left = split + "%";
+    hdl.setAttribute("aria-valuenow", String(Math.round(split)));
+    if(onSplit) onSplit(split);
+  }
+  function move(e){
+    if(!drag) return;
+    var r = root.getBoundingClientRect();
+    var x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+    set(x / r.width * 100);
+  }
+  hdl.addEventListener("pointerdown", function(e){ drag = true; e.preventDefault(); });
+  // Keyboard control: 5 percent per press, Home and End jump. The slider was
+  // the one piece of the page a keyboard user literally could not operate.
+  hdl.addEventListener("keydown", function(e){
+    if(e.key === "ArrowLeft" || e.key === "ArrowDown"){ e.preventDefault(); set(split - 5); }
+    else if(e.key === "ArrowRight" || e.key === "ArrowUp"){ e.preventDefault(); set(split + 5); }
+    else if(e.key === "Home"){ e.preventDefault(); set(0); }
+    else if(e.key === "End"){ e.preventDefault(); set(100); }
+  });
+  addEventListener("pointerup", function(){ drag = false; });
+  addEventListener("pointermove", move);
+  set(split);
+  return { set: set, get: function(){ return split; } };
+}`;
+
+// The corner of the day, embedded in the homepage hero.
+//
+// The imagery is the slider, not a still: the photograph on the left, the
+// proposal on the right, the handle in the middle. That is the one thing a
+// first-time visitor plays with without being told to, and it was the reason
+// the corner page held attention while the homepage did not.
 export const HERO_CORNER = (e) => {
   if (!e || !e.slug) return "";
   const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+  // Values that travel into the inline script. JSON alone is not enough: a
+  // corner name carrying a closing tag would end the script element early.
+  const js = (o) => JSON.stringify(o).replace(/</g, "\\u003c");
   const frames = e.frames || {};
-  // Proposed fix first, because the render is the hook. Today is one tap away
-  // and is the honest baseline, so it is never more than one tap away.
-  const order = ["fix", "hazards", "today"].filter((k) => frames[k]);
-  const first = order.includes("fix") ? "fix" : order[0] || null;
   const LABEL = { today: "Today", hazards: "Hazards", fix: "Proposed fix" };
   const CAP = {
     today: "The corner as Street View last photographed it. Imagery: Google.",
     hazards:
-      "Gemini read the real photograph and marked the zones it flags as high risk: faded crosswalk markings in red, vehicle conflict zones in amber.",
-    fix: "An AI visualization of continental crosswalks, a protected bike lane, and a corner curb extension.",
+      "Gemini read the real photograph and marked the zones it flags as high risk: faded crosswalk markings in red, vehicle conflict zones in amber. Drag to compare.",
+    fix: "An AI visualization of continental crosswalks, a protected bike lane, and a corner curb extension. Drag to compare.",
   };
   const ALT = {
     today: `${e.name} today, photographed by Google Street View`,
@@ -125,16 +208,36 @@ export const HERO_CORNER = (e) => {
     fix: `AI visualization of a proposed fix at ${e.name}. Not a photograph.`,
   };
 
-  const stageImage = order.length
-    ? `<div class="hcstage">
-      ${order
-        .map(
-          (k) =>
-            `<img class="hcimg" data-state="${k}" src="${esc(frames[k])}" width="640" height="400"
-              alt="${esc(ALT[k])}" fetchpriority="${k === first ? "high" : "low"}"${k === first ? "" : " hidden"}>`,
-        )
-        .join("\n      ")}
-    </div>`
+  // Which frame sits under the right-hand pane on load. A slider needs two
+  // frames, so it exists only when the photograph has something to be compared
+  // against. The proposal is the default because it is the thing worth
+  // dragging to; the hazard audit stands in when a corner has that but no
+  // render. A corner with only its photograph gets the photograph, never a
+  // slider with a missing pane.
+  const compare = frames.today && frames.fix ? "fix" : frames.today && frames.hazards ? "hazards" : null;
+
+  // Chips, in the order they read: back to the slider, the other overlay, the
+  // unedited photograph for anyone who wants to see what is actually there.
+  const views = [];
+  if (compare) views.push(["Compare", compare]);
+  if (frames.hazards && compare !== "hazards") views.push(["Hazards", "hazards"]);
+  if (frames.today) views.push(["Today", "today"]);
+  const firstState = views.length ? views[0][1] : null;
+
+  const stage = frames.today
+    ? SLIDER({
+        root: "hchero",
+        base: "hcbase",
+        ov: "hcov",
+        hdl: "hchdl",
+        compare: Boolean(compare),
+        single: !compare,
+        priority: true,
+        baseSrc: esc(frames.today),
+        baseAlt: esc(ALT.today),
+        ovSrc: compare ? esc(frames[compare]) : "",
+        ovAlt: compare ? esc(ALT[compare]) : "",
+      })
     : `<div class="hcnone">
       <span class="hcnonel">Imagery audit pending</span>
       <p class="hcnonen">${
@@ -144,17 +247,23 @@ export const HERO_CORNER = (e) => {
       }</p>
     </div>`;
 
-  const stageControls = order.length
-    ? `<div class="hctoggle" role="group" aria-label="Corner view">
-      ${order
+  const caption = firstState
+    ? `<p class="hccap"><b id="hccapk">${esc(LABEL[firstState])}</b> <span id="hccapv">${esc(CAP[firstState])}</span></p>`
+    : "";
+  // One chip is not a choice, so a corner with a single frame gets its caption
+  // and nothing to press.
+  const stageControls =
+    views.length > 1
+      ? `<div class="hctoggle" role="group" aria-label="Corner view">
+      ${views
         .map(
-          (k) =>
-            `<button type="button" data-state="${k}" aria-pressed="${k === first}">${LABEL[k]}</button>`,
+          ([label, state]) =>
+            `<button type="button" data-state="${state}" aria-pressed="${state === firstState}">${label}</button>`,
         )
         .join("")}
     </div>
-    <p class="hccap"><b id="hccapk">${esc(LABEL[first] || "")}</b> <span id="hccapv">${esc(CAP[first] || "")}</span></p>`
-    : "";
+    ${caption}`
+      : caption;
 
   return `<section class="herocorner" aria-label="Corner of the day">
   <div class="hchead">
@@ -167,7 +276,7 @@ export const HERO_CORNER = (e) => {
       ? `Audited autonomously this morning, ${esc(e.date)}`
       : `Most recent audit, ${esc(e.date)}`
   }${e.partial ? ", with some lanes degraded" : ""}</p>
-  ${stageImage}
+  ${stage}
   <!-- Non negotiable and never behind a tooltip: the render is AI generated and
        says so, in the same sentence the footer uses, directly under the image
        rather than after the controls, so a phone shows it without a scroll. -->
@@ -176,7 +285,7 @@ export const HERO_CORNER = (e) => {
     // Audited from the records with no visual audit generated. The photograph
     // is real and stays; the page says what is missing rather than letting the
     // single frame imply the other two are coming.
-    order.length && !frames.hazards && !frames.fix
+    frames.today && !frames.hazards && !frames.fix
       ? `<p class="hcpending">Imagery audit pending. This corner was audited from the city's records; the visual audit has not been generated for it.</p>`
       : ""
   }
@@ -191,16 +300,36 @@ export const HERO_CORNER = (e) => {
 (function(){
   var root=document.currentScript.previousElementSibling;
   if(!root) return;
-  var CAP=${JSON.stringify(CAP)},LAB=${JSON.stringify(LABEL)};
-  var imgs=root.querySelectorAll(".hcimg"),btns=root.querySelectorAll(".hctoggle button");
+  var stage=root.querySelector("#hchero");
+  if(!stage) return;
+${SLIDER_JS}
+  var ov=root.querySelector("#hcov"),hdl=root.querySelector("#hchdl");
+  // Mounted only when there are two panes to compare. A single-frame corner
+  // has no chips either, so nothing below can ask for a drag that cannot exist.
+  var SL=stage.classList.contains("single")?null:mountSlider(stage,ov,hdl);
+  var SRC=${js({ hazards: frames.hazards || "", fix: frames.fix || "" })};
+  var CAP=${js(CAP)},LAB=${js(LABEL)},ALT=${js(ALT)};
+  var btns=root.querySelectorAll(".hctoggle button");
   btns.forEach(function(b){
     b.addEventListener("click",function(){
-      var want=b.getAttribute("data-state");
-      imgs.forEach(function(i){ i.hidden=i.getAttribute("data-state")!==want; });
+      var st=b.getAttribute("data-state");
+      if(st==="today"){ stage.classList.add("single"); }
+      else{
+        stage.classList.remove("single");
+        if(ov.getAttribute("src")!==SRC[st]){
+          ov.style.opacity="0";
+          ov.onload=function(){ ov.style.opacity="1"; };
+          ov.src=SRC[st];
+          ov.alt=ALT[st]||"";
+        }
+        // Every switch returns the handle to the middle, so each state opens
+        // the way the page did.
+        if(SL) SL.set(50);
+      }
       btns.forEach(function(o){ o.setAttribute("aria-pressed",String(o===b)); });
       var k=root.querySelector("#hccapk"),v=root.querySelector("#hccapv");
-      if(k) k.textContent=LAB[want]||"";
-      if(v) v.textContent=CAP[want]||"";
+      if(k) k.textContent=LAB[st]||"";
+      if(v) v.textContent=CAP[st]||"";
     });
   });
 })();
@@ -578,15 +707,20 @@ header{display:flex;align-items:center;column-gap:14px;row-gap:24px;padding-bott
 .toggle button:nth-child(2)[aria-pressed="true"]{background:var(--accent)}
 .toggle button:nth-child(3)[aria-pressed="true"]{background:var(--green)}
 
+/* The comparison slider. Two mounts, one component: the corner page fills it
+   from the imagery lane after load, the homepage hero renders both frames
+   straight out of KV. These rules are keyed on classes rather than on the
+   corner page's element ids, which is what lets the second mount exist. */
 .hero{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--card);aspect-ratio:640/400}
 .hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
-#overlay{transition:opacity 200ms ease-out}
-#overlay{clip-path:inset(0 0 0 50%)}
-.hero.single #overlay{display:none}
-.hero.single #handle{display:none}
-#handle{position:absolute;top:0;bottom:0;left:50%;width:3px;background:#fff;box-shadow:0 0 0 1px rgba(20,27,45,.25);cursor:ew-resize;touch-action:none}
-#handle::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;background:#fff;box-shadow:0 2px 10px rgba(20,27,45,.35)}
-#handle::before{content:"‹ ›";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2;font-size:17px;font-weight:700;color:var(--ink);letter-spacing:2px}
+.hero img[hidden]{display:none}
+.hero .sov{transition:opacity 200ms ease-out;clip-path:inset(0 0 0 50%)}
+.hero.single .sov{display:none}
+.hero.single .shdl{display:none}
+.hero .shdl{position:absolute;top:0;bottom:0;left:50%;width:3px;background:#fff;box-shadow:0 0 0 1px rgba(20,27,45,.25);cursor:ew-resize;touch-action:none}
+.hero .shdl::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;background:#fff;box-shadow:0 2px 10px rgba(20,27,45,.35)}
+.hero .shdl::before{content:"‹ ›";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2;font-size:17px;font-weight:700;color:var(--ink);letter-spacing:2px}
+.hero .shdl:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .cap{display:flex;gap:10px;align-items:baseline;margin:12px 0 14px;font-size:13.5px;color:var(--dim);line-height:1.55}
 /* Corroboration chips. Green means the record backs the audit, outline means
    the audit saw something the record has not recorded, gray means the record
@@ -912,11 +1046,14 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 .hcgrade{margin-left:auto;font-size:13px;font-weight:700;min-width:28px;height:28px;border-radius:8px;
   display:grid;place-items:center;color:#fff;background:var(--dim)}
 .hcwhen{margin:4px 0 12px;font-size:11.5px;color:var(--dim);line-height:1.5}
-/* The stage owns its height from the ratio, so nothing reflows when the bytes
-   land. These are hero images and they load eagerly. */
-.hcstage{position:relative;aspect-ratio:640/400;background:var(--card);border-radius:9px;overflow:hidden}
-.hcimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
-.hcimg[hidden]{display:none}
+/* The stage is the shared slider at embed size. It owns its height from the
+   ratio, so nothing reflows when the bytes land, and both frames load eagerly
+   because both panes have to be there before anyone drags anything. The knob
+   shrinks a little: 38px is right over a 900px frame and heavy over a 360px
+   one. */
+.herocorner .hero{border-radius:9px}
+.herocorner .shdl::after{width:30px;height:30px}
+.herocorner .shdl::before{font-size:15px}
 .hctoggle{display:flex;gap:6px;margin:8px 0 0;flex-wrap:wrap}
 .hctoggle button{font-family:inherit;font-size:11.5px;font-weight:600;color:var(--dim);background:var(--card);
   border:1px solid var(--line);border-radius:999px;padding:5px 12px;cursor:pointer}
@@ -1175,11 +1312,17 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
       <button data-state="fix" aria-pressed="false"${c.generated ? " disabled" : ""}>Proposed fix</button>
     </div>
 
-    <div class="hero single" id="hero" hidden>
-      <img id="base" hidden alt="${esc(c.name)} today, photographed by Google Street View">
-      <img id="overlay" hidden alt="Annotated comparison view of ${esc(c.name)}">
-      <div id="handle" role="separator" tabindex="0" aria-label="Comparison slider, arrow keys move it" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
-    </div>
+    ${SLIDER({
+      root: "hero",
+      base: "base",
+      ov: "overlay",
+      hdl: "handle",
+      single: true,
+      hidden: true,
+      imgHidden: true,
+      baseAlt: `${esc(c.name)} today, photographed by Google Street View`,
+      ovAlt: `Annotated comparison view of ${esc(c.name)}`,
+    })}
     <!-- Stands in for the photograph until one is loaded, and stays if none
          arrives. A card that says what is missing and why beats an image
          element with nothing in it. -->
@@ -1432,14 +1575,13 @@ function render(){
   const ib = el("impact");
   if(ib) ib.hidden = !(state === "fix" && window.__impactReady);
 }
+${SLIDER_JS}
+// The same slider the homepage hero mounts, wired to this page's elements.
+// The split percentage stays a local here so render() can hand the current
+// position back after a state change without reaching into the component.
 let split = 50;
-function setSplit(pct){
-  split = Math.max(0, Math.min(100, pct));
-  el("overlay").style.clipPath = "inset(0 0 0 " + split + "%)";
-  const h = el("handle");
-  h.style.left = split + "%";
-  h.setAttribute("aria-valuenow", String(Math.round(split)));
-}
+const SLIDER_API = mountSlider(el("hero"), el("overlay"), el("handle"), (p) => { split = p; });
+function setSplit(pct){ if(SLIDER_API) SLIDER_API.set(pct); }
 // Sticky bar lifecycle.
 (function(){
   const bar = el("sticky");
@@ -1491,24 +1633,6 @@ document.querySelectorAll(".toggle button").forEach(b => b.addEventListener("cli
   document.querySelectorAll(".toggle button").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
   state = b.dataset.state; split = 50; render();
 }));
-(function(){
-  const hero = el("hero"); let drag = false;
-  const move = e => { if(!drag) return; const r = hero.getBoundingClientRect();
-    const x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
-    setSplit(x / r.width * 100); };
-  el("handle").addEventListener("pointerdown", e => { drag = true; e.preventDefault(); });
-  // Keyboard control: 5 percent per press, Home and End jump. The slider was
-  // the one piece of the page a keyboard user literally could not operate.
-  el("handle").addEventListener("keydown", e => {
-    if(e.key === "ArrowLeft" || e.key === "ArrowDown"){ e.preventDefault(); setSplit(split - 5); }
-    else if(e.key === "ArrowRight" || e.key === "ArrowUp"){ e.preventDefault(); setSplit(split + 5); }
-    else if(e.key === "Home"){ e.preventDefault(); setSplit(0); }
-    else if(e.key === "End"){ e.preventDefault(); setSplit(100); }
-  });
-  addEventListener("pointerup", () => drag = false);
-  addEventListener("pointermove", move);
-})();
-
 // Imagery. A precomputed corner answers once with no status field and nothing
 // below ever runs. A corner resolved from typed input answers immediately with
 // the Street View frame and status "pending", then this polls until the two

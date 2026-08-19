@@ -11,6 +11,7 @@
 // receive. new Function is the parser: it compiles the source and throws on a
 // syntax error without running a line of it.
 
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PAGE, NOT_FOUND } from "../src/page.js";
@@ -160,4 +161,82 @@ test("the powered by strip names Exa and Apify", () => {
   for (const name of ["Gemini", "Exa", "Apify", "Google Maps", "Cloudflare", "DataSF"]) {
     assert.match(html, new RegExp(`<b>${name}</b>`), `${name} label missing`);
   }
+});
+
+// The homepage hero embed. The slider is the point of it: a first-time visitor
+// drags the handle without being told to, which is the interaction the corner
+// page had and the homepage did not. These lock the shape, not the pixels.
+const EMBED = {
+  slug: "19th-and-mission",
+  name: "19th and Mission",
+  date: "2026-08-18",
+  auditedToday: true,
+  grade: "D",
+  evidence: "23 collisions in 5 years, 201 street-condition 311 reports in 3 years. District 9",
+  frames: {
+    today: "/gen/19th-and-mission/today.jpg",
+    hazards: "/gen/19th-and-mission/hazards.jpg",
+    fix: "/gen/19th-and-mission/fix.jpg",
+  },
+  state: "full",
+};
+
+const homeWith = (embed) =>
+  HOME([], "https://example.test", [{ slug: embed?.slug, name: embed?.name, date: embed?.date, grade: embed?.grade }],
+    null, false, { meta: { totalScored: 7355, totalAudited: 23 }, top: [], queueLength: 10 },
+    null, null, null, null, embed);
+
+test("the hero embed leads with the comparison slider", () => {
+  const html = homeWith(EMBED);
+  // The embed ships its own inline script. It is a second place a template
+  // literal can be mangled into a syntax error, so it goes through the parser
+  // like every other block on the page.
+  parses(html, "home with embed");
+  const stage = html.match(/<div class="hero[^"]*" id="hchero">([\s\S]*?)<\/div>/);
+  assert.ok(stage, "the embed should mount the slider stage");
+  assert.ok(!/<div class="hero single" id="hchero"/.test(html), "a corner with both frames is not single");
+  assert.match(stage[1], /class="sbase"[^>]*src="\/gen\/19th-and-mission\/today\.jpg"/, "photograph on the left");
+  assert.match(stage[1], /class="sov"[^>]*src="\/gen\/19th-and-mission\/fix\.jpg"/, "proposal on the right");
+  assert.match(stage[1], /class="shdl"[^>]*aria-valuenow="50"/, "handle centered on load");
+  // Both panes carry intrinsic dimensions, which is what keeps the box
+  // reserved before the bytes land.
+  assert.equal((stage[1].match(/width="640" height="400"/g) || []).length, 2, "both panes sized");
+});
+
+test("the hero embed offers compare, hazards and today, compare first", () => {
+  const html = homeWith(EMBED);
+  const chips = [...html.matchAll(/<button type="button" data-state="(\w+)" aria-pressed="(\w+)">([^<]+)<\/button>/g)];
+  assert.deepEqual(
+    chips.map((m) => [m[3], m[1], m[2]]),
+    [["Compare", "fix", "true"], ["Hazards", "hazards", "false"], ["Today", "today", "false"]],
+  );
+  assert.match(html, /Drag to compare\./, "the hint a first-time visitor needs");
+});
+
+test("the hero embed and the corner page mount one slider, not two", () => {
+  const corner = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  const home = homeWith(EMBED);
+  for (const [name, html] of [["corner", corner], ["home", home]]) {
+    assert.match(html, /class="shdl"/, `${name}: missing the shared handle`);
+    assert.match(html, /mountSlider\(/, `${name}: not mounting the shared behavior`);
+  }
+  // One definition in the codebase. Two would drift, and the drag is the one
+  // piece of this page that has to feel identical in both places.
+  const src = readFileSync(new URL("../src/page.js", import.meta.url), "utf8");
+  assert.equal((src.match(/^function mountSlider\(/gm) || []).length, 1, "mountSlider defined once");
+});
+
+test("a corner with no proposed fix shows the photograph and no slider shell", () => {
+  const html = homeWith({ ...EMBED, frames: { today: EMBED.frames.today, hazards: null, fix: null }, state: "text-only" });
+  assert.match(html, /<div class="hero single" id="hchero">/, "single frame, single stage");
+  assert.ok(!/class="sov"/.test(html), "no empty second pane");
+  assert.ok(!/class="shdl"/.test(html), "no handle for a slider that cannot exist");
+  assert.ok(!/<div class="hctoggle"/.test(html), "one view is not a choice");
+  assert.match(html, /Imagery audit pending\./, "says what is missing");
+});
+
+test("the hero embed never renders imagery it does not have", () => {
+  const html = homeWith({ ...EMBED, frames: { today: null, hazards: null, fix: null }, state: "none" });
+  assert.ok(!/id="hchero"/.test(html), "no stage without a photograph");
+  assert.match(html, /class="hcnone"/, "the designed pending card instead");
 });
