@@ -20,7 +20,10 @@ import {
   getVoicesStored, exaBudget, actorRunBudget, getActorCosts, getVoicesSummary,
   recordExaSpend, recordExaProbe, getExaProbe,
   getPress, putPress, getPressRollup, bumpPressRollup, getBurnCheckpoint,
+  radarBudget, countRadarDetection, getMonitors, getRadarFeed, pushRadarFeed, putRadarUnknown,
 } from "./store.js";
+import { judge, resultsFrom, monitorIdFrom, RADAR_VERSION } from "./radar.js";
+import { RADAR_PAGE } from "./radarpage.js";
 import { enrichPress, PRESS_VERSION } from "./pressenrich.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import {
@@ -871,6 +874,98 @@ ${signoff}`,
   };
 }
 
+// ---------------------------------------------------------------- radar webhook
+
+// Exa pushes detections here as coverage appears.
+//
+// The endpoint is public by necessity: a webhook has to be reachable. So it is
+// treated as hostile input from end to end. Two independent checks before a
+// payload is read at all, a shared secret in the path and a monitor id this
+// Worker created, and after that nothing in the payload is trusted to be true.
+// Every article runs the same relevance filter and the same graded-index bar
+// as the rest of the press lane, and a detection that fails is published as a
+// filtered detection rather than discarded. Nothing in a payload can cause an
+// action: no imagery, no voices, no grade movement, ever.
+async function radarHook(request, env, url) {
+  if (request.method !== "POST") return json({ error: "post only" }, 405);
+
+  const secret = url.pathname.split("/").pop();
+  if (!env.WEBHOOK_SECRET || secret !== env.WEBHOOK_SECRET) {
+    return json({ error: "not found" }, 404);
+  }
+
+  const payload = await request.json().catch(() => null);
+  const monitors = await getMonitors(env);
+  const known = new Set((monitors?.list || []).map((m) => m.id));
+  const monitorId = monitorIdFrom(payload);
+  if (!monitorId || !known.has(monitorId)) {
+    return json({ error: "unknown monitor" }, 403);
+  }
+
+  const results = resultsFrom(payload);
+  if (!results) {
+    // Not a failure of the sender. The reader does not know this shape, and
+    // recording it is how the next version learns to read it.
+    await putRadarUnknown(env, payload).catch(() => {});
+    return json({ ok: true, read: 0, note: "payload shape not recognised, recorded" });
+  }
+
+  const entry = (monitors.list || []).find((m) => m.id === monitorId);
+  const corridor = entry?.corridor || entry?.query || "citywide";
+  const detectedAt = new Date().toISOString();
+  const index = await cityIndexForRadar(env, corridor);
+
+  const hits = results.map((a) => ({ ...judge(a, corridor, index, detectedAt), version: RADAR_VERSION }));
+  const { added } = await pushRadarFeed(env, hits);
+  await countRadarDetection(env, hits.length).catch(() => {});
+
+  // A passing hit that names a graded corner is queued, not published on that
+  // corner directly. The nightly press lane is what writes citations, so the
+  // radar can never put an article on a corner page without the same filter
+  // the batch applies.
+  const queued = [];
+  for (const h of hits) {
+    if (!h.passed) continue;
+    for (const slug of h.corners || []) {
+      if (queued.includes(slug)) continue;
+      queued.push(slug);
+      // No old and no new, deliberately. A radar entry records that a corner
+      // was queued for a press re-check, and a grade that did not move must
+      // not be rendered as a movement to nowhere.
+      await appendChange(env, {
+        slug,
+        name: slug.replace(/-and-/g, " and ").replace(/-/g, " "),
+        source: "radar",
+        reason: `${h.domain} covered this corner; press re-check queued`,
+        date: detectedAt,
+      }).catch(() => {});
+    }
+  }
+  if (queued.length) await queueRadarRecheck(env, queued).catch(() => {});
+
+  return json({ ok: true, read: hits.length, added, passed: hits.filter((h) => h.passed).length, queued: queued.length });
+}
+
+// The corners a corridor could be about, read from the shard the corridor's
+// first letter lives in. One KV read, no fan-out over the whole city.
+async function cityIndexForRadar(env, corridor) {
+  const first = String(corridor || "").trim().toLowerCase()[0];
+  if (!first) return [];
+  const shard = await env.STORE?.get(`city:shard:${first}`, "json").catch(() => null);
+  const rows = shard?.rows || shard || [];
+  return (Array.isArray(rows) ? rows : []).map((r) => ({ slug: r.slug, name: r.name })).filter((r) => r.slug && r.name);
+}
+
+// A bounded nudge, written where the nightly run reads it. Press attention is
+// a signal about what to look at next and never a grade: the Danger Index does
+// not move because somebody wrote an article.
+async function queueRadarRecheck(env, slugs) {
+  const raw = await env.STORE?.get("radar:queue", "json").catch(() => null);
+  const q = Array.isArray(raw) ? raw : [];
+  const merged = [...new Set([...slugs, ...q])].slice(0, 200);
+  await env.STORE?.put("radar:queue", JSON.stringify(merged));
+}
+
 // ---------------------------------------------------------------- press batch
 
 // Press enrichment for corners nobody has asked about, worst first.
@@ -1276,6 +1371,17 @@ const PT_DAY = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 const pacificDay = (d = new Date()) => PT_DAY.format(d);
+
+// A timestamp a reader can act on: the local date and time a figure was last
+// true, in the timezone the claim is about. A number with no as-of is a
+// number that reads as current forever.
+const fmtAsOf = (ts) => {
+  const d = new Date(ts || 0);
+  if (isNaN(d) || !ts) return null;
+  return d.toLocaleString("en-US", {
+    timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+};
 
 // Cost, stated plainly because it is billed and recurring: a fully warmed
 // corner is two Gemini image generations, roughly 8 to 14 cents, plus about a
@@ -1737,6 +1843,27 @@ export default {
         return json(rec || { source: "empty", slug, links: [] });
       }
 
+      if (p === "/radar" || p === "/radar/" || p === "/api/radar") {
+        const [feed, monitors, budget, burn] = await Promise.all([
+          getRadarFeed(env).catch(() => []),
+          getMonitors(env).catch(() => null),
+          radarBudget(env).catch(() => null),
+          getBurnCheckpoint(env).catch(() => null),
+        ]);
+        // The burn's hit rate is shown beside the radar's, labelled as the
+        // separate question it is: the worst corners in the city against this
+        // week's news is not one population.
+        const burnChecked = burn?.done || 0;
+        const radar = {
+          feed, monitors, budget, burnChecked,
+          burnHitRate: burnChecked ? Math.round((burn.withCoverage / burnChecked) * 1000) / 10 : null,
+        };
+        if (p === "/api/radar") return json(radar);
+        return new Response(RADAR_PAGE(radar, origin, Boolean(env.PREVIEW), await mastScored()), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+
       if (p === "/methodology" || p === "/methodology/") {
         return new Response(METHODOLOGY(origin, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
@@ -1826,7 +1953,7 @@ export default {
         if (legacy) {
           return Response.redirect(`${origin}/c/${canonicalSlug(legacy)}`, 301);
         }
-        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist, voicesSummary, pressSummary, actorCosts] = await Promise.all([
+        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist, voicesSummary, pressSummary, pressRoll, actorCosts] = await Promise.all([
           getHinList(env),
           getCotdLog(env).catch(() => []),
           // Read only. The homepage must never wait on a findSimilar call, so
@@ -1840,6 +1967,7 @@ export default {
           getWatchlist(env, WATCHLIST_VERSION).catch(() => null),
           getVoicesSummary(env).catch(() => null),
           env.STORE?.get("press:summary", "json").catch(() => null) ?? null,
+          getPressRollup(env).catch(() => null),
           getActorCosts(env).catch(() => []),
         ]);
         const city = meta
@@ -1891,7 +2019,15 @@ export default {
 
         const invoice = await (env.STORE?.get("apify:invoice", "json").catch(() => null) ?? null);
         const spendUsd = invoice?.cycleUsd ?? actorCosts.reduce((n2, c2) => n2 + (Number(c2.costUsd) || 0), 0);
-        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressSummary, spendUsd, embed), {
+        // Two sources, one figure, and the time it was true. The timeline
+        // snapshot alone read the same all day while the batch lane was adding
+        // citations by the hundred.
+        const pressTile = {
+          ...(pressSummary || {}),
+          checkCitations: pressRoll?.citations || 0,
+          asOf: fmtAsOf(pressRoll?.updated || pressSummary?.at),
+        };
+        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressTile, spendUsd, embed), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -2113,6 +2249,10 @@ export default {
             );
           }),
         );
+      }
+
+      if (p.startsWith("/api/radar/hook/")) {
+        return await radarHook(request, env, url);
       }
 
       if (p === "/api/health") {

@@ -281,7 +281,13 @@ ${MASTHEAD({ scored, active: "" })}
 </section>
 ${HERO_CORNER(embed)}
 </div>
-${STATBAND({ scored, audited: auditedCount, headlines: press?.headlines || 0, spendUsd })}
+${STATBAND({
+  scored,
+  audited: auditedCount,
+  headlines: (press?.headlines || 0) + (press?.checkCitations || 0),
+  headlinesAsOf: press?.asOf || null,
+  spendUsd,
+})}
 
 ${
   today

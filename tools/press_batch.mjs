@@ -48,6 +48,19 @@ const DRY_CHUNKS = 3;
 const DRY_RATE = 0.05;
 const ERROR_RUN = 10;
 
+// A run of failures is a stop condition, but naming the wrong subsystem in the
+// stop message sends the next person to debug the wrong provider. The first
+// burn stopped saying "exa failed on 10 calls in a row" when every one of the
+// ten was a Cloudflare API failure reading the budget meter. The counter is
+// blind to which layer broke, so the message quotes what actually failed.
+const failureKind = (msg) => {
+  const m = String(msg || "");
+  if (/kv (read|write) failed|wrangler kv|api\.cloudflare\.com/i.test(m)) return "cloudflare kv";
+  if (/exa \d|exa 402|api\.exa\.ai/i.test(m)) return "exa";
+  if (/fetch failed|ENOTFOUND|ETIMEDOUT|ECONNRESET/i.test(m)) return "network";
+  return "unknown";
+};
+
 const env = kvEnv(ROOT, { EXA_API_KEY: devVar(ROOT, "EXA_API_KEY") });
 
 const before = await exaBudget(env);
@@ -126,6 +139,7 @@ if (BURN) {
   const run = { done: 0, withCoverage: 0, empty: 0, failed: 0, spentUsd: 0, chunks: 0 };
   let dryChunks = 0;
   let errorRun = 0;
+  const lastKinds = [];
   let stopReason = null;
 
   while (!stopReason) {
@@ -145,8 +159,17 @@ if (BURN) {
       } catch (e) {
         run.failed += 1;
         errorRun += 1;
-        log(`  ${row.slug}: FAILED ${String(e.message || e).slice(0, 80)} (${errorRun} in a row)`);
-        if (errorRun >= ERROR_RUN) { stopReason = `exa failed on ${ERROR_RUN} calls in a row`; break; }
+        const kind = failureKind(e.message || e);
+        lastKinds.push(kind);
+        if (lastKinds.length > ERROR_RUN) lastKinds.shift();
+        log(`  ${row.slug}: FAILED [${kind}] ${String(e.message || e).slice(0, 80)} (${errorRun} in a row)`);
+        if (errorRun >= ERROR_RUN) {
+          const tally = lastKinds.reduce((a, k) => ({ ...a, [k]: (a[k] || 0) + 1 }), {});
+          const named = Object.entries(tally).sort((a, b) => b[1] - a[1])
+            .map(([k, v]) => `${v} ${k}`).join(", ");
+          stopReason = `${ERROR_RUN} failures in a row (${named})`;
+          break;
+        }
         continue;
       }
       if (rec === "deferred") { stopReason = "budget cap reached"; break; }

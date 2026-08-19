@@ -730,12 +730,14 @@ export async function bumpPressRollup(env, rec) {
   let r;
   try { r = raw ? JSON.parse(raw) : null; } catch { r = null; }
   const period = (rec.fetchedAt || "").slice(0, 7);
-  if (!r || r.period !== period) r = { period, checked: 0, withCoverage: 0, empty: 0, deferred: 0, costUsd: 0 };
+  if (!r || r.period !== period) r = { period, checked: 0, withCoverage: 0, empty: 0, deferred: 0, costUsd: 0, citations: 0 };
+  if (typeof r.citations !== "number") r.citations = 0;
   if (rec.source === "budget-deferred") r.deferred += 1;
   else {
     r.checked += 1;
     if (rec.source === "live") r.withCoverage += 1;
     else r.empty += 1;
+    r.citations += (rec.items || []).length;
   }
   r.costUsd = Math.round((r.costUsd + (rec.cost?.usd || 0)) * 1e6) / 1e6;
   r.updated = new Date().toISOString();
@@ -764,7 +766,8 @@ export async function bumpPressRollupBulk(env, recs) {
   let r;
   try { r = raw ? JSON.parse(raw) : null; } catch { r = null; }
   const period = (recs.find((x) => x?.fetchedAt)?.fetchedAt || new Date().toISOString()).slice(0, 7);
-  if (!r || r.period !== period) r = { period, checked: 0, withCoverage: 0, empty: 0, deferred: 0, costUsd: 0 };
+  if (!r || r.period !== period) r = { period, checked: 0, withCoverage: 0, empty: 0, deferred: 0, costUsd: 0, citations: 0 };
+  if (typeof r.citations !== "number") r.citations = 0;
   for (const rec of recs) {
     if (!rec) continue;
     if (rec.source === "budget-deferred") r.deferred += 1;
@@ -772,6 +775,7 @@ export async function bumpPressRollupBulk(env, recs) {
       r.checked += 1;
       if (rec.source === "live") r.withCoverage += 1;
       else r.empty += 1;
+      r.citations += (rec.items || []).length;
     }
     r.costUsd = Math.round((r.costUsd + (rec.cost?.usd || 0)) * 1e6) / 1e6;
   }
@@ -784,6 +788,109 @@ export async function getPressRollup(env) {
   const raw = await rawGet(env, "press:rollup");
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
+}
+
+// ---------------------------------------------------------------- radar
+
+// The radar's own budget, deliberately separate from the burn counter. They
+// spend the same balance but they answer different questions: the burn is a
+// project with an end, the radar is a standing cost, and a standing cost that
+// shares a project's ceiling is a standing cost nobody notices.
+export const RADAR_DAY_CENTS = 40;
+export const RADAR_MONTH_CENTS = 900;
+
+const radarZero = (day, month) => ({
+  day, month, dayCents: 0, monthCents: 0, detections: 0, calls: 0, updated: null,
+});
+
+export const utcDay = (d = new Date()) => d.toISOString().slice(0, 10);
+export const utcMonth = (d = new Date()) => d.toISOString().slice(0, 7);
+
+async function readRadar(env) {
+  const day = utcDay(), month = utcMonth();
+  const raw = await rawGet(env, "budget:radar");
+  let r;
+  try { r = raw ? JSON.parse(raw) : null; } catch { r = null; }
+  if (!r) return radarZero(day, month);
+  // The day counter resets at 00:00 UTC and the month counter does not go with
+  // it. Rolling both together was how a daily cap quietly became a monthly one.
+  if (r.day !== day) { r.day = day; r.dayCents = 0; }
+  if (r.month !== month) { r.month = month; r.monthCents = 0; }
+  return { ...radarZero(day, month), ...r };
+}
+
+export async function radarBudget(env) {
+  const r = await readRadar(env);
+  const dayLeft = Math.max(0, RADAR_DAY_CENTS - r.dayCents);
+  const monthLeft = Math.max(0, RADAR_MONTH_CENTS - r.monthCents);
+  return {
+    ...r,
+    dayCapCents: RADAR_DAY_CENTS,
+    monthCapCents: RADAR_MONTH_CENTS,
+    dayRemainingCents: Math.round(dayLeft * 100) / 100,
+    monthRemainingCents: Math.round(monthLeft * 100) / 100,
+    paused: dayLeft <= 0 || monthLeft <= 0,
+    pausedBy: dayLeft <= 0 ? "day" : monthLeft <= 0 ? "month" : null,
+  };
+}
+
+// Charged before the work, like every other counter here. Returns false at the
+// cap, and the caller renders the paused state rather than going quietly stale.
+export async function reserveRadar(env, cents) {
+  const c = Math.max(0, Number(cents) || 0);
+  const r = await readRadar(env);
+  if (r.dayCents + c > RADAR_DAY_CENTS || r.monthCents + c > RADAR_MONTH_CENTS) return false;
+  r.dayCents = Math.round((r.dayCents + c) * 100) / 100;
+  r.monthCents = Math.round((r.monthCents + c) * 100) / 100;
+  r.calls += 1;
+  r.updated = new Date().toISOString();
+  await rawPut(env, "budget:radar", JSON.stringify(r));
+  return true;
+}
+
+export async function countRadarDetection(env, n = 1) {
+  const r = await readRadar(env);
+  r.detections += n;
+  r.updated = new Date().toISOString();
+  await rawPut(env, "budget:radar", JSON.stringify(r));
+}
+
+// The monitors this Worker created. A webhook naming a monitor id that is not
+// in here is not from a monitor this site owns, and is refused.
+export async function getMonitors(env) {
+  const raw = await rawGet(env, "radar:monitors");
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+export async function putMonitors(env, rec) {
+  await rawPut(env, "radar:monitors", JSON.stringify(rec));
+}
+
+// The feed, newest first, capped. The cap is the point: this is a live surface
+// and an unbounded log in KV is a value that eventually fails to write.
+export const RADAR_FEED_CAP = 120;
+
+export async function getRadarFeed(env) {
+  const raw = await rawGet(env, "radar:feed");
+  if (!raw) return [];
+  try { const f = JSON.parse(raw); return Array.isArray(f) ? f : []; } catch { return []; }
+}
+
+export async function pushRadarFeed(env, hits) {
+  const feed = await getRadarFeed(env);
+  const seen = new Set(feed.map((h) => h.url));
+  const fresh = (hits || []).filter((h) => h.url && !seen.has(h.url));
+  if (!fresh.length) return { added: 0, feed };
+  const next = [...fresh, ...feed].slice(0, RADAR_FEED_CAP);
+  await rawPut(env, "radar:feed", JSON.stringify(next));
+  return { added: fresh.length, feed: next };
+}
+
+// A payload the reader did not recognise. Kept so an unknown shape is a thing
+// to look at rather than a detection silently dropped on the floor.
+export async function putRadarUnknown(env, payload) {
+  await rawPut(env, "radar:unknown", JSON.stringify({ at: new Date().toISOString(), payload }), 7 * 24 * 3600);
 }
 
 // ---------------------------------------------------------------- press watchlist

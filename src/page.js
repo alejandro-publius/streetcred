@@ -60,14 +60,26 @@ export const META = ({ title, description, url, card = "summary" }) => {
 // that proves it. Nothing here is computed in the template: every value is
 // passed in from what the site already stores, so a number on this band and
 // the number on the page it links to cannot disagree.
-export const STATBAND = ({ scored = 0, audited = 0, headlines = 0, spendUsd = null } = {}) => {
+export const STATBAND = ({ scored = 0, audited = 0, headlines = 0, headlinesAsOf = null, spendUsd = null } = {}) => {
   const n = (v) => Number(v).toLocaleString("en-US");
   const cell = (href, value, label, note) =>
     `<a class="sbcell" href="${href}"><span class="sbnum">${value}</span><span class="sblabel">${label}</span><span class="sbnote">${note}</span></a>`;
   return `<section class="statband" aria-label="StreetCred at a glance">
   ${cell("/methodology", n(scored), "intersections graded", "from the city's own records")}
   ${cell("/", n(audited), "fully audited", "every evidence lane checked")}
-  ${cell("/watchlist", n(headlines), "press citations found", "across the coverage timelines")}
+  ${
+    // The figure was a snapshot written by a tool run and nothing updated it,
+    // so it read the same all day while the batch lane found hundreds more.
+    // It counts two sources now and carries the time it was true.
+    cell(
+      "/watchlist",
+      n(headlines),
+      "press citations found",
+      headlinesAsOf
+        ? `coverage timelines plus press checks, as of ${headlinesAsOf}`
+        : "across the coverage timelines",
+    )
+  }
   ${
     spendUsd === null
       ? cell("/status", "0", "letters sent to officials", "this is a drafting tool")
@@ -359,6 +371,7 @@ export const FOOTER = () => `<footer>
   </div>
   <div class="fcol">
     <span class="fh">Trust</span>
+    <a href="/radar">Press radar</a>
     <a href="/status">Status and cost ledger</a>
     <a href="/changes">Changes</a>
     <a href="/watchdog">Watchdog</a>

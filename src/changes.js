@@ -19,7 +19,7 @@ export const CHANGES = (changes = [], origin = "", preview = false, scored = 0) 
 <link rel="icon" href="/logo.svg">
 ${META({
   title: "Grade changes \u00b7 StreetCred",
-  description: "Every stored grade or index change on StreetCred, newest first, with the reason and the source, so a grade cannot move without a public record of it moving.",
+  description: "Every stored grade or index change on StreetCred, newest first, with the reason and the source, so a grade cannot move without a public record of it moving. Radar entries appear here too, marked as no grade change, because press attention decides what gets looked at next and never what a corner scores.",
   url: `${origin}/changes`,
 })}
 ${FONT_LINK}
@@ -62,7 +62,11 @@ ${
           (c) => `<div class="chg">
   <span class="d">${esc(day(c.date))}</span>
   <a href="/c/${esc(c.slug)}">${esc(c.name || c.slug)}</a>
-  <span class="mv">${esc(c.old?.grade ?? "?")} ${c.old?.index ?? "?"} &rarr; ${esc(c.new?.grade ?? "?")} ${c.new?.index ?? "?"}</span>
+  <span class="mv">${
+    c.old || c.new
+      ? `${esc(c.old?.grade ?? "?")} ${c.old?.index ?? "?"} &rarr; ${esc(c.new?.grade ?? "?")} ${c.new?.index ?? "?"}`
+      : "no grade change"
+  }</span>
   <span class="src">${esc(c.source || "pipeline")}</span>
   <span class="why">${esc(c.reason || "")}</span>
 </div>`,
