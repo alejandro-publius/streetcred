@@ -545,13 +545,30 @@ async function writeExaMeter(env, m) {
 // That is the only thing that identifies the account, so it is the only thing
 // that sets it. The observed balance is recorded beside it so the next
 // reconciliation has a fixed point to measure from.
-export async function verifyExaAccount(env, { workspace, observedBalanceUsd = null } = {}) {
+export async function verifyExaAccount(env, { workspace, observedBalanceUsd = null, attributedFromCents = null } = {}) {
   if (!workspace) throw new Error("a workspace name is required to verify the account");
   const m = await readExaMeter(env);
   m.account = String(workspace);
   m.accountVerified = true;
   m.verifiedAt = new Date().toISOString();
-  m.observedBalanceUsd = Number.isFinite(Number(observedBalanceUsd)) ? Number(observedBalanceUsd) : null;
+  // Number(null) is 0 and 0 is finite, so a missing balance recorded itself as
+  // an observed balance of zero dollars. An unknown reading must stay unknown.
+  m.observedBalanceUsd =
+    observedBalanceUsd === null || observedBalanceUsd === undefined || observedBalanceUsd === ""
+      ? null
+      : Number.isFinite(Number(observedBalanceUsd))
+        ? Number(observedBalanceUsd)
+        : null;
+  // Spend before the confirmed key was installed was billed somewhere else.
+  // Keeping it in the total is right, because it happened; counting it against
+  // this workspace's balance is not. The boundary is recorded so both readings
+  // are available and neither has to be inferred later.
+  m.attributedFromCents =
+    attributedFromCents === null || attributedFromCents === undefined || attributedFromCents === ""
+      ? m.spentCents
+      : Number.isFinite(Number(attributedFromCents))
+        ? Number(attributedFromCents)
+        : m.spentCents;
   return writeExaMeter(env, m);
 }
 
@@ -574,6 +591,14 @@ export async function exaBudget(env) {
     // plans, so a real spend can appear as usage while the balance does not
     // move at all.
     allTimeUsd: round4(m.priorSpendUsd + m.spentCents / 100),
+    // What this confirmed workspace has been billed, as opposed to what the
+    // counter has measured in total across whatever keys were installed.
+    attributedUsd: m.accountVerified
+      ? round4(Math.max(0, m.spentCents - (m.attributedFromCents ?? m.spentCents)) / 100)
+      : null,
+    unattributedUsd: m.accountVerified
+      ? round4((m.attributedFromCents ?? m.spentCents) / 100 + m.priorSpendUsd)
+      : null,
     reconciliation: m.accountVerified
       ? `observed on ${m.account}${m.verifiedAt ? ` at ${m.verifiedAt.slice(0, 10)}` : ""}`
       : "unverified: no dashboard observation has attributed this spend to a workspace",

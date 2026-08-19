@@ -40,7 +40,11 @@ if (process.argv.includes("--show") || !arg("workspace")) {
   process.exit(0);
 }
 
-const m = await verifyExaAccount(env, { workspace: arg("workspace"), observedBalanceUsd: arg("balance") });
+const m = await verifyExaAccount(env, {
+  workspace: arg("workspace"),
+  observedBalanceUsd: arg("balance"),
+  attributedFromCents: arg("from-cents"),
+});
 console.log(`confirmed: ${m.account}, observed ${m.verifiedAt}`);
 if (m.observedBalanceUsd !== null) console.log(`balance at observation: $${m.observedBalanceUsd}`);
 console.log("the nightly batch and tools/press_batch.mjs will spend against this workspace now");

@@ -157,3 +157,11 @@ test("the nightly batch runs once the workspace is confirmed", async () => {
   assert.equal(out.source, "live");
   assert.equal(out.queued, 0);
 });
+
+test("a missing balance stays unknown instead of becoming zero dollars", async () => {
+  const env = fakeEnv();
+  await verifyExaAccount(env, { workspace: "Alex Schroeder" });
+  assert.equal((await exaBudget(env)).observedBalanceUsd, null, "Number(null) is 0 and 0 is finite");
+  await verifyExaAccount(env, { workspace: "Alex Schroeder", observedBalanceUsd: 0 });
+  assert.equal((await exaBudget(env)).observedBalanceUsd, 0, "a real zero is still recordable");
+});
