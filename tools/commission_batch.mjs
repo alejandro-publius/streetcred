@@ -28,6 +28,7 @@ const val = (flag) => {
   return i >= 0 ? args[i + 1] : null;
 };
 const DRY = args.includes("--dry");
+const ONLY = val("--actor");
 // --max-usd is a ceiling on everything ever spent; --new-usd is a ceiling on
 // what THIS batch adds. The second is what an authorization to spend usually
 // means, and keeping them separate stops a prior run's cost from being
@@ -56,9 +57,12 @@ const env = kvEnv(ROOT, { APIFY_TOKEN: devVar(ROOT, "APIFY_TOKEN") });
 const costs = await getActorCosts(env);
 const settled = costs.filter((c) => c.event === "ingested" && Number.isFinite(c.costUsd));
 const spent = costs.reduce((n, c) => n + (Number(c.costUsd) || 0), 0);
-const perCorner = settled.length
+let perCorner = settled.length
   ? settled.reduce((n, c) => n + c.costUsd, 0) / settled.length
   : 0.3;
+// One actor is about half a corner, measured: Maps has run at $0.146 to
+// $0.156 and Reddit at about $0.140.
+if (ONLY) perCorner = perCorner / 2;
 // Corners commissioned but not yet ingested are money already committed.
 const inFlight = costs.filter((c) => c.event === "commissioned").length - settled.length;
 const committed = spent + Math.max(0, inFlight) * perCorner;
@@ -96,7 +100,7 @@ for (const slug of slugs) {
     started.push(slug);
     continue;
   }
-  const out = await commissionVoices(env, corner);
+  const out = await commissionVoices(env, corner, ONLY ? { only: ONLY } : {});
   if (!out.ok) {
     log(`  FAILED ${slug}: ${out.failed.map((f) => `${f.actor} ${f.reason}`).join("; ")}`);
     continue;

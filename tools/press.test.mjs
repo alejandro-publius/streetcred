@@ -139,10 +139,24 @@ test("the watchlist asks the city more than one question", () => {
 // A national outlet says "a San Francisco intersection"; a neighbourhood
 // newsroom names the crossing, which is the only kind of sentence this
 // pipeline can verify.
-test("one pass is restricted to local outlets at the API", () => {
+test("some passes are restricted to local outlets at the API", () => {
   const local = WATCHLIST_QUERIES.filter((q) => q.includeDomains);
-  assert.equal(local.length, 1);
-  assert.ok(local[0].includeDomains.includes("missionlocal.org"));
-  // Include and exclude are mutually exclusive at the API.
-  assert.ok(!local[0].excludeDomains);
+  assert.ok(local.length >= 1, "at least one local pass");
+  for (const q of local) {
+    assert.ok(q.includeDomains.includes("missionlocal.org"));
+    // Include and exclude are mutually exclusive at the API.
+    assert.ok(!q.excludeDomains);
+  }
+});
+
+// Thirty near-identical phrasings would cost thirty searches and find one
+// kind of story. The set has to actually vary.
+test("the discovery set is broad and not duplicated", () => {
+  assert.ok(WATCHLIST_QUERIES.length >= 25, "expected roughly thirty phrasings");
+  const seen = new Set(WATCHLIST_QUERIES.map((q) => q.query.toLowerCase()));
+  assert.equal(seen.size, WATCHLIST_QUERIES.length, "duplicate phrasing in the set");
+  const hoods = WATCHLIST_QUERIES.filter((q) => /Tenderloin|Excelsior|Bayview|Sunset|Mission|SoMa|Richmond|Chinatown|Castro|Visitacion/.test(q.query));
+  assert.ok(hoods.length >= 8, "neighbourhood anchored variants missing");
+  const civic = WATCHLIST_QUERIES.filter((q) => /petition|meeting/i.test(q.query));
+  assert.ok(civic.length >= 2, "petition and meeting phrasings missing");
 });

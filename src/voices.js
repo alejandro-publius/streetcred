@@ -97,10 +97,26 @@ export function redditInput(c) {
 //
 // Relevance here is not binary. A post about a pedestrian killed at this corner
 // is worth more than a review that happens to contain the word "street".
-const STRONG =
-  /\b(pedestrian|crosswalk|crossing|struck|hit by|run over|killed|collision|crash|jaywalk|speeding|curb ramp)\b/gi;
+// Words that can only mean a street. These are what qualify a quote.
+const ROAD =
+  /\b(pedestrian|pedestrians|crosswalk|crossing|jaywalk|curb ramp|bike lane|cyclist|biking|driver|drivers|traffic|intersection|sidewalk|stop sign|red light|left turn|right turn)\b/gi;
+
+// Words that describe harm but say nothing about a street. "Killed" appears in
+// "San Francisco Killed 8th-Grade Algebra" and in "Man shot and killed in
+// SoMa", and both cleared a traffic-safety filter that treated harm as
+// sufficient. They raise a quote's score and can no longer qualify one.
+const HARM = /\b(struck|hit by|run over|killed|collision|crash|fatal|injured|speeding)\b/gi;
+
+// What makes a quote about SAFETY rather than merely about a street. Without
+// this bar, "the magical intersection of California and Market" and a story
+// about a woman throwing burning objects near an intersection both qualified,
+// because both mention a road. This lane is evidence about how a crossing
+// behaves, not a record of everything that happened near one.
+const SAFETY =
+  /\b(unsafe|dangerous|safety|speeding|reckless|enforce|enforcement|calming|daylighting|neckdown|stop sign|signal|slow down|near miss|almost hit|blind spot|visibility|violation|violations)\b/gi;
+
 const WEAK =
-  /\b(traffic|sidewalk|corner|intersection|driver|drivers|car|cars|bike|walk|walking|dangerous|unsafe|safety|signal|curb|plaza)\b/gi;
+  /\b(corner|car|cars|bike|walk|walking|curb|plaza|lane|block)\b/gi;
 const BLOCK = /\b(fuck|shit|bitch|cunt|nigg|retard|junkie)\b/i;
 const BOILER = /submitted by.*$|\[link\]|\[comments\]|&#\d+;|https?:\/\/\S+/gi;
 
@@ -120,22 +136,36 @@ const count = (re, s) => (s.match(re) || []).length;
 // Zero means drop it. Higher means it speaks more directly to street safety.
 export function scoreText(text, cornerTokens = []) {
   if (!text || text.length < 40 || BLOCK.test(text)) return 0;
-  const strong = count(STRONG, text);
+  const road = count(ROAD, text);
+  const harm = count(HARM, text);
   const weak = count(WEAK, text);
-  // A weak word never qualifies a quote on its own, and neither does the corner
-  // name. This is the rule src/cred.js already applies to the same question:
-  // "dangerous" and "corner" mean the street about half the time and something
-  // else the rest, so they only count beside a word that can only mean the
-  // street. The first autonomous run is what proved it necessary here too. It
-  // kept five quotes, of which four were restaurant reviews: a steak dinner
-  // scored on the corner-name bonus, and "my go-to corner store" scored on the
-  // word corner. Both are now zero, and the run keeps the one quote that is
-  // actually about a cyclist being struck on Valencia.
-  if (strong === 0) return 0;
-  let s = 3 * strong + weak;
   const low = text.toLowerCase();
-  if (cornerTokens.some((t) => t && low.includes(t))) s += 2;
-  return s;
+
+  // Two requirements, both learned from what the first fifteen corners
+  // returned. The quote has to say something that can only mean a street, and
+  // it has to name this corner. A Reddit search for "9th and Mission" returns
+  // everything that mentions either street, so without the second bar a fatal
+  // collision on I-280 and a photo of somebody crossing with a balloon in 1997
+  // both land in a corner's evidence lane.
+  const namesCorner = cornerTokens.length === 0 || cornerTokens.some((t) => t && low.includes(t));
+  const safety = count(SAFETY, text);
+  // Three bars, each one added because a real commissioned run put something
+  // through the previous two: it has to mean a street, it has to be about
+  // safety on that street, and it has to name this corner.
+  if (road === 0 || !namesCorner) return 0;
+  if (harm === 0 && safety === 0) return 0;
+  // A weak word never qualifies a quote on its own. This is the rule
+  // src/cred.js already applies to the same question: "dangerous" and "corner"
+  // mean the street about half the time and something else the rest, so they
+  // only count beside a word that can only mean the street. The first
+  // autonomous run proved it necessary here too, keeping four restaurant
+  // reviews out of five because a steak dinner mentioned the street name.
+  // Two points per street named, not two for naming any. A quote that names
+  // both streets is about this crossing; one that names a single street is
+  // about the corridor it sits on. Both belong, and the first should rank
+  // above the second, which is the same order the press panel uses.
+  const named = cornerTokens.filter((t) => t && low.includes(t)).length;
+  return 3 * harm + 2 * road + 2 * safety + weak + 2 * named;
 }
 
 export const cornerTokens = (c) =>
@@ -240,15 +270,22 @@ async function datasetItems(env, datasetId, limit = 200) {
 // Never waits. Every failure is returned rather than thrown, because this runs
 // inside the morning audit and a scraper that will not start must not take the
 // audit down with it.
-export async function commissionVoices(env, c) {
+// opts.only restricts the commission to one actor. Used to top up a corner
+// whose second run never started, and to spend on the actor that actually
+// produces evidence: across twelve corners the Maps scraper returned 60
+// reviews a corner and not one of them cleared the street-safety bar, while
+// four of the five corners that got a Reddit run produced a quote.
+export async function commissionVoices(env, c, opts = {}) {
   const budget = await actorRunBudget(env);
   const started = [];
   const failed = [];
 
-  for (const [name, actor, input] of [
+  const wanted = [
     ["google_maps", GMAPS_ACTOR, gmapsInput(c)],
     ["reddit", REDDIT_ACTOR, redditInput(c)],
-  ]) {
+  ].filter(([name]) => !opts.only || opts.only === name);
+
+  for (const [name, actor, input] of wanted) {
     if (!(await reserveActorRun(env))) {
       failed.push({ actor: name, reason: `monthly actor run cap reached (${budget.cap})` });
       continue;
@@ -265,11 +302,15 @@ export async function commissionVoices(env, c) {
     return { ok: false, slug: c.slug, started: [], failed };
   }
 
+  // A top-up keeps the runs the corner already has, so the ingest reads both
+  // the original dataset and the new one rather than losing the first.
+  const prior = opts.only ? await getVoiceRun(env, c.slug) : null;
+  const priorRuns = (prior?.runs || []).filter((r) => r.actor !== opts.only);
   const rec = {
     slug: c.slug,
     name: c.name,
     commissionedAt: new Date().toISOString(),
-    runs: started,
+    runs: [...priorRuns, ...started],
     failed,
     status: "pending",
   };
@@ -367,6 +408,11 @@ export async function ingestVoices(env, cornerFor, max = 3) {
       }
     }
     const terminal = (s) => ["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"].includes(s.status);
+    // A run whose cost is already in the ledger must not be counted again. A
+    // corner topped up with a second actor keeps its first run in the record
+    // so its dataset is still read, and without this the ledger would bill
+    // that first run once per ingest.
+    const alreadyBilled = new Set((rec.runs || []).filter((r) => r.billed).map((r) => r.id));
     if (!statuses.every(terminal)) {
       stillPending.push(slug);
       continue;
@@ -377,7 +423,7 @@ export async function ingestVoices(env, cornerFor, max = 3) {
     const candidates = [];
     let costUsd = 0;
     for (const s of statuses) {
-      if (Number.isFinite(s.usageTotalUsd)) costUsd += s.usageTotalUsd;
+      if (Number.isFinite(s.usageTotalUsd) && !alreadyBilled.has(s.id)) costUsd += s.usageTotalUsd;
       if (s.status !== "SUCCEEDED") {
         problems.push({ slug, actor: s.actor, status: s.status, ...(s.error ? { error: s.error } : {}) });
         continue;
@@ -400,14 +446,28 @@ export async function ingestVoices(env, cornerFor, max = 3) {
       candidates: candidates.length,
       items,
     });
-    await putVoiceRun(env, slug, { ...rec, status: "ingested", ingestedAt: new Date().toISOString(), costUsd, kept: items.length });
+    await putVoiceRun(env, slug, {
+      ...rec,
+      status: "ingested",
+      ingestedAt: new Date().toISOString(),
+      costUsd,
+      kept: items.length,
+      // Marked here rather than at commission time, because a run only has a
+      // final cost once it has finished.
+      runs: (rec.runs || []).map((r) => ({ ...r, billed: true })),
+    });
     await appendActorCost(env, {
       slug,
       name: rec.name,
       at: new Date().toISOString(),
       event: "ingested",
       commissionedAt: rec.commissionedAt,
-      runs: statuses.map((s) => ({ actor: s.actor, status: s.status, usd: s.usageTotalUsd ?? null })),
+      runs: statuses.map((s) => ({
+        actor: s.actor,
+        status: s.status,
+        usd: alreadyBilled.has(s.id) ? null : s.usageTotalUsd ?? null,
+        ...(alreadyBilled.has(s.id) ? { alreadyBilled: true } : {}),
+      })),
       costUsd: Math.round(costUsd * 10000) / 10000,
       candidates: candidates.length,
       kept: items.length,

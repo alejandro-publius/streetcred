@@ -13,8 +13,28 @@
 // that year, not that nothing happened.
 
 import { classify, streetTokens, domainOf, searchQuery } from "./newsfilter.js";
+import { soql } from "./resolve.js";
 
+// Deliberately still v1. The earliest-collision comparison below is additive:
+// a stored timeline without it reads fine and can be backfilled with one free
+// DataSF query, where a version bump would invalidate forty timelines and cost
+// five hundred Exa searches to say the same thing.
 export const TIMELINE_VERSION = "v1";
+
+const DS_CRASHES = "ubvf-ztfx";
+
+// The oldest collision the city has on record here, over the whole dataset
+// rather than the five year window the grade uses. One keyless query, and the
+// only number that can put a date on "how long has this been going on".
+async function earliestCollisionYear(c) {
+  const rows = await soql(DS_CRASHES, {
+    "$select": "min(collision_datetime)",
+    "$where": `within_circle(point, ${c.lat}, ${c.lon}, ${c.radiusMeters || 150})`,
+  }).catch(() => null);
+  const raw = rows?.[0]?.min_collision_datetime;
+  const year = raw ? parseInt(String(raw).slice(0, 4), 10) : null;
+  return Number.isFinite(year) ? year : null;
+}
 export const TIMELINE_FROM = 2014;
 
 // Small per year. This is counting, not curating: the panel already shows the
@@ -82,6 +102,8 @@ export async function buildTimeline(c, env, now = new Date()) {
   const ok = settled.filter((s) => s.count !== null);
   if (!ok.length) throw new Error("exa timeline: every year failed");
 
+  const firstCrashYear = await earliestCollisionYear(c);
+
   const withHits = ok.filter((s) => s.count > 0);
   const firstReportedYear = withHits.length ? withHits[0].year : null;
   const totalHeadlines = ok.reduce((n, s) => n + s.count, 0);
@@ -96,6 +118,15 @@ export async function buildTimeline(c, env, now = new Date()) {
     failedYears: settled.filter((s) => s.count === null).map((s) => s.year),
     years: settled,
     firstReportedYear,
+    firstCrashYear,
+    // The press wrote about this corner before the city recorded a collision
+    // at it. Phrased everywhere as coverage-we-can-find, never as "the press
+    // knew first": Exa recall is not ground truth, and the claim that
+    // survives scrutiny is the narrow one. False rather than null when either
+    // side is missing, because a chip should never appear on a maybe.
+    sawItFirst: Boolean(
+      firstReportedYear && firstCrashYear && firstReportedYear < firstCrashYear,
+    ),
     // Only meaningful when a first year exists. Zero would read as "no history"
     // and null reads as what it is, which is "not established".
     yearsReported: firstReportedYear === null ? null : thisYear - firstReportedYear,

@@ -11,7 +11,7 @@ const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<
 
 const when = (iso) => String(iso || "").slice(0, 10);
 
-export const WATCHLIST_PAGE = (w, origin = "") => {
+export const WATCHLIST_PAGE = (w, origin = "", hub = null) => {
   const entries = w?.entries || [];
   const rejects = w?.rejects || [];
   const title = "The Press Watchlist, StreetCred";
@@ -49,6 +49,12 @@ ${BASE_CSS}
 .wlnote{font-size:13px;color:var(--dim);line-height:1.6;margin:0 0 24px}
 .wlstat{display:flex;gap:22px;flex-wrap:wrap;margin:0 0 26px;font-size:12.5px;color:var(--dim)}
 .wlstat b{display:block;font-size:24px;font-weight:700;color:var(--ink);line-height:1.2}
+.hub{display:grid;gap:10px;margin:0 0 28px}
+.hubrow{display:block;padding:14px 16px;border:1px solid var(--line);border-radius:10px;
+  background:var(--panel);text-decoration:none;color:inherit}
+.hubrow:hover{border-color:var(--ink)}
+.hubn{display:block;font-size:14px;font-weight:600;margin-bottom:4px}
+.hubd{display:block;font-size:12.5px;color:var(--dim);line-height:1.55}
 @media(max-width:600px){.rjrow{grid-template-columns:1fr;gap:2px}}
 </style>
 </head>
@@ -111,8 +117,35 @@ ${rejects
 }
 
 <div class="eyebrow"><span>How it runs</span></div>
-<p class="wlnote">${(w?.queries || []).length} citywide semantic searches over the last ${w?.windowDays ?? 120} days, run through Exa with the news category, a published-date window, and lead-generation domains excluded at the API rather than filtered afterwards. Each result's text is scanned for crossing names, and every name is checked against the same 7,353-corner index the site grades from. The whole pass costs ${w?.calls ?? 0} searches and runs again every morning with the daily audit.</p>
+<p class="wlnote">${(w?.queries || []).length} citywide semantic searches over the last ${w?.windowDays ?? 90} days, run through Exa with the news category, a published-date window, and lead-generation domains excluded at the API rather than filtered afterwards. Each result's text is scanned for crossing names, and every name is checked against the same index the site grades from. The whole pass costs ${w?.calls ?? 0} searches and runs again every morning with the daily audit.</p>
 <p class="wlnote">This is an entity-discovery workflow of the shape Exa's Websets product is built for: find candidate entities, verify each against hard criteria, keep the ones that survive. It is implemented directly on the search API, which is what the event credits cover.</p>
+
+<div class="eyebrow"><span>The rest of the press lane</span></div>
+<p class="wlnote">Three more things this site does with Exa. Each one is reachable from here rather than only by landing on the right corner.</p>
+<div class="hub">
+  <a class="hubrow" href="/c/${esc(hub?.timeline?.slug || "16th-mission")}">
+    <span class="hubn">Coverage timelines</span>
+    <span class="hubd">The same press query, run once per year since 2014, so a corner can show how long it has been written about rather than only what was written this month.${
+      hub?.timeline ? ` Example: ${esc(hub.timeline.name)}, ${hub.timeline.headlines} headlines found since ${hub.timeline.from}.` : ""
+    }</span>
+  </a>
+  <a class="hubrow" href="/c/${esc(hub?.connection?.slug || "16th-mission")}">
+    <span class="hubn">Press connections</span>
+    <span class="hubd">findSimilar on a corner's own best story, every crossing named in the related coverage verified against the city index, and the surviving link written to both corners.${
+      hub?.connection ? ` Example: ${esc(hub.connection.name)} links to ${esc(hub.connection.to)}.` : ""
+    }</span>
+  </a>
+  <a class="hubrow" href="/c/${esc(hub?.sawItFirst?.slug || "16th-mission")}">
+    <span class="hubn">Press got there first</span>
+    <span class="hubd">Corners where the earliest coverage anyone can find predates the earliest collision in the city's own record. A narrow claim on purpose: search recall is not ground truth, so this says what can be found rather than what happened.${
+      hub?.sawItFirst
+        ? ` ${hub.sawItFirstCount} corner${hub.sawItFirstCount === 1 ? "" : "s"} carry it. Example: ${esc(hub.sawItFirst.name)}, coverage from ${hub.sawItFirst.coverage} against a first recorded collision in ${hub.sawItFirst.crash}.`
+        : hub?.compared
+        ? ` The comparison has been run at ${hub.compared} corners and <b>none of them carry it</b>: at every one, the city's collision record already starts in 2005, the first year the dataset covers. So the chip these corners show reads the other way, naming the year the record begins. A feature that reports the answer it found rather than the answer it was hoping for is worth more than one that never runs.`
+        : ""
+    }</span>
+  </a>
+</div>
 
 </main>
 <footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>

@@ -123,7 +123,13 @@ ${
     ? `<div class="srow"><span class="ep">Exa searches, batch lanes</span>
   <span class="ms">${spend.exa.calls} of ${spend.exa.cap} &middot; $${spend.exa.spendUsd.toFixed(3)}</span></div>
 <div class="srow"><span class="ep">Apify actor runs, ${esc(spend.apify.month)}</span>
-  <span class="ms">${spend.apify.used} of ${spend.apify.cap} &middot; $${spend.apifyUsd.toFixed(3)}</span></div>
+  <span class="ms">${spend.apify.used} of ${spend.apify.cap} &middot; $${spend.apifyUsd.toFixed(3)} ledger</span></div>
+${
+  spend.invoice
+    ? `<div class="srow"><span class="ep">Apify invoice for the cycle, from the provider</span>
+  <span class="ms">$${Number(spend.invoice.cycleUsd).toFixed(4)} of $${spend.invoice.cycleCapUsd}</span></div>`
+    : ""
+}
 ${(spend.costs || [])
   .slice(0, 8)
   .map(
@@ -141,6 +147,16 @@ ${(spend.costs || [])
   )
   .join("")}`
     : `<p class="note">Ledger unavailable.</p>`
+}
+
+${
+  spend?.invoice
+    ? `<p class="note">The ledger above is written per run from what each run reported; the invoice line
+is the provider's own figure for the cycle and is the one that settles. They disagreed once, on
+${esc(String(spend.invoice.at).slice(0, 10))}: a corner topped up with a second scraper had its first
+run counted twice, overstating the ledger by about $${Number(spend.invoice.overstatedUsd || 0).toFixed(2)}.
+The counting was fixed rather than the history rewritten, which is what a ledger is for.</p>`
+    : ""
 }
 
 <h2>Recent grade changes</h2>

@@ -1567,11 +1567,14 @@ export default {
       // cron, because six semantic searches is not something a page load
       // should start.
       if (p === "/watchlist" || p === "/watchlist/" || p === "/api/watchlist") {
-        const w = await getWatchlist(env, WATCHLIST_VERSION).catch(() => null);
+        const [w, hub] = await Promise.all([
+          getWatchlist(env, WATCHLIST_VERSION).catch(() => null),
+          env.STORE?.get("press:hub", "json").catch(() => null) ?? null,
+        ]);
         if (p === "/api/watchlist") {
           return json(w || { source: "empty", reason: "the watchlist has not been built yet" });
         }
-        return new Response(WATCHLIST_PAGE(w, origin), {
+        return new Response(WATCHLIST_PAGE(w, origin, hub), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1601,18 +1604,19 @@ export default {
       }
 
       if (p === "/status" || p === "/status/") {
-        const [synthRaw, incidents, changes, exa, apify, costs] = await Promise.all([
+        const [synthRaw, incidents, changes, exa, apify, costs, invoice] = await Promise.all([
           env.STORE?.get("synth:log").catch(() => null),
           getTrustIncidents(env).catch(() => []),
           getChanges(env).catch(() => []),
           exaBudget(env).catch(() => null),
           actorRunBudget(env).catch(() => null),
           getActorCosts(env).catch(() => []),
+          env.STORE?.get("apify:invoice", "json").catch(() => null) ?? null,
         ]);
         let synth = [];
         try { synth = synthRaw ? JSON.parse(synthRaw) : []; } catch { synth = []; }
         const spend = exa && apify
-          ? { exa, apify, costs, apifyUsd: costs.reduce((n, c) => n + (Number(c.costUsd) || 0), 0) }
+          ? { exa, apify, costs, invoice, apifyUsd: costs.reduce((n, c) => n + (Number(c.costUsd) || 0), 0) }
           : null;
         return new Response(STATUS(synth, incidents, changes, origin, spend), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },

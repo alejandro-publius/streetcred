@@ -82,23 +82,55 @@ test("naming the corner does not by itself qualify a quote", () => {
 });
 
 test("a weak word only counts beside a word that can only mean the street", () => {
-  assert.equal(scoreText("The sidewalk here is usually busy with people around this corner most days."), 0);
-  assert.ok(scoreText("A cyclist was struck on the sidewalk here and drivers never slow down at all.") > 0);
+  assert.equal(scoreText("The sidewalk here is usually busy with people around this corner most days.", []), 0);
+  assert.ok(scoreText("A cyclist was struck on the sidewalk here and drivers never slow down at all.", []) > 0);
+});
+
+// Every case below is a real quote a real commissioned run put into a real
+// corner's evidence lane. Harm words alone were qualifying them.
+test("harm without a street is not a traffic quote", () => {
+  assert.equal(
+    scoreText("San Francisco Killed 8th-Grade Algebra. Now It is Set to Come Back next year", ["8th", "minna"]),
+    0,
+    "an education headline matched on the word killed",
+  );
+  assert.equal(
+    scoreText("Man shot and killed in San Francisco SoMa neighborhood late on Friday evening", ["9th", "mission"]),
+    0,
+    "a shooting is not a traffic safety account",
+  );
+});
+
+// A Reddit search for "9th and Mission" returns everything mentioning either
+// street, including a fatal crash on a freeway several miles away.
+test("a quote has to name the corner it is filed under", () => {
+  assert.equal(
+    scoreText("280 Southbound Going Out of SF Closed Due to Fatal Traffic Collision overnight", ["6th", "natoma"]),
+    0,
+  );
+  assert.ok(
+    scoreText("Another San Francisco cyclist struck in Valencia Street center bike lane today", ["24th", "valencia"]) > 0,
+    "corridor level coverage that names one street still counts",
+  );
 });
 
 test("naming the corner itself is worth points", () => {
   const tokens = cornerTokens(corner);
-  const text = "Crossing here on foot is nerve wracking, drivers turn through the crosswalk constantly.";
-  assert.ok(scoreText(`${text} at 24th and Valencia`, tokens) > scoreText(text, tokens));
+  // Both must clear the bars first: a street word, a safety word, and the
+  // corner named. The bonus is what separates two quotes that both qualify.
+  const base = "Crossing here on foot is dangerous, drivers turn through the crosswalk constantly at Valencia.";
+  const named = "Crossing 24th at Valencia on foot is dangerous, drivers turn through the crosswalk constantly.";
+  assert.ok(scoreText(base, tokens) > 0, "the base quote should qualify");
+  assert.ok(scoreText(named, tokens) > scoreText(base, tokens), "naming both streets should rank higher");
 });
 
 test("both actor shapes flatten to one contract", () => {
   const g = fromGmaps(
-    [{ reviews: [{ text: "Drivers speed through the crosswalk here and nobody stops for pedestrians.", stars: 2, publishedAtDate: "2026-02-02T00:00:00Z" }] }],
+    [{ reviews: [{ text: "Drivers speed through the crosswalk here, it is dangerous and nobody stops for pedestrians.", stars: 2, publishedAtDate: "2026-02-02T00:00:00Z" }] }],
     [],
   );
   const r = fromReddit(
-    [{ title: "Dangerous crossing", body: "Cars run the red light at this intersection every single evening without fail.", createdAt: "2026-03-03" }],
+    [{ title: "Dangerous crossing", body: "Cars run the red light at this intersection every evening, it is unsafe for pedestrians.", createdAt: "2026-03-03" }],
     [],
   );
   for (const v of [...g, ...r]) {

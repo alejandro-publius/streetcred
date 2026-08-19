@@ -19,7 +19,10 @@ import { putWatchlist, exaBudget } from "../src/store.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DRY = process.argv.includes("--dry");
-const DAYS = parseInt(process.argv[process.argv.indexOf("--days") + 1], 10) || 45;
+// Defaults to the module's own window rather than a second number that can
+// silently disagree with it. The tool quietly held 45 while src/press.js said
+// 90, and the stored watchlist recorded 45.
+const DAYS = parseInt(process.argv[process.argv.indexOf("--days") + 1], 10) || 0;
 const log = (m) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
 
 const env = kvEnv(ROOT, { EXA_API_KEY: devVar(ROOT, "EXA_API_KEY") });
@@ -31,7 +34,7 @@ const meta = await env.STORE.get("city:meta", "json");
 const skip = new Set(meta?.audited || []);
 log(`${skip.size} audited corners excluded: a corner we have done is not a lead`);
 
-const w = await buildWatchlist(env, { days: DAYS, skip });
+const w = await buildWatchlist(env, { ...(DAYS ? { days: DAYS } : {}), skip });
 log(`${w.source}: ${w.articles} articles over ${w.calls} searches, ${w.entries?.length || 0} verified, ${w.rejected || 0} rejected`);
 
 for (const q of w.queries || []) log(`  query "${q.query.slice(0, 52)}..." -> ${q.results} results${q.failed ? ` (${q.failed})` : ""}`);

@@ -341,6 +341,11 @@ a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radiu
    six places rather than six things. */
 .lanenote{margin:10px 0 0;font-size:12px;color:var(--dim);line-height:1.55;
   padding-left:10px;border-left:2px solid var(--line3)}
+.tlhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 8px}
+.tlttl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+/* Only ever shown when both dates exist, so the chip is a comparison rather
+   than a hunch. */
+.tag.tlfirst{background:rgba(240,126,38,.10);color:#a04d0c;cursor:help}
 /* What the press connects this corner to. Not a finding about the corner: a
    finding about the coverage, so it sits under the coverage. */
 .pconn{margin:14px 0 0;padding:12px 14px;background:var(--card);border:1px solid var(--line);
@@ -827,6 +832,7 @@ ${BASE_CSS}
       <div class="phs"><h2 id="newshead">Press coverage</h2><span class="tag" id="newstag">found live, cited</span></div>
       <div class="pbody">
         <div class="tl" id="tl" hidden>
+          <div class="tlhead"><span class="tlttl">Coverage by year</span><span class="tag tlfirst" id="tlfirst" hidden></span></div>
           <div class="tlbars" id="tlbars" role="group" aria-label="Coverage found by year"></div>
           <div class="tlax"><span id="tlfrom"></span><span id="tlto"></span></div>
           <p class="tlnote" id="tlnote"></p>
@@ -1635,6 +1641,27 @@ LANE_LOADERS.timeline = () => fetch("/api/timeline" + X).then(r => r.json()).the
   if(t.firstReportedYear) note.push("First coverage we can find dates to " + t.firstReportedYear + ".");
   if(t.totalHeadlines) note.push(t.totalHeadlines + (t.totalHeadlines === 1 ? " headline" : " headlines") + " since.");
   el("tlnote").textContent = note.join(" ");
+
+  // The one comparison this lane exists to make: the earliest coverage anyone
+  // can find against the earliest collision the city has on record here. The
+  // wording is deliberately narrow. Exa recall is not ground truth, so the
+  // claim is about what can be found, never about what happened first.
+  const chip = el("tlfirst");
+  if(chip){
+    if(t.sawItFirst){
+      chip.textContent = "Press got there first";
+      chip.title = "The earliest coverage this search can find (" + t.firstReportedYear +
+        ") predates the earliest collision in the city's record at this corner (" + t.firstCrashYear + ").";
+      chip.hidden = false;
+    } else if(typeof t.firstCrashYear === "number" && t.firstReportedYear){
+      chip.textContent = "Records first, " + t.firstCrashYear;
+      chip.title = "The city recorded a collision here in " + t.firstCrashYear +
+        ", before the earliest coverage this search can find (" + t.firstReportedYear + ").";
+      chip.hidden = false;
+    } else {
+      chip.hidden = true;
+    }
+  }
 
   const pop = el("tlpop");
   const show = (y) => {

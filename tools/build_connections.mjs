@@ -78,6 +78,13 @@ for (const slug of audited) {
   if (conn.source !== "live") {
     empty++;
     log(`  --   ${slug}: ${conn.reason || "no connection"} (${conn.results} related results)`);
+    // Recorded, not skipped. "We asked and found nothing" and "nobody has
+    // asked" are different states, and only one of them should look like
+    // silence. Never overwrites a corner that has real links.
+    if (!DRY) {
+      const existing = await getConnections(env, slug);
+      if (!existing || !existing.links?.length) await putConnections(env, slug, { ...conn, slug, name });
+    }
     continue;
   }
 

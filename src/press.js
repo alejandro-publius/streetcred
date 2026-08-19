@@ -53,9 +53,20 @@ const LOCAL_OUTLETS = [
   "richmondsunsetnews.com", "broked.com", "48hills.org", "sfgate.com",
 ];
 
-// Citywide, deliberately not corner-shaped. Each one is a different way of
-// asking the same question, because a single phrasing finds a single kind of
-// story: a death, a redesign, a campaign, a piece of enforcement news.
+// The neighbourhoods whose local coverage names crossings. A citywide query
+// finds citywide stories; "the Excelsior" finds the story about one corner in
+// the Excelsior, which is the only kind this pipeline can verify.
+const NEIGHBOURHOODS = [
+  "the Tenderloin", "the Excelsior", "the Bayview", "the Sunset", "the Mission",
+  "SoMa", "the Richmond", "Chinatown", "the Castro", "Visitacion Valley",
+];
+
+// Citywide, deliberately not corner-shaped. Each is a different way of asking
+// the same question, because one phrasing finds one kind of story: a death, a
+// redesign, a campaign, a petition, a meeting, a piece of enforcement news.
+// Roughly thirty in total once the neighbourhood variants are expanded, which
+// is thirty searches per build and the reason this runs once a morning rather
+// than on a page load.
 export const WATCHLIST_QUERIES = [
   { query: "pedestrian struck or killed crossing the street in San Francisco" },
   { query: "San Francisco intersection redesign, crosswalk or traffic calming project" },
@@ -63,8 +74,26 @@ export const WATCHLIST_QUERIES = [
   { query: "San Francisco Vision Zero high injury corridor collision report" },
   { query: "San Francisco neighborhood traffic safety meeting about a dangerous corner" },
   { query: "SFMTA approves changes at a San Francisco intersection after a crash" },
-  // The local pass, restricted to the outlets above.
+  { query: "cyclist hit by a driver at a San Francisco intersection" },
+  { query: "hit and run at a San Francisco crosswalk" },
+  { query: "San Francisco school crossing safety concerns for children" },
+  { query: "senior pedestrian injured crossing a street in San Francisco" },
+  // Petitions and organising: the corner people are already asking about.
+  { query: "petition for a stop sign or traffic signal at a San Francisco intersection" },
+  { query: "neighbors petition San Francisco for a crosswalk after a collision" },
+  { query: "community meeting about a dangerous San Francisco crossing" },
+  { query: "supervisor calls for safety improvements at a San Francisco intersection" },
+  { query: "San Francisco daylighting or leading pedestrian interval at an intersection" },
+  { query: "quick build safety project San Francisco street corner" },
+  // The local pass, restricted to the outlets that write at corner resolution.
   { query: "dangerous intersection where pedestrians have been hit in San Francisco", includeDomains: LOCAL_OUTLETS },
+  { query: "crosswalk safety changes coming to a San Francisco corner", includeDomains: LOCAL_OUTLETS },
+  { query: "collision at an intersection reported in San Francisco this month", includeDomains: LOCAL_OUTLETS },
+  // Neighbourhood anchored, one per neighbourhood, rotating the safety term so
+  // the set is not ten copies of one query with the place name swapped.
+  ...NEIGHBOURHOODS.map((hood, i) => ({
+    query: `${["crosswalk", "crash", "traffic calming", "pedestrian safety"][i % 4]} at an intersection in ${hood}, San Francisco`,
+  })),
 ];
 
 // ---------------------------------------------------------------- extraction
@@ -256,7 +285,7 @@ const publicArticle = ({ title, url, domain, date }) => ({ title, url, domain, d
 // the whole watchlist is four searches, reserved against the budget up front.
 export async function buildWatchlist(env, opts = {}) {
   const queries = opts.queries || WATCHLIST_QUERIES;
-  const days = opts.days || 120;
+  const days = opts.days || 90;
   const skip = opts.skip || new Set();
 
   if (!(await reserveExa(env, queries.length))) {
