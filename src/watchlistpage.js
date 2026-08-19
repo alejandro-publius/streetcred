@@ -11,7 +11,7 @@ const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<
 
 const when = (iso) => String(iso || "").slice(0, 10);
 
-export const WATCHLIST_PAGE = (w, origin = "", hub = null, preview = false, scored = 0) => {
+export const WATCHLIST_PAGE = (w, origin = "", hub = null, preview = false, scored = 0, press = null) => {
   const entries = w?.entries || [];
   const rejects = w?.rejects || [];
   const title = "Press watchlist \u00b7 StreetCred";
@@ -78,6 +78,20 @@ ${
   <span><b>${w?.rejected ?? 0}</b>rejected</span>
   <span><b>${w?.discarded ?? 0}</b>phrases discarded</span>
 </div>`
+}
+${
+  // The batch press lane, counted from what it actually wrote. Separate from
+  // the watchlist above: that one finds corners in the news, this one takes
+  // the worst corners and goes looking. A corner it checks keeps its tier.
+  press?.checked
+    ? `<p class="wlnote"><b>${press.checked.toLocaleString("en-US")} corners press-checked this month, ${
+        press.withCoverage.toLocaleString("en-US")
+      } with coverage found.</b> The other ${(press.checked - press.withCoverage).toLocaleString("en-US")} were
+searched and nothing on topic came back, which is stored and shown as a result rather than as a gap.
+Press-checked corners keep their tier: this lane adds a press section, not an audit.${
+        press.deferred ? ` ${press.deferred} deferred at the budget cap.` : ""
+      }</p>`
+    : ""
 }
 
 <div class="eyebrow"><span>On the watchlist</span><span class="tag">worst first</span></div>

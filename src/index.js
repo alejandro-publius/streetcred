@@ -1691,7 +1691,8 @@ export default {
         if (p === "/api/watchlist") {
           return json(w || { source: "empty", reason: "the watchlist has not been built yet" });
         }
-        return new Response(WATCHLIST_PAGE(w, origin, hub, Boolean(env.PREVIEW), await mastScored()), {
+        const pressRollup = await getPressRollup(env).catch(() => null);
+        return new Response(WATCHLIST_PAGE(w, origin, hub, Boolean(env.PREVIEW), await mastScored(), pressRollup), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }

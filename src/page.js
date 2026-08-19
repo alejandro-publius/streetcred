@@ -71,7 +71,10 @@ export const STATBAND = ({ scored = 0, audited = 0, headlines = 0, spendUsd = nu
   ${
     spendUsd === null
       ? cell("/status", "0", "letters sent to officials", "this is a drafting tool")
-      : cell("/status", `$${Number(spendUsd).toFixed(2)}`, "spent running itself", "published per run, unattended")
+      // The figure is the provider's invoice for the current billing cycle, so
+      // the note says cycle. It read "published per run" for a while, which
+      // described a period total as though it were the price of one run.
+      : cell("/status", `$${Number(spendUsd).toFixed(2)}`, "spent running itself", "this billing cycle, each run in the ledger")
   }
 </section>`;
 };
