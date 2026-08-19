@@ -760,6 +760,8 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 .imgph{display:flex;flex-direction:column;justify-content:center;gap:6px;min-height:210px;
   padding:22px 24px;background:var(--card);border:1px dashed var(--line2);border-radius:12px}
 .imgphl{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.ldrafting{margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--dim)}
 .imgphn{margin:0;font-size:13.5px;color:var(--ink);line-height:1.55;max-width:52ch}
 
 .lanenums{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;margin-left:auto;margin-right:10px}
@@ -855,6 +857,13 @@ export const PAGE = (c, og = {}) => {
   if (Number.isFinite(idx)) bits.push(`Grade ${grade}, worse than ${idx}% of San Francisco intersections`);
   if (records?.detail) bits.push(records.detail);
   if (c.district) bits.push(`District ${c.district}`);
+  // The one sentence of evidence the Worker can state without a network call,
+  // built from the cred record it already read. Same numbers the stats lane
+  // will render, because cred was computed from them.
+  const serverThesis = [records?.detail, c.district ? `District ${c.district}` : null]
+    .filter(Boolean)
+    .join(". ")
+    .replace(/\.\./g, ".");
   const ogDesc = bits.length
     ? `${c.name}, San Francisco. ${bits.join(". ")}.`.replace(/\.\./g, ".")
     : `${c.name}, San Francisco, graded on the city's own crash and 311 records.`;
@@ -931,12 +940,25 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
   og.showsFix ? "a picture of the fix and a letter to the Supervisor" : "a letter to the Supervisor"
 }. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
 
-<section class="verdict" id="verdict" hidden aria-label="The verdict for this corner">
-  <span class="vg" id="vg" aria-hidden="true"></span>
+<!-- Rendered by the Worker, not waited for. An evidence product that shows its
+     evidence only to clients that run JavaScript is showing it to fewer readers
+     than it thinks: link preview bots, reader modes and anyone fetching the URL
+     see this. The numbers come from the same stored cred record the client lane
+     renders, so nothing flips when the client arrives. -->
+<section class="verdict" id="verdict"${og.score || og.cred ? "" : " hidden"} aria-label="The verdict for this corner">
+  <span class="vg${grade ? ` g${grade}` : ""}" id="vg" aria-hidden="true">${grade || ""}</span>
   <div class="vmain">
-    <p class="vline" id="vline"></p>
-    <p class="vthesis" id="vthesis"></p>
-    <p class="vcred" id="vcred"></p>
+    <p class="vline" id="vline">${
+      grade && Number.isFinite(idx) ? `${grade} \u00b7 worse than ${idx}% of San Francisco intersections` : ""
+    }</p>
+    <p class="vthesis" id="vthesis">${esc(serverThesis)}</p>
+    <p class="vcred" id="vcred">${
+      og.cred?.lanes
+        ? og.cred.lanes
+            .map((l) => `<i class="${l.hit ? "on" : l.pending ? "pending" : ""}" title="${esc(l.label)}"></i>`)
+            .join("") + `<span>${esc(og.cred.verdict || "")}</span>`
+        : ""
+    }</p>
   </div>
   <a class="vgo" id="vgo" href="#letterpanel">Get the letter</a>
 </section>
@@ -1070,7 +1092,11 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
           <div><div class="k">Funding route</div><div class="v" id="fixgrant">${c.fix.grant}</div></div>
         </div>
         <div class="draft">NOT SENT TO ANY OFFICIAL</div>
-        <div class="letter" id="letter"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+        <div class="letter" id="letter">${
+          og.letter?.text
+            ? esc(og.letter.text)
+            : '<p class="ldrafting">Drafting from the four sources</p><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div>'
+        }</div>
         <div class="lfoot"><button id="copy">Copy letter</button><button id="download" class="dl" type="button">Download as text</button><span class="tag" id="lettertag">drafted</span><span>by Gemini</span></div>
         <p class="vnote">Every figure in this letter is checked against the source records before it is shown. A draft that states something the records do not support is rejected and rewritten.</p>
       </div>

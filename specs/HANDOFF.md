@@ -380,14 +380,16 @@ reads pages and never touches the imagery lane.
   downgrade, so no og:image was added anywhere and the existing ones stay. The
   five trust surfaces have none.
 
-- **The press lane is serving its sample payload on 16th and Mission.**
-  `/api/news` returns `source: "sample"`, which the page tags visibly, so
-  nothing false is shown. The health probe's own Exa search still passes, so
-  this is not a dead key; the likeliest cause is that the live search returned
-  nothing that cleared the corner filter on that run. Diagnosing it further
-  means spending Exa searches, which the polish pass forbids, and fixing it is
-  an API change rather than a visual one. Worth a look before judging: it is
-  the flagship corner's press panel.
+- **The preview Worker has no secrets, and that is deliberate.**
+  `wrangler secret list --env preview` returns an empty list: secrets do not
+  inherit across environments. So on preview the press lane, the letter, the
+  resident voices and the static map all degrade to their sample or empty
+  states, because the keys they need are not there. This is worth knowing
+  before reading any preview result: it verifies HTML, meta, layout, links and
+  honesty copy faithfully, and it cannot verify anything that needs a key.
+  Those cells are verified against production instead. The alternative, copying
+  live keys onto a second public Worker, would put a spendable surface on the
+  internet to check a visual change, which is a bad trade.
 
 ## Open items for the human
 

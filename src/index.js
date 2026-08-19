@@ -60,6 +60,15 @@ const CACHE_VERSION = "v11";
 // score semantics change, even if nothing else does.
 const LETTER_VERSION = "v6";
 
+// The quota backoff, remembered in the isolate as well as in KV.
+//
+// KV is eventually consistent, so the flag a request writes is not visible to
+// the next request for up to a minute. Without this, every time the hour long
+// flag expires there is a window where several requests each pay a full model
+// round trip to rediscover the same refusal. The isolate remembers instantly;
+// KV is what carries the fact to the other colos.
+let quotaBackoffUntil = 0;
+
 // Small in-process cache. The Worker isolate holds this between requests, which
 // is all the caching this product needs: every slow artifact (imagery, scraped
 // voices) is already baked into static assets at build time.
@@ -1088,17 +1097,21 @@ async function ogFor(c, env) {
   // it. Two more KV reads to confirm two records that by construction do not
   // exist would double the cost of the commonest page on the site.
   if (isScored(c)) return { score: cityScore(c), cred: cityCred(c), tier: TIERS.SCORED };
-  const [score, cred, imagery] = await Promise.all([
+  const [score, cred, imagery, letter] = await Promise.all([
     getScore(env, c.slug, SCORE_VERSION).catch(() => null),
     getCredCached(env, c.slug, CRED_VERSION).catch(() => null),
     // Which of the two warmed tiers this is, decided by whether both generated
     // states exist as bytes rather than by a label somebody set once.
     getImageryStatus(env, c.slug).catch(() => null),
+    // The last letter that passed verification here. Rendered into the HTML
+    // when one exists, so the page's conclusion does not depend on a model
+    // call completing while somebody reads it.
+    getVerifiedLetter(env, c.slug).catch(() => null),
   ]);
   // Whether this corner actually has a generated fix image. The page's own
   // subtitle promises "a picture of the fix", and it must not promise one it
   // is not showing. It comes back by itself when generation does.
-  return { score, cred, tier: tierOf(c, imagery), showsFix: Boolean(imagery?.states?.includes("fix")) };
+  return { score, cred, letter, tier: tierOf(c, imagery), showsFix: Boolean(imagery?.states?.includes("fix")) };
 }
 
 // ---------------------------------------------------------------- generated imagery
@@ -1861,7 +1874,10 @@ export default {
         // request serves this corner's last verified letter and touches
         // nothing else: no model call, no retry gauntlet, no 17 second wait
         // to rediscover a fact the last request already established.
-        const backoff = await getLetterBackoff(env).catch(() => null);
+        const backoff =
+          quotaBackoffUntil > Date.now()
+            ? { at: new Date().toISOString(), until: new Date(quotaBackoffUntil).toISOString(), reason: "model quota, remembered in this isolate" }
+            : await getLetterBackoff(env).catch(() => null);
         if (backoff) {
           const stored = await getVerifiedLetter(env, c.slug).catch(() => null);
           if (stored?.text) {
@@ -1893,6 +1909,7 @@ export default {
               // this corner, so it is recorded once and every other request
               // for the next hour reads it instead of rediscovering it.
               if (e?.quota) {
+                quotaBackoffUntil = Date.now() + 3600 * 1000;
                 await setLetterBackoff(env, e.message).catch(() => {});
                 const stored = await getVerifiedLetter(env, c.slug).catch(() => null);
                 if (stored?.text) {
