@@ -1834,6 +1834,56 @@ function upgradeMap(){
 // panel in place through the exact same code a full load runs.
 const LANE_LOADERS = {};
 
+// The press card is written by two lanes that never spoke to each other. The
+// year strip counts what a dated search can find across a decade; the press
+// list is what passed the relevance filter now. Rendered independently they
+// could contradict each other inside one card, and on burn-checked corners
+// they routinely did: "First coverage we can find dates to 2018. 2 headlines
+// since." sitting directly above "Searched and nothing found."
+//
+// Both statements were true of their own lane and the pair was nonsense. So
+// one composer owns the sentence, and it waits for both lanes, because a claim
+// about what was not found is only safe to make once you know what was.
+let PRESS_LANES = { news: undefined, timeline: undefined };
+function pressLane(name, value){ PRESS_LANES[name] = value; composePress(); }
+
+function composePress(){
+  if(PRESS_LANES.news === undefined || PRESS_LANES.timeline === undefined) return;
+  const n = PRESS_LANES.news || {}, t = PRESS_LANES.timeline || {};
+  // Cited results are their own answer. Nothing to reconcile and nothing to
+  // soften: the card lists what it found.
+  if((n.items || []).length) return;
+  const box = el("news");
+  if(!box) return;
+  const hist = t.totalHeadlines || 0;
+  const year = t.firstReportedYear;
+  const read = n.found || 0;
+  const searches = (n.cost && n.cost.searches) || 0;
+  if(hist && year){
+    box.innerHTML = '<p class="empty">' + hist +
+      (hist === 1 ? " historical headline" : " historical headlines") +
+      " found (earliest " + year + "); no current safety coverage passed the relevance filter (0 of " +
+      read + " read).</p>";
+    // The strip's own note said the same thing in a way that reads as a
+    // finding rather than as the other half of this sentence. The bars still
+    // carry the history; the words are said once, here.
+    if(el("tlnote")) el("tlnote").textContent = "";
+  } else if(n.lane === "press-checked"){
+    box.innerHTML = '<p class="empty">Searched and nothing found. ' + read +
+      (read === 1 ? " article was" : " articles were") + " read across " + searches +
+      " searches and none was about safety at this crossing.</p>";
+  } else {
+    box.innerHTML = '<div class="m">No coverage found.</div>';
+  }
+  if(n.lane === "press-checked"){
+    const pn = document.createElement("p");
+    pn.className = "lanenote";
+    pn.textContent = "Press checked in a batch run against the city's coverage. This corner keeps its tier: "
+      + "the visual audit has not run here, and being press checked does not make a corner audited.";
+    box.appendChild(pn);
+  }
+}
+
 LANE_LOADERS.stats = () => fetch("/api/stats" + X).then(r => r.json()).then(d => {
   V.stats = d; paintVerdict();
   // A null district means no clear majority, which prints as "n/a" rather than
@@ -2080,23 +2130,12 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
     // An agency page is the record, not reporting on the record. Tagged so it
     // reads as a primary source rather than as press coverage.
     (x.official ? ' <span class="osrc">official source</span>' : '') +
-    '</div><div class="m">' + esc(x.domain) + (x.date ? " &middot; " + esc(x.date) : "") + '</div></a>').join("")
-    // Searched and empty is a result, and it is a better one than silence: it
-    // says this corner was checked and nothing on topic came back, with the
-    // count of what was read to back it.
-    || (checked
-      ? '<p class="empty">Searched and nothing found. ' + (d.found || 0) +
-        ' article' + (d.found === 1 ? "" : "s") + ' were read across ' +
-        ((d.cost && d.cost.searches) || 0) + ' searches and none was about safety at this crossing.</p>'
-      : '<div class="m">No coverage found.</div>');
-  if(checked){
-    var pn = document.createElement("p");
-    pn.className = "lanenote";
-    pn.textContent = "Press checked in a batch run against the city's coverage. This corner keeps its tier: "
-      + "the visual audit has not run here, and being press checked does not make a corner audited.";
-    el("news").appendChild(pn);
-  }
-});
+    '</div><div class="m">' + esc(x.domain) + (x.date ? " &middot; " + esc(x.date) : "") + '</div></a>').join("");
+  // The empty state is not written here. It is a claim about what was not
+  // found, and this lane does not know what the year strip found, so it hands
+  // over and lets the composer say it once.
+  pressLane("news", d);
+}).catch(() => pressLane("news", null));
 
 // Hazard tape, once. Threshold 0.4 so it fires when the card is properly on
 // screen rather than when one pixel of it is, unobserved immediately after so
@@ -2253,7 +2292,9 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
 // search found nothing that year, not that nothing happened.
 LANE_LOADERS.timeline = () => fetch("/api/timeline" + X).then(r => r.json()).then(t => {
   const years = t && t.years;
-  if(!years || !years.length) return;
+  // "The strip has nothing" is an answer the composer is waiting on just as
+  // much as a full decade is, so it is reported on this path too.
+  if(!years || !years.length){ pressLane("timeline", t); return; }
   const counts = years.map(y => y.count || 0);
   const max = Math.max.apply(null, counts) || 1;
   const bars = el("tlbars");
@@ -2317,7 +2358,11 @@ LANE_LOADERS.timeline = () => fetch("/api/timeline" + X).then(r => r.json()).the
   const latest = [].concat(years).reverse().find(y => y.count);
   if(latest) show(latest);
   el("tl").hidden = false;
-}).catch(() => {});
+  // Last, deliberately. The composer may blank this lane's note when the two
+  // lanes would otherwise contradict, and reporting earlier let the rest of
+  // this function write the contradiction straight back.
+  pressLane("timeline", t);
+}).catch(() => pressLane("timeline", null));
 
 // The scrape funnel, drawn from the run manifest. It renders only when real
 // counts exist for this corner: a corner with no backfilled scrape shows no
@@ -2503,6 +2548,10 @@ let CORNER_MAP = null; // the Leaflet map instance, once the band upgrade runs
 function runLanes(){ Object.values(LANE_LOADERS).forEach(fn => { try { fn(); } catch(e) {} }); }
 
 function resetTransient(){
+  // The corner swapped underneath the page, so neither lane has answered for
+  // the new one yet. Left populated, the composer would reconcile this
+  // corner's press against the last corner's history.
+  PRESS_LANES = { news: undefined, timeline: undefined };
   V.score = null; V.stats = null; V.cred = null;
   IMG = null; state = "today"; polls = 0;
   window.HZLABELS = [];
