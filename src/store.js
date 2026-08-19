@@ -632,6 +632,65 @@ export async function getExaProbe(env) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+// ---------------------------------------------------------------- press enrichment
+
+// One entry per street, shared by every corner on it. A seven day life is
+// long enough that a nightly batch pays for a street once a week and short
+// enough that a corridor in the news does not stay stale for a month.
+export async function getPressSegment(env, street) {
+  const raw = await rawGet(env, `press:segment:${street}`);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+export async function putPressSegment(env, street, rec, ttlSec = 7 * 24 * 3600) {
+  await rawPut(env, `press:segment:${street}`, JSON.stringify(rec), ttlSec);
+}
+
+// The stored press record for one corner. No TTL: a stored result is the
+// evidence the corner was checked, and it expires by being replaced.
+export async function getPress(env, slug, version) {
+  const raw = await rawGet(env, `press:corner:${slug}`);
+  if (!raw) return null;
+  try {
+    const rec = JSON.parse(raw);
+    return !version || rec.version === version ? rec : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putPress(env, slug, rec) {
+  await rawPut(env, `press:corner:${slug}`, JSON.stringify(rec));
+}
+
+// The roll-up the watchlist page reads. Counted as corners are written rather
+// than by listing thousands of keys at read time.
+export async function bumpPressRollup(env, rec) {
+  const key = "press:rollup";
+  const raw = await rawGet(env, key);
+  let r;
+  try { r = raw ? JSON.parse(raw) : null; } catch { r = null; }
+  const period = (rec.fetchedAt || "").slice(0, 7);
+  if (!r || r.period !== period) r = { period, checked: 0, withCoverage: 0, empty: 0, deferred: 0, costUsd: 0 };
+  if (rec.source === "budget-deferred") r.deferred += 1;
+  else {
+    r.checked += 1;
+    if (rec.source === "live") r.withCoverage += 1;
+    else r.empty += 1;
+  }
+  r.costUsd = Math.round((r.costUsd + (rec.cost?.usd || 0)) * 1e6) / 1e6;
+  r.updated = new Date().toISOString();
+  await rawPut(env, key, JSON.stringify(r));
+  return r;
+}
+
+export async function getPressRollup(env) {
+  const raw = await rawGet(env, "press:rollup");
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
 // ---------------------------------------------------------------- press watchlist
 
 export async function getWatchlist(env, version) {

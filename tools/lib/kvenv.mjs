@@ -55,18 +55,27 @@ export function kvEnv(root, extra = {}) {
     return value;
   };
 
-  const put = async (key, value) => {
+  // The third argument is the Worker KV options bag. Dropping it silently was
+  // a divergence waiting to happen: the segment cache asks for a seven day
+  // life, and a tool that ignores the TTL writes entries that never expire.
+  const put = async (key, value, opts = {}) => {
     const file = join(tmp, "value.json");
     writeFileSync(file, typeof value === "string" ? value : JSON.stringify(value));
-    execFileSync(
-      "npx",
-      ["wrangler", "kv", "key", "put", key, "--path", file, "--namespace-id", NS, "--remote"],
-      { cwd: root, stdio: ["ignore", "ignore", "inherit"], timeout: 180_000 },
-    );
+    const args = ["wrangler", "kv", "key", "put", key, "--path", file, "--namespace-id", NS, "--remote"];
+    // The CLI spells it --ttl where the Worker binding spells it
+    // expirationTtl. Getting that wrong is not a warning, it is a rejected
+    // write, and the first symptom is a cache that is cold every single time.
+    if (opts.expirationTtl) args.push("--ttl", String(Math.max(60, Math.floor(opts.expirationTtl))));
+    execFileSync("npx", args, { cwd: root, stdio: ["ignore", "ignore", "inherit"], timeout: 180_000 });
     cache.set(key, typeof value === "string" ? value : JSON.stringify(value));
   };
 
-  return { STORE: { get, put }, ...extra };
+  // Anything another writer can move under us has to be re-readable. The
+  // Worker spends the same Exa balance this tool does, so a cached meter is a
+  // meter that reads low, and a meter that reads low is an overspend.
+  const uncache = (...keys) => keys.forEach((k) => cache.delete(k));
+
+  return { STORE: { get, put }, uncache, ...extra };
 }
 
 // Secrets stay in .dev.vars and never reach a log line or an argv.

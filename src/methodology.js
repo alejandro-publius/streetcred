@@ -156,6 +156,32 @@ who clicks through and finds a slightly different count should already know why.
 <b>80 meters over twelve months of 311</b>, matching the grade's own footprint, where a live corner's
 tiles count within 150 meters over three years. Each tile says which it is.</p>
 
+<h2>Press checking at city scale, and what it costs</h2>
+<p>Running the per-page press search on every corner in the city would spend the balance on duplicates:
+every corner on Mission Street would run its own Mission Street search and get its own copy of the same
+corridor coverage. The batch lane is built around what is already paid for, and only moves to the next
+step when the previous one has nothing.</p>
+<ol>
+  <li><b>The stored citywide sweep first.</b> The watchlist has already read this month's coverage. A
+  corner it already found articles for starts with candidates before a single call is planned.</li>
+  <li><b>Then the segment cache.</b> One stored entry per street, good for seven days, shared by every
+  corner on that street. A corner whose streets are both warm costs no corridor search at all.</li>
+  <li><b>Then three dated windows on the crossing itself</b>, which is the only query that is genuinely
+  corner specific: <b>2014 to 2019</b>, <b>2020 to 2023</b>, and <b>2024 to now</b>. A search per year
+  cost eleven calls to answer a question that reads the same at three.</li>
+</ol>
+<p><b>Page text is bought last and only for what might be published.</b> A search that asks for text
+pays for text on every result, including the ones the filter is about to discard, so these searches ask
+for none. Candidates are shortlisted on title and url, the shortlist alone is fetched, and only then is
+the corner-level bar applied to real text. The honest cost of that order: a story that names the corner
+only in its body, with a title and url that name neither street, can be missed by the shortlist. The
+lane errs toward showing less, which is the same direction every other filter here errs in.</p>
+<p><b>Searched and empty is stored and shown as a result</b>, not hidden. A corner with no coverage
+found says so, the same way the resident-voices funnel does.</p>
+<p><b>A press-checked corner is not an audited corner.</b> It keeps its tier and gains a press section.
+The imagery panel keeps its honest pending state, and the audited count on the homepage does not move
+because a corner was press checked.</p>
+
 <h2>The Press Watchlist, and how a corner gets on it</h2>
 <p>Every other lane on this site starts from a corner and asks what is written about it. The watchlist
 runs the other way: it starts from the city's coverage and asks which corners are in it. That is an
