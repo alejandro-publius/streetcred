@@ -3,10 +3,16 @@
 //   node tools/create_monitors.mjs --dry
 //   node tools/create_monitors.mjs --secret-from-env
 //
-// The webhook secret is never passed on the command line and never read from
-// a file this tool prints. It comes from the environment:
+// DEPRECATED for creation. Use the Worker instead:
 //
-//   read -rs WEBHOOK_SECRET && export WEBHOOK_SECRET && node tools/create_monitors.mjs
+//   curl -X POST "https://streetcred.thealexschroeder.workers.dev/api/radar/setup/<secret>"
+//
+// or wait for the 06:10 cron, which creates them the first morning a webhook
+// secret exists. The Worker already holds the secret, so nobody has to hold it
+// twice, and `read -rs` does not work in a shell with no terminal attached: it
+// hits EOF, the && chain stops, and nothing is created with no output to say
+// so. This tool remains useful for --dry, which shows the corridor selection
+// without creating anything.
 //
 // Monitors are created once and their ids stored in KV. The webhook refuses
 // any payload naming a monitor id it did not create, so this list is the

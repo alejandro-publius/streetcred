@@ -20,10 +20,13 @@ import {
   getVoicesStored, exaBudget, actorRunBudget, getActorCosts, getVoicesSummary,
   recordExaSpend, recordExaProbe, getExaProbe,
   getPress, putPress, getPressRollup, bumpPressRollup, getBurnCheckpoint,
-  radarBudget, countRadarDetection, getMonitors, getRadarFeed, pushRadarFeed, putRadarUnknown,
+  radarBudget, countRadarDetection, getMonitors, putMonitors, getRadarFeed, pushRadarFeed, putRadarUnknown,
   recountPressCitations, getPressCitations, CITATION_CACHE_S,
 } from "./store.js";
-import { judge, resultsFrom, monitorIdFrom, RADAR_VERSION } from "./radar.js";
+import {
+  judge, resultsFrom, monitorIdFrom, RADAR_VERSION,
+  worstCorridors, corridorQuery, META_QUERIES, CORRIDOR_LIMIT,
+} from "./radar.js";
 import { RADAR_PAGE } from "./radarpage.js";
 import { enrichPress, PRESS_VERSION } from "./pressenrich.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
@@ -875,6 +878,70 @@ ${signoff}`,
   };
 }
 
+// ---------------------------------------------------------------- radar setup
+
+// Monitor creation lives in the Worker, not in a tool.
+//
+// The tool version needed the webhook secret in a shell, and the shell it was
+// meant to run in has no terminal to type into: `read -rs` hit EOF, the && chain
+// stopped, and nothing was created or installed with no output to say so. The
+// secret already lives here, so the creation belongs here, and nobody has to
+// hold it twice.
+//
+// Idempotent by construction. It refuses if monitors already exist, so the
+// cron can call it every morning and it will do nothing every morning after
+// the first.
+export async function ensureMonitors(env) {
+  if (!env.WEBHOOK_SECRET) return { created: 0, reason: "no webhook secret installed" };
+  if (!env.EXA_API_KEY) return { created: 0, reason: "no exa key installed" };
+  const existing = await getMonitors(env).catch(() => null);
+  if (existing?.list?.length) return { created: 0, reason: "already created", count: existing.list.length };
+
+  const rows = [];
+  for (let page = 1; page <= 12; page += 1) {
+    const p = await getRankPage(env, page).catch(() => null);
+    if (!p?.rows?.length) break;
+    rows.push(...p.rows);
+  }
+  if (!rows.length) return { created: 0, reason: "no ranked corners to derive corridors from" };
+
+  const plan = [
+    ...worstCorridors(rows, CORRIDOR_LIMIT).map((c) => ({
+      kind: "corridor", corridor: c.street, query: corridorQuery(c.street),
+    })),
+    ...META_QUERIES.map((q) => ({ kind: "meta", corridor: "citywide", query: q })),
+  ];
+
+  const url = `https://streetcred.thealexschroeder.workers.dev/api/radar/hook/${env.WEBHOOK_SECRET}`;
+  const list = [];
+  const failed = [];
+  for (const m of plan) {
+    try {
+      const r = await fetch("https://api.exa.ai/monitors", {
+        method: "POST",
+        headers: { "x-api-key": env.EXA_API_KEY, "content-type": "application/json" },
+        body: JSON.stringify({
+          name: `streetcred ${m.kind} ${m.corridor}`.slice(0, 60),
+          search: { query: m.query, numResults: 5 },
+          webhook: { url },
+          metadata: { corridor: m.corridor, kind: m.kind },
+        }),
+      });
+      const d = await r.json().catch(() => null);
+      const id = d?.id || d?.monitorId || d?.data?.id;
+      if (!r.ok || !id) {
+        failed.push({ query: m.query, status: r.status, body: JSON.stringify(d).slice(0, 140) });
+        continue;
+      }
+      list.push({ id, query: m.query, corridor: m.corridor, kind: m.kind, createdAt: new Date().toISOString() });
+    } catch (e) {
+      failed.push({ query: m.query, error: String(e.message || e).slice(0, 120) });
+    }
+  }
+  if (list.length) await putMonitors(env, { version: "v1", createdAt: new Date().toISOString(), list });
+  return { created: list.length, failed: failed.slice(0, 5), failedCount: failed.length };
+}
+
 // ---------------------------------------------------------------- radar webhook
 
 // Exa pushes detections here as coverage appears.
@@ -1640,7 +1707,11 @@ export default {
     // The audit first, always. It is the claim the site makes about itself and
     // it must not be starved by a batch that runs beside it.
     ctx.waitUntil(
-      cornerOfTheDay(env, ctx, origin).then(() => pressBatch(env, PRESS_BATCH_PER_NIGHT)),
+      cornerOfTheDay(env, ctx, origin)
+        // Creates the monitors the first morning a webhook secret exists, and
+        // does nothing every morning after that.
+        .then(() => ensureMonitors(env).catch(() => null))
+        .then(() => pressBatch(env, PRESS_BATCH_PER_NIGHT)),
     );
   },
 
@@ -2262,6 +2333,15 @@ export default {
 
       if (p.startsWith("/api/radar/hook/")) {
         return await radarHook(request, env, url);
+      }
+
+      // Same secret, same shape as the webhook: whoever can be told a
+      // detection can also ask for the monitors to exist. It is idempotent,
+      // so calling it twice is not a way to spend twice.
+      if (p.startsWith("/api/radar/setup/")) {
+        const secret = p.split("/").pop();
+        if (!env.WEBHOOK_SECRET || secret !== env.WEBHOOK_SECRET) return json({ error: "not found" }, 404);
+        return json(await ensureMonitors(env));
       }
 
       if (p === "/api/health") {
