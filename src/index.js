@@ -945,7 +945,7 @@ export async function pressBatch(env, limit = PRESS_BATCH_PER_NIGHT) {
 }
 
 // ---------------------------------------------------------------- health
-async function health(env, origin) {
+async function health(env, origin, opts = {}) {
   const ping = async (name, fn) => {
     try {
       await fn();
@@ -956,9 +956,21 @@ async function health(env, origin) {
   };
   const c = CORNERS[DEFAULT_SLUG];
   let probe = null;
+  // The Exa ping is a billed search. Every health check has always spent one,
+  // which was fine while nobody was counting and is not fine while nobody can
+  // say which workspace is billed. So it runs when the workspace is confirmed,
+  // or when a caller asks for it deliberately with ?probe=exa, which is the
+  // one call a human watches their dashboard for.
+  const budget = await exaBudget(env).catch(() => null);
+  const probeExa = Boolean(opts.probeExa) || Boolean(budget?.accountVerified);
+  const skipped = [];
   const results = await Promise.all([
     ping("datasf", () => soql(DS_CRASHES, { "$select": "count(*)", "$limit": 1 })),
     ping("exa", async () => {
+      if (!probeExa) {
+        skipped.push("exa");
+        throw new Error("not probed: a search is billed and the workspace is unconfirmed, add ?probe=exa");
+      }
       const r = await fetch("https://api.exa.ai/search", {
         method: "POST",
         headers: { "x-api-key": env.EXA_API_KEY, "content-type": "application/json" },
@@ -1014,7 +1026,10 @@ async function health(env, origin) {
   const out = Object.fromEntries(results);
   const seen = probe || (await getExaProbe(env).catch(() => null));
   return {
-    ok: Object.values(out).every((v) => v === "ok"),
+    // A probe that was deliberately not run is not a failing probe. It is also
+    // not a passing one, so it is named rather than folded into either.
+    ok: Object.entries(out).every(([k, v]) => v === "ok" || skipped.includes(k)),
+    skipped,
     ...out,
     // The measured price of the search this check just made, and the plan
     // tier it identifies. A price matching neither tier reports as null rather
@@ -2085,7 +2100,7 @@ export default {
       }
 
       if (p === "/api/health") {
-        return json(await health(env, origin));
+        return json(await health(env, origin, { probeExa: url.searchParams.get("probe") === "exa" }));
       }
 
       return new Response("not found", { status: 404 });
