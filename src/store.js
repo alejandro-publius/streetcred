@@ -743,6 +743,43 @@ export async function bumpPressRollup(env, rec) {
   return r;
 }
 
+// The burn checkpoint. The stored press record already makes a run resumable
+// corner by corner; this is what stops a resumed run re-scanning the rank from
+// page one to find where it got to.
+export async function getBurnCheckpoint(env) {
+  const raw = await rawGet(env, "press:burn");
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+export async function putBurnCheckpoint(env, rec) {
+  await rawPut(env, "press:burn", JSON.stringify({ ...rec, updatedAt: new Date().toISOString() }));
+}
+
+// Rolled up once a chunk rather than once a corner. Same arithmetic, an order
+// of magnitude fewer round trips.
+export async function bumpPressRollupBulk(env, recs) {
+  const key = "press:rollup";
+  const raw = await rawGet(env, key);
+  let r;
+  try { r = raw ? JSON.parse(raw) : null; } catch { r = null; }
+  const period = (recs.find((x) => x?.fetchedAt)?.fetchedAt || new Date().toISOString()).slice(0, 7);
+  if (!r || r.period !== period) r = { period, checked: 0, withCoverage: 0, empty: 0, deferred: 0, costUsd: 0 };
+  for (const rec of recs) {
+    if (!rec) continue;
+    if (rec.source === "budget-deferred") r.deferred += 1;
+    else {
+      r.checked += 1;
+      if (rec.source === "live") r.withCoverage += 1;
+      else r.empty += 1;
+    }
+    r.costUsd = Math.round((r.costUsd + (rec.cost?.usd || 0)) * 1e6) / 1e6;
+  }
+  r.updated = new Date().toISOString();
+  await rawPut(env, key, JSON.stringify(r));
+  return r;
+}
+
 export async function getPressRollup(env) {
   const raw = await rawGet(env, "press:rollup");
   if (!raw) return null;

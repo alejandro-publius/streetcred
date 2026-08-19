@@ -70,6 +70,13 @@ export function segmentsOf(corner) {
 export const segmentQuery = (street, city = "San Francisco") =>
   `pedestrian safety OR crash OR traffic ${street.replace(/-/g, " ")} ${city}`;
 
+// The measured cost is summed here and written once per corner, at the end,
+// rather than after each of the five or six calls. The cap is not weakened by
+// that: the whole plan is reserved before the first call, and the cap is
+// enforced on the greater of reserved and spent, so a corner that dies partway
+// leaves its reservation standing and errs expensive. What it buys is six KV
+// round trips per corner instead of twenty-odd, which is the difference
+// between a burn run taking hours and taking most of a day.
 async function exaPost(env, url, body, meter) {
   const r = await fetch(url, {
     method: "POST",
@@ -82,7 +89,6 @@ async function exaPost(env, url, body, meter) {
   const usd = Number(d?.costDollars?.total);
   if (Number.isFinite(usd) && usd > 0) {
     meter.costUsd = Math.round((meter.costUsd + usd) * 1e6) / 1e6;
-    await recordExaSpend(env, usd).catch(() => {});
   }
   return d;
 }
@@ -251,6 +257,9 @@ export async function enrichPress(env, corner, opts = {}) {
     },
     windows: meter.windows,
   };
+
+  // One write for everything this corner actually cost.
+  if (meter.costUsd > 0) await recordExaSpend(env, meter.costUsd).catch(() => {});
 
   // Searched and empty is a result, stored and shown like one. The lane that
   // says nothing was found is worth more than the lane that says nothing.

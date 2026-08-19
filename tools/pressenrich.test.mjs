@@ -132,3 +132,16 @@ test("a social post is never cited as press coverage", async () => {
   assert.ok(!domains.some((d) => /facebook|reddit/.test(d)), `social slipped through: ${domains.join(",")}`);
   assert.ok(domains.includes("sfchronicle.com"), "real coverage still published");
 });
+
+test("measured spend is written once a corner, not once a call", async () => {
+  const writes = [];
+  const { env } = harness();
+  const put = env.STORE.put;
+  env.STORE.put = async (k, v) => { writes.push(k); return put(k, v); };
+  await enrichPress(env, CORNER);
+  const spendWrites = writes.filter((k) => k === "exa:spend").length;
+  assert.equal(spendWrites, 1, `one write per corner, saw ${spendWrites}`);
+  // The reservation still happens up front, which is what protects the cap if
+  // the corner dies before its measurement is written.
+  assert.ok(writes.filter((k) => k === "budget:exa").length >= 1, "the plan is still reserved");
+});
