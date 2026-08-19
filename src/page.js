@@ -756,6 +756,12 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
 /* A lane's own count, in its header. Same numbers the lane body renders, so a
    reader can see the size of the evidence before reading it. */
+/* The placeholder that replaces an image element with nothing in it. */
+.imgph{display:flex;flex-direction:column;justify-content:center;gap:6px;min-height:210px;
+  padding:22px 24px;background:var(--card);border:1px dashed var(--line2);border-radius:12px}
+.imgphl{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.imgphn{margin:0;font-size:13.5px;color:var(--ink);line-height:1.55;max-width:52ch}
+
 .lanenums{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;margin-left:auto;margin-right:10px}
 .eyebrow .lanenums{margin-left:12px;margin-right:0}
 
@@ -921,7 +927,9 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
 </header>
 <main>
 
-<p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
+<p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in ${
+  og.showsFix ? "a picture of the fix and a letter to the Supervisor" : "a letter to the Supervisor"
+}. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
 
 <section class="verdict" id="verdict" hidden aria-label="The verdict for this corner">
   <span class="vg" id="vg" aria-hidden="true"></span>
@@ -963,10 +971,17 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
       <button data-state="fix" aria-pressed="false"${c.generated ? " disabled" : ""}>Proposed fix</button>
     </div>
 
-    <div class="hero single" id="hero">
-      <img id="base" alt="${c.name} today, from Street View">
-      <img id="overlay" alt="">
+    <div class="hero single" id="hero" hidden>
+      <img id="base" hidden alt="${esc(c.name)} today, photographed by Google Street View">
+      <img id="overlay" hidden alt="Annotated comparison view of ${esc(c.name)}">
       <div id="handle" role="separator" tabindex="0" aria-label="Comparison slider, arrow keys move it" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
+    </div>
+    <!-- Stands in for the photograph until one is loaded, and stays if none
+         arrives. A card that says what is missing and why beats an image
+         element with nothing in it. -->
+    <div class="imgph" id="imgph">
+      <span class="imgphl">The corner, three ways</span>
+      <p class="imgphn" id="imgphn">Loading the Street View photograph for this corner.</p>
     </div>
     <p class="cap" aria-live="polite"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
     <div class="impact" id="impact" hidden>
@@ -1158,16 +1173,24 @@ document.querySelectorAll(".eyebrow").forEach(e => onFirstView(e, () => e.classL
 function render(){
   if(!IMG) return;
   const hero = el("hero");
+  const ph = el("imgph");
   // A corner with no Street View coverage is still a corner with collisions.
-  // Drop the stage, keep every records lane below it untouched.
+  // The stage becomes a card that says so, and every records lane below it is
+  // untouched. What never happens is an image element with no source in it.
   if(!IMG.today){
     hero.hidden = true;
+    if(ph){
+      ph.hidden = false;
+      el("imgphn").textContent = IMG.note || "Street View has no photograph of this corner.";
+    }
     document.querySelector(".toggle").hidden = true;
     el("capk").textContent = "No photograph";
     el("capv").textContent = IMG.note || "Street View has no imagery for this corner.";
     return;
   }
+  if(ph) ph.hidden = true;
   hero.hidden = false;
+  el("base").hidden = false;
   el("base").src = IMG.today;
   // Alt text from data, not boilerplate: the audit names what it marked.
   el("base").alt = "Street View of " + CORNER_GEO.name + " today";
@@ -1179,13 +1202,14 @@ function render(){
     ovImg.alt = "Automated hazard audit of " + CORNER_GEO.name + " " + marked;
   } else if(state === "fix"){
     ovImg.alt = "AI visualization of the proposed fix at " + CORNER_GEO.name + ". Not a photograph.";
-  } else { ovImg.alt = ""; }
-  if(state === "today" || !IMG[state]){ hero.classList.add("single"); }
+  } else { ovImg.alt = "Annotated comparison view of " + CORNER_GEO.name; }
+  if(state === "today" || !IMG[state]){ hero.classList.add("single"); el("overlay").hidden = true; }
   else {
     hero.classList.remove("single");
     // Crossfade rather than a hard swap, so switching states reads as the same
     // photograph being re-examined rather than as a different picture.
     const ov = el("overlay");
+    ov.hidden = false;
     if(ov.getAttribute("src") !== IMG[state]){
       if(!REDUCED) ov.style.opacity = "0";
       ov.onload = () => { ov.style.opacity = "1"; };

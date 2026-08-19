@@ -1095,7 +1095,10 @@ async function ogFor(c, env) {
     // states exist as bytes rather than by a label somebody set once.
     getImageryStatus(env, c.slug).catch(() => null),
   ]);
-  return { score, cred, tier: tierOf(c, imagery) };
+  // Whether this corner actually has a generated fix image. The page's own
+  // subtitle promises "a picture of the fix", and it must not promise one it
+  // is not showing. It comes back by itself when generation does.
+  return { score, cred, tier: tierOf(c, imagery), showsFix: Boolean(imagery?.states?.includes("fix")) };
 }
 
 // ---------------------------------------------------------------- generated imagery
