@@ -363,7 +363,15 @@ The first twelve are inherited and all still true. 13 onward are new.
     after a known call, which is what `tools/exa_verify.mjs` records and what
     `pressBatch` now refuses to spend without.
 
-35. **Exa returns social posts as news.** A Facebook post came back as the top
+35. **Exa's API has no account or usage endpoint.** Checked directly with a
+    live key: `/account`, `/me`, `/usage`, `/organizations`, `/billing/usage`
+    and the `v1` forms of each all return 404 HTML. There is no programmatic
+    way to ask which workspace a key bills. That is why the gate has to be a
+    human refreshing a specific workspace's Usage page, and why the price
+    inference that replaced it was reaching for the only signal available
+    rather than the right one.
+
+36. **Exa returns social posts as news.** A Facebook post came back as the top
     result for a Tenderloin corner. A lane that publishes what it keeps under
     the words "found and cited" cannot cite a Facebook post, so `NOT_PRESS` in
     `src/pressenrich.js` excludes social, video, forum and review domains. The
