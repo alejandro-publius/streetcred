@@ -21,6 +21,7 @@ import {
   recordExaSpend, recordExaProbe, getExaProbe,
   getPress, putPress, getPressRollup, bumpPressRollup, getBurnCheckpoint,
   radarBudget, countRadarDetection, getMonitors, getRadarFeed, pushRadarFeed, putRadarUnknown,
+  recountPressCitations, getPressCitations, CITATION_CACHE_S,
 } from "./store.js";
 import { judge, resultsFrom, monitorIdFrom, RADAR_VERSION } from "./radar.js";
 import { RADAR_PAGE } from "./radarpage.js";
@@ -1953,7 +1954,7 @@ export default {
         if (legacy) {
           return Response.redirect(`${origin}/c/${canonicalSlug(legacy)}`, 301);
         }
-        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist, voicesSummary, pressSummary, pressRoll, actorCosts] = await Promise.all([
+        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist, voicesSummary, pressSummary, pressRoll, pressCites, actorCosts] = await Promise.all([
           getHinList(env),
           getCotdLog(env).catch(() => []),
           // Read only. The homepage must never wait on a findSimilar call, so
@@ -1968,6 +1969,7 @@ export default {
           getVoicesSummary(env).catch(() => null),
           env.STORE?.get("press:summary", "json").catch(() => null) ?? null,
           getPressRollup(env).catch(() => null),
+          getPressCitations(env).catch(() => null),
           getActorCosts(env).catch(() => []),
         ]);
         const city = meta
@@ -2022,10 +2024,17 @@ export default {
         // Two sources, one figure, and the time it was true. The timeline
         // snapshot alone read the same all day while the batch lane was adding
         // citations by the hundred.
+        // Counted from the stored records, not from a counter that only knows
+        // what happened after it was added. Recounted in the background when
+        // the cache ages out, so a page load never waits on a scan and never
+        // shows a figure it cannot date.
+        const citesFresh =
+          pressCites && Date.now() - Date.parse(pressCites.at || 0) < CITATION_CACHE_S * 1000;
+        if (!citesFresh) ctx.waitUntil(recountPressCitations(env).catch(() => {}));
         const pressTile = {
           ...(pressSummary || {}),
-          checkCitations: pressRoll?.citations || 0,
-          asOf: fmtAsOf(pressRoll?.updated || pressSummary?.at),
+          checkCitations: pressCites?.citations || 0,
+          asOf: fmtAsOf(pressCites?.at || pressRoll?.updated || pressSummary?.at),
         };
         return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressTile, spendUsd, embed), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },

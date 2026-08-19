@@ -790,6 +790,68 @@ export async function getPressRollup(env) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+// The true count of published citations, from the stored records themselves.
+//
+// A running counter was added to the roll-up, which is right going forward and
+// worthless for anything already written: the burn had stored 246 corners
+// before the counter existed, so it read zero while the homepage tile showed a
+// snapshot from a tool run at 02:53. A stale number with a fresh timestamp is
+// worse than a stale number, because it looks current.
+//
+// So this counts what is actually there. It runs inside the Worker where KV is
+// a binding rather than a REST call, it is bounded, and its result is cached
+// so a page load reads one key.
+export const CITATION_CACHE_S = 6 * 3600;
+const CITATION_SCAN_CAP = 2000;
+
+export async function recountPressCitations(env) {
+  if (!env?.STORE?.list) return null;
+  try {
+    return await scanPressCitations(env);
+  } catch (e) {
+    // A scan that fails silently leaves the tile showing a stale number with a
+    // fresh timestamp, which is the exact failure this function exists to fix.
+    // The error is stored where the reader of the count will find it.
+    await rawPut(env, "press:citations", JSON.stringify({
+      error: String((e && e.message) || e).slice(0, 240),
+      at: new Date().toISOString(),
+    }));
+    return null;
+  }
+}
+
+async function scanPressCitations(env) {
+  let cursor, scanned = 0, citations = 0, corners = 0, withCoverage = 0;
+  for (;;) {
+    const page = await env.STORE.list({ prefix: "press:corner:", cursor, limit: 1000 });
+    for (const k of page.keys || []) {
+      if (scanned >= CITATION_SCAN_CAP) break;
+      scanned += 1;
+      const rec = await env.STORE.get(k.name, "json").catch(() => null);
+      if (!rec) continue;
+      corners += 1;
+      const n = (rec.items || []).length;
+      citations += n;
+      if (n) withCoverage += 1;
+    }
+    if (page.list_complete || !page.cursor || scanned >= CITATION_SCAN_CAP) break;
+    cursor = page.cursor;
+  }
+  const rec = {
+    citations, corners, withCoverage, scanned,
+    truncated: scanned >= CITATION_SCAN_CAP,
+    at: new Date().toISOString(),
+  };
+  await rawPut(env, "press:citations", JSON.stringify(rec));
+  return rec;
+}
+
+export async function getPressCitations(env) {
+  const raw = await rawGet(env, "press:citations");
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
 // ---------------------------------------------------------------- radar
 
 // The radar's own budget, deliberately separate from the burn counter. They
