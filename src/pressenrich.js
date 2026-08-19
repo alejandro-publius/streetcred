@@ -43,6 +43,14 @@ export const WINDOWS = [
   { key: "2024-present", start: "2024-01-01T00:00:00.000Z", end: null },
 ];
 
+// Not press. A social post, a video page, a forum thread or a review site is
+// somebody talking about coverage rather than coverage, and this lane
+// publishes what it keeps as a citation under the words "found and cited".
+// The first live run surfaced a Facebook post as the top result for a
+// Tenderloin corner, which is how this list came to exist.
+const NOT_PRESS =
+  /(facebook\.com|twitter\.com|\/\/x\.com|instagram\.com|tiktok\.com|reddit\.com|youtube\.com|youtu\.be|pinterest\.|linkedin\.com|yelp\.com|tripadvisor\.|nextdoor\.com|medium\.com|substack\.com\/inbox)/i;
+
 const SHORTLIST = 8;  // urls fetched for text, the only page contents paid for
 const PUBLISH = 5;    // items the panel shows
 const PER_SEARCH = 6; // results per search, small on purpose
@@ -106,7 +114,7 @@ export async function enrichPress(env, corner, opts = {}) {
     let n = 0;
     for (const x of results || []) {
       const raw = rawOf(x);
-      if (!raw.url || !raw.title || DENY.test(raw.url)) continue;
+      if (!raw.url || !raw.title || DENY.test(raw.url) || NOT_PRESS.test(raw.url)) continue;
       if (!pool.has(raw.url)) { pool.set(raw.url, raw); n += 1; }
     }
     if (where && n) meter.windows.push({ from: where, added: n });

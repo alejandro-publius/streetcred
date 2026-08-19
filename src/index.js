@@ -19,7 +19,9 @@ import {
   getLetterBackoff, setLetterBackoff,
   getVoicesStored, exaBudget, actorRunBudget, getActorCosts, getVoicesSummary,
   recordExaSpend, recordExaProbe, getExaProbe,
+  getPress, putPress, getPressRollup, bumpPressRollup,
 } from "./store.js";
+import { enrichPress, PRESS_VERSION } from "./pressenrich.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import {
   cityCornerFor, getCityMeta, getRankPage, cityStats, cityScore, cityCred,
@@ -869,6 +871,73 @@ ${signoff}`,
   };
 }
 
+// ---------------------------------------------------------------- press batch
+
+// Press enrichment for corners nobody has asked about, worst first.
+//
+// Runs after the morning audit, never instead of it. Everything that could
+// spend without a bound has one: a corner ceiling per night, a small
+// concurrency so a stall on one corner does not hold the rest, and the budget
+// meter, which refuses inside enrichPress and turns the run into a recorded
+// deferral rather than an overspend.
+//
+// Audited corners are excluded. Their press lane ran with their audit, and
+// re-running it here would spend the balance re-reading what the site knows.
+export const PRESS_BATCH_PER_NIGHT = 100;
+const PRESS_FRESH_DAYS = 30;
+const PRESS_LANES = 4;
+
+export async function pressBatch(env, limit = PRESS_BATCH_PER_NIGHT) {
+  const budget = await exaBudget(env).catch(() => null);
+  if (!budget || budget.exhausted) {
+    return { source: "budget-reached", checked: 0, spentUsd: 0 };
+  }
+
+  const meta = await getCityMeta(env).catch(() => null);
+  const fresh = Date.now() - PRESS_FRESH_DAYS * 24 * 3600 * 1000;
+  const targets = [];
+  for (let page = 1; targets.length < limit && page <= 80; page += 1) {
+    const rank = await getRankPage(env, page).catch(() => null);
+    if (!rank?.rows?.length) break;
+    for (const row of tagTiers(rank.rows, meta)) {
+      if (targets.length >= limit) break;
+      if (row.tier === TIERS.AUDITED) continue;
+      const have = await getPress(env, row.slug, PRESS_VERSION).catch(() => null);
+      if (have && Date.parse(have.fetchedAt || 0) >= fresh) continue;
+      targets.push(row);
+    }
+  }
+
+  const out = { source: "live", checked: 0, withCoverage: 0, empty: 0, deferred: 0, failed: 0, spentUsd: 0 };
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const row = targets[next++];
+      if (!row) return;
+      if (out.deferred) return;   // the cap is reached, stop the whole run
+      try {
+        const corner = { slug: row.slug, name: row.name, city: "San Francisco", lat: row.lat, lon: row.lon };
+        const rec = await enrichPress(env, corner);
+        if (rec.source === "budget-deferred") {
+          out.deferred += 1;
+          await bumpPressRollup(env, rec).catch(() => {});
+          return;
+        }
+        await putPress(env, row.slug, rec);
+        await bumpPressRollup(env, rec).catch(() => {});
+        out.checked += 1;
+        out.spentUsd = Math.round((out.spentUsd + (rec.cost?.usd || 0)) * 1e6) / 1e6;
+        if (rec.source === "live") out.withCoverage += 1;
+        else out.empty += 1;
+      } catch {
+        out.failed += 1;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PRESS_LANES, targets.length) }, worker));
+  return { ...out, queued: targets.length };
+}
+
 // ---------------------------------------------------------------- health
 async function health(env, origin) {
   const ping = async (name, fn) => {
@@ -1429,7 +1498,12 @@ export default {
   // The cron. Everything it does happens inside waitUntil so a slow lane cannot
   // be cut off when the handler returns.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(cornerOfTheDay(env, ctx, "https://streetcred.thealexschroeder.workers.dev"));
+    const origin = "https://streetcred.thealexschroeder.workers.dev";
+    // The audit first, always. It is the claim the site makes about itself and
+    // it must not be starved by a batch that runs beside it.
+    ctx.waitUntil(
+      cornerOfTheDay(env, ctx, origin).then(() => pressBatch(env, PRESS_BATCH_PER_NIGHT)),
+    );
   },
 
   async fetch(request, env, ctx) {
@@ -1800,6 +1874,14 @@ export default {
       }
 
       if (p === "/api/news") {
+        // A stored press check answers first, on every tier. It is the record
+        // of a search that really ran, it costs nothing to serve, and it is
+        // what makes the batch lane visible to a reader. A deferred record is
+        // not an answer: that corner was never checked.
+        const stored = await getPress(env, c.slug, PRESS_VERSION).catch(() => null);
+        if (stored && stored.source !== "budget-deferred") {
+          return await edgeCached(ctx, `news-${c.slug}`, 600, async () => stored);
+        }
         // Press coverage is an Exa search per corner. Running one for every
         // corner in the city on first view would spend the credit balance on
         // corners nobody asked about; the lane says it has not run instead.

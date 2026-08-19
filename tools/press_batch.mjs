@@ -11,7 +11,7 @@
 // a cursor file to go stale. The budget is re-read before every corner because
 // the Worker spends the same balance.
 import { kvEnv, devVar } from "./lib/kvenv.mjs";
-import { getRankPage } from "../src/city.js";
+import { getRankPage, getCityMeta, tagTiers, TIERS } from "../src/city.js";
 import { enrichPress, PRESS_VERSION } from "../src/pressenrich.js";
 import { getPress, putPress, bumpPressRollup, exaBudget } from "../src/store.js";
 
@@ -27,8 +27,15 @@ const log = (s) => console.log(s);
 const LIMIT = parseInt(arg("limit", "1"), 10) || 1;
 const ONLY = typeof arg("only") === "string" ? arg("only") : null;
 const DRY = Boolean(arg("dry"));
-const FRESH_DAYS = parseInt(arg("fresh-days", "30"), 10) || 30;
-const CENT_CEILING = parseFloat(arg("max-cents", "5")) || 5;
+// Zero is a meaningful value for both of these, so a falsy fallback would
+// silently ignore --fresh-days 0, which is how a forced re-check turns into a
+// run that does nothing and reports success.
+const num = (name, dflt) => {
+  const v = Number(arg(name, String(dflt)));
+  return Number.isFinite(v) ? v : dflt;
+};
+const FRESH_DAYS = num("fresh-days", 30);
+const CENT_CEILING = num("max-cents", 5);
 
 const env = kvEnv(ROOT, { EXA_API_KEY: devVar(ROOT, "EXA_API_KEY") });
 
@@ -39,15 +46,21 @@ if (before.exhausted) {
   process.exit(0);
 }
 
-// The queue is the citywide rank, worst first. Audited corners already have a
-// press lane that ran with their audit, so they are not re-checked here.
+// The queue is the citywide rank, worst first. Audited corners are excluded:
+// their press lane already ran as part of the audit, and re-running it here
+// would spend the balance re-reading what the site already knows.
+const meta = await getCityMeta(env);
 const queue = [];
-for (let page = 1; queue.length < LIMIT * 4 && page <= 40; page += 1) {
+let audited = 0;
+for (let page = 1; queue.length < LIMIT * 6 && page <= 80; page += 1) {
   const p = await getRankPage(env, page);
   if (!p?.rows?.length) break;
-  for (const row of p.rows) queue.push(row);
+  for (const row of tagTiers(p.rows, meta)) {
+    if (row.tier === TIERS.AUDITED) { audited += 1; continue; }
+    queue.push(row);
+  }
 }
-log(`queue: ${queue.length} corners read from the worst-first rank`);
+log(`queue: ${queue.length} enriched or scored corners from the worst-first rank, ${audited} audited skipped`);
 
 const fresh = Date.now() - FRESH_DAYS * 24 * 3600 * 1000;
 const targets = [];

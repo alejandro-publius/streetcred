@@ -2024,6 +2024,14 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
     return;
   }
   mark("newstag", d.source);
+  // A batch press check is not an audit and never borrows the word. The tag
+  // says what it was, the note below says what it was not.
+  var checked = d.lane === "press-checked";
+  if(checked){
+    var pt = el("newstag");
+    pt.textContent = "press coverage, found and cited";
+    pt.classList.remove("pending");
+  }
   // Do not claim corner-level precision the result set does not support.
   if (d.heading) el("newshead").textContent = d.heading;
   // Retrieval date on hover: when this page actually fetched the citation,
@@ -2045,7 +2053,21 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
     // reads as a primary source rather than as press coverage.
     (x.official ? ' <span class="osrc">official source</span>' : '') +
     '</div><div class="m">' + esc(x.domain) + (x.date ? " &middot; " + esc(x.date) : "") + '</div></a>').join("")
-    || '<div class="m">No coverage found.</div>';
+    // Searched and empty is a result, and it is a better one than silence: it
+    // says this corner was checked and nothing on topic came back, with the
+    // count of what was read to back it.
+    || (checked
+      ? '<p class="empty">Searched and nothing found. ' + (d.found || 0) +
+        ' article' + (d.found === 1 ? "" : "s") + ' were read across ' +
+        ((d.cost && d.cost.searches) || 0) + ' searches and none was about safety at this crossing.</p>'
+      : '<div class="m">No coverage found.</div>');
+  if(checked){
+    var pn = document.createElement("p");
+    pn.className = "lanenote";
+    pn.textContent = "Press checked in a batch run against the city's coverage. This corner keeps its tier: "
+      + "the visual audit has not run here, and being press checked does not make a corner audited.";
+    el("news").appendChild(pn);
+  }
 });
 
 // The replay. Every line is rendered from the stored run manifest, so the log

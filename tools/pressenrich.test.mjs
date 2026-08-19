@@ -118,3 +118,17 @@ test("the budget refuses before anything is spent", async () => {
   assert.equal(rec.source, "budget-deferred");
   assert.equal(calls.filter((c) => c.url.endsWith("/search")).length, 0, "no call after a refusal");
 });
+
+test("a social post is never cited as press coverage", async () => {
+  const { env } = harness({
+    results: [
+      { title: "Pedestrian hit at Eddy and Mason", url: "https://facebook.com/posts/1", publishedDate: "2026-01-06" },
+      { title: "Reddit thread about Eddy and Mason", url: "https://reddit.com/r/sanfrancisco/1", publishedDate: "2026-01-06" },
+      { title: "Cyclist injured at Eddy and Mason", url: "https://sfchronicle.com/real", publishedDate: "2026-01-06" },
+    ],
+  });
+  const rec = await enrichPress(env, CORNER);
+  const domains = (rec.items || []).map((i) => i.domain);
+  assert.ok(!domains.some((d) => /facebook|reddit/.test(d)), `social slipped through: ${domains.join(",")}`);
+  assert.ok(domains.includes("sfchronicle.com"), "real coverage still published");
+});
