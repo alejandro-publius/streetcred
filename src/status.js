@@ -114,7 +114,7 @@ ${(latest.results || [])
   }</p>
 
 <h2>What the autonomous run spends</h2>
-<p class="note">The morning run commissions two Apify actor runs per corner and seven Exa searches for
+<p class="note">The morning run commissions two Apify actor runs per corner and 29 Exa searches for
 the citywide watchlist, unattended, against real credit. Both ledgers are written from the numbers the
 providers themselves report, because an autonomous system spending money without a ledger is the thing
 nobody should ship.</p>

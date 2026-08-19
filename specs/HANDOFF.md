@@ -165,6 +165,44 @@ The city counter went from 7,353 to **7,355**: two crossings that had no page
 now have one. Re-run the audit with `node tools/audit_slugs.mjs`, which rewrites
 `data/city/twins.json`, then rebuild the shards.
 
+## The sponsor depth run, and what it measured
+
+**Exa.** Discovery is 29 phrasings over 90 days (neighbourhood anchored,
+petition and meeting phrasings, three local-outlet passes). It reads ~150
+articles and verifies about three corners. Broadening the net did not broaden
+the result: the constraint is that most crossings named in SF coverage are
+either not a graded crossing or are named in articles that are not about safety
+there. Both are published as rejects. Timelines went 40 to 84 corners, 63 of
+them carrying the earliest-collision comparison. **Zero corners have coverage
+predating their first recorded collision**, because the collision dataset
+begins in 2005 and every corner measured has a 2005 record; the chip therefore
+reads "Records first, 2005" and /watchlist says the flag is unclaimed.
+Connections: 5 corners linked, 16 with a recorded empty check.
+
+Cumulative Exa: 754 of the 1500 ceiling, $1.25 recorded.
+
+**Apify.** 13 corners commissioned, 4 with a surviving quote. $3.63 this
+session, $4.62 for the cycle against a $105 limit, confirmed against the
+provider's invoice rather than our arithmetic.
+
+**The relevance filter took three corrections, each from real returned data.**
+Naming the corner used to qualify a quote (restaurant reviews). Harm words used
+to qualify one ("San Francisco Killed 8th-Grade Algebra", a shooting, a fatal
+crash on I-280). And a Reddit search for a corner returns everything mentioning
+either street. It now requires all three: a word that can only mean a street, a
+safety word, and the corner named. Yield is low and every surviving quote is
+real. `--rescore` re-applies a filter change to datasets already paid for.
+
+**The letter circuit breaker.** /api/letter measured 43.9s; a 429 naming a
+spent quota now throws instead of being retried, raises `letter:backoff` for an
+hour, and every request after serves the corner's last verified letter in
+150-280ms. `letter:verified` still holds zero keys, so today it serves a fast
+tagged sample instead of a slow one.
+
+**Uptime.** The 83.3% was one synthetic run at 2026-08-18T18:59:22Z that 404'd
+on all six endpoints in 1-31ms, with a passing run 51 seconds later. That is a
+deploy window, not the letter latency and not a real outage.
+
 ## Gotchas a fresh session must not rediscover
 
 The first twelve are inherited and all still true. 13 onward are new.
@@ -272,6 +310,26 @@ The first twelve are inherited and all still true. 13 onward are new.
     wrangler for KV. That is what makes the batch tools share the Worker's code
     instead of forking it. It is read-heavy and slow by design; do not use it
     for anything that would issue hundreds of writes.
+
+26. **Apify caps the memory of all concurrent runs at 16GB, account-wide.**
+    At 2048MB per run only eight fit and the ninth gets a 402 that reads like a
+    billing error. Runs are 1024MB now. These actors bill per event, not per
+    second, so lower memory costs nothing but wall clock.
+27. **Do not sum the ledger and call it spend.** Topping a corner up with a
+    second actor re-reads its first run, and before the `billed` marker that
+    run's cost was counted again. The provider's invoice
+    (`/v2/users/me/limits`) is what settles; `apify:invoice` holds the last
+    reconciliation and /status shows both.
+28. **A tool default can quietly outvote a module default.** The watchlist tool
+    held `--days` defaulting to 45 while src/press.js said 90, and the stored
+    watchlist recorded 45 for a day. Tools now pass nothing and let the module
+    decide.
+29. **Bulk timeline building deliberately bypasses DAILY_TIMELINE_CAP.** That
+    cap is a public rail stopping a page load from spending a dozen searches
+    and is untouched. `tools/build_timelines_bulk.mjs` has its own `--max-calls`
+    ceiling and reserves against the cumulative Exa budget, which is the rule
+    BILLING_QUEUE already states for imagery: operator budgets are separate and
+    stricter, never a bypass.
 
 ## Open items for the human
 
