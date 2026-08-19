@@ -344,6 +344,24 @@ The first twelve are inherited and all still true. 13 onward are new.
     extraction and addresses `#base`, `#overlay` and `#handle` by name. Adding
     a second slider rather than a second mount is how the two would drift.
 
+32. **The wrangler CLI spells KV expiry `--ttl`, the Worker binding spells it
+    `expirationTtl`.** Passing the binding's name to the CLI is not a warning,
+    it is a rejected write. Every segment-cache write from a tool failed
+    silently that way, and the only symptom was a cache that was cold every
+    single time, which reads as "the cache does not help" rather than as a bug.
+
+33. **`parseInt(x) || default` swallows a deliberate zero.** `--fresh-days 0`
+    on the press batch fell back to 30, so a forced re-check checked nothing
+    and reported success. Any flag where zero is meaningful needs
+    `Number.isFinite`, not a falsy fallback.
+
+34. **Exa returns social posts as news.** A Facebook post came back as the top
+    result for a Tenderloin corner. A lane that publishes what it keeps under
+    the words "found and cited" cannot cite a Facebook post, so `NOT_PRESS` in
+    `src/pressenrich.js` excludes social, video, forum and review domains. The
+    per-page audited lane does NOT yet apply this filter; extending it there
+    would change stored letters and cred, so it was left alone deliberately.
+
 ## Polish pass rollback
 
 The polish pass of 2026-08-19 is visual and copy only: no scoring, data, API
@@ -484,6 +502,62 @@ A corner that cannot compare never renders a handle. That is enforced by the
   across seven interaction steps, screenshots included, with one deliberate
   difference: `mountSlider` now writes `style.left = "50%"` at mount where the
   stylesheet alone used to place the handle. Same computed position.
+
+## The Exa burn pass: press at city scale
+
+Five commits, 2026-08-19, all live.
+
+```
+0eed39b phase 0: the deployed exa key is identified by what it charges
+7388076 phase 1: the exa counter is denominated in dollars
+b8268c2 phase 2: frugal press enrichment, measured at 4.3 cents a corner
+0e0008d phase 3: the press batch, and the rails that keep it honest
+c5a417a phase 4: surface the press lane, and stop calling a cycle total a per-run price
+```
+
+**Which account the key is on, and how that was settled without touching a
+key.** The Exa API does not report the account. The two accounts funding this
+project are on different plans, $15 and $7 per thousand searches, so the price
+of one contents-free search is the fingerprint. `/api/health` already spent
+exactly that search and threw the price away; it reads it now. Production
+measured **$0.007, which is the $7 plan, which is the $70 account**. The
+`.dev.vars` key probes to the same account through `tools/exa_probe.mjs`, which
+prints the price and never the key. No new key was generated and none was
+installed, because none was needed.
+
+**The meter is cents now, not calls.** `budget:exa` holds
+`{period, account, capCents, spentCents, reservedCents, searches, contentPages,
+deferrals, priorSpendUsd}`. Estimates are reserved before a call at 0.7 cents a
+search and 0.1 a page; the provider's own `costDollars` reconciles after; the
+cap is enforced on whichever is higher. The $1.269 this account had already
+spent is carried as `priorSpendUsd` and shown on /status, because the
+dashboard's remaining balance is that plus the counter and the two cannot be
+reconciled without it. Every Exa call site records its cost now, not only the
+two batch lanes.
+
+**The frugal lane, in order.** `src/pressenrich.js`. Stored citywide sweep,
+then the segment cache (`press:segment:{street}`, seven day TTL, shared by every
+corner on that street), then three dated windows on the crossing itself
+(2014-2019, 2020-2023, 2024-present). Searches buy no page text at all;
+candidates are shortlisted on title and url, only the shortlist is fetched, and
+only then is the corner-level bar applied to real text. Measured, not projected:
+
+```
+fillmore-and-lombard  5 searches + 8 pages  4.30c   both streets cold
+eddy-and-mason        5 searches + 8 pages  4.20c   both streets cold
+eddy-and-jones        4 searches + 8 pages  3.50c   eddy warm from the run above
+eddy-and-mason        3 searches + 8 pages  2.90c   both streets warm
+```
+
+**Do not confuse the two press lanes.** The watchlist reads the city's coverage
+and finds corners in it. This batch takes the worst corners and goes looking.
+They share the extractor and the index; they answer different questions.
+
+**A press-checked corner is not audited.** It keeps its tier, the record carries
+`lane: "press-checked"`, the panel is tagged "press coverage, found and cited"
+and states that the visual audit has not run. The homepage audited count does
+not move. Searched and empty is stored and shown with the count of articles
+read behind it.
 
 ## Open items for the human
 
