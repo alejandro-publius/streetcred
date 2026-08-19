@@ -64,7 +64,7 @@ export const STATBAND = ({ scored = 0, audited = 0, headlines = 0, spendUsd = nu
   const n = (v) => Number(v).toLocaleString("en-US");
   const cell = (href, value, label, note) =>
     `<a class="sbcell" href="${href}"><span class="sbnum">${value}</span><span class="sblabel">${label}</span><span class="sbnote">${note}</span></a>`;
-  return `<div class="statband">
+  return `<section class="statband" aria-label="StreetCred at a glance">
   ${cell("/methodology", n(scored), "intersections graded", "from the city's own records")}
   ${cell("/", n(audited), "fully audited", "every evidence lane checked")}
   ${cell("/watchlist", n(headlines), "press citations found", "across the coverage timelines")}
@@ -73,7 +73,7 @@ export const STATBAND = ({ scored = 0, audited = 0, headlines = 0, spendUsd = nu
       ? cell("/status", "0", "letters sent to officials", "this is a drafting tool")
       : cell("/status", `$${Number(spendUsd).toFixed(2)}`, "spent running itself", "published per run, unattended")
   }
-</div>`;
+</section>`;
 };
 
 // The footer, one component for every route.
@@ -128,7 +128,7 @@ export const MASTHEAD = ({ scored = 0, active = "" } = {}) => {
   const n = (v) => Number(v).toLocaleString("en-US");
   const link = (href, label, key) =>
     `<a href="${href}"${key === active ? ' class="on" aria-current="page"' : ""}>${label}</a>`;
-  return `<div class="mast">
+  return `<nav class="mast" aria-label="StreetCred">
   <a class="mastmark" href="/" aria-label="StreetCred home">Street<span>Cred</span></a>
   ${scored ? `<span class="mastcount">${n(scored)} SF intersections scored</span>` : ""}
   <a class="mastfind" href="/#find">Find your corner</a>
@@ -142,7 +142,7 @@ export const MASTHEAD = ({ scored = 0, active = "" } = {}) => {
     <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
   </a>
   <button class="mastmenu" id="mastmenu" type="button" aria-expanded="false" aria-controls="mastnav-collapsed">Menu</button>
-</div>
+</nav>
 <nav class="mastdrop" id="mastnav-collapsed" hidden aria-label="Trust surfaces">
   ${link("/watchlist", "Watchlist", "watchlist")}
   ${link("/methodology", "Methodology", "methodology")}
@@ -232,15 +232,15 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:Poppins,system-u
    only. Below 700px it keeps the wordmark and the count and hands the links to
    a disclosure button, because five links and a count do not fit a phone
    without either wrapping into a second band or shrinking past legibility. */
-.mast{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
-  padding:10px 0 12px;margin-bottom:18px;border-bottom:1px solid var(--line)}
+.mast{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  padding:8px 0 16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
 .mastmark{font-size:15px;font-weight:700;letter-spacing:-.01em;text-decoration:none;color:var(--ink);white-space:nowrap}
-.mastmark span{color:var(--accent)}
+.mastmark span{color:#a04d0c}
 .mastcount{font-size:12px;color:var(--dim);white-space:nowrap;font-variant-numeric:tabular-nums}
 .mastfind{font-size:12px;font-weight:600;text-decoration:none;color:var(--ink);
   border:1px solid var(--line2);border-radius:999px;padding:4px 11px;white-space:nowrap}
 .mastfind:hover{border-color:var(--ink)}
-.mastnav{display:flex;gap:14px;margin-left:auto;flex-wrap:wrap}
+.mastnav{display:flex;gap:16px;margin-left:auto;flex-wrap:wrap}
 .mastnav a{font-size:12px;font-weight:600;text-decoration:none;color:var(--dim);white-space:nowrap}
 .mastnav a:hover{color:var(--ink)}
 .mastnav a.on{color:var(--ink)}
@@ -284,7 +284,7 @@ header{display:flex;align-items:center;column-gap:14px;row-gap:24px;padding-bott
 .switcher a.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .find{display:flex;align-items:center;gap:7px;margin-left:6px;position:relative}
 .find input{font-family:inherit;font-size:13px;color:var(--ink);background:var(--panel);
-  border:1px solid var(--line);border-radius:999px;padding:8px 15px;width:200px;outline:none}
+  border:1px solid var(--line);border-radius:999px;padding:8px 15px;width:200px}
 .find input:focus{border-color:var(--accent)}
 .find input::placeholder{color:var(--dim)}
 /* Typeahead. A listbox under the find input, same vocabulary as the board:
@@ -757,19 +757,19 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 /* A lane's own count, in its header. Same numbers the lane body renders, so a
    reader can see the size of the evidence before reading it. */
 /* The placeholder that replaces an image element with nothing in it. */
-.imgph{display:flex;flex-direction:column;justify-content:center;gap:6px;min-height:210px;
-  padding:22px 24px;background:var(--card);border:1px dashed var(--line2);border-radius:12px}
+.imgph{display:flex;flex-direction:column;justify-content:center;gap:8px;min-height:208px;
+  padding:24px;background:var(--card);border:1px dashed var(--line2);border-radius:12px}
 .imgphl{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
 .ldrafting{margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:.06em;
   text-transform:uppercase;color:var(--dim)}
 .imgphn{margin:0;font-size:13.5px;color:var(--ink);line-height:1.55;max-width:52ch}
 
-.lanenums{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;margin-left:auto;margin-right:10px}
-.eyebrow .lanenums{margin-left:12px;margin-right:0}
+.lanenums{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;margin-left:auto;margin-right:8px}
+.eyebrow .lanenums{margin-left:16px;margin-right:0}
 
 /* The stat band. Numbers as the design, each one a link to its own evidence. */
-.statband{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 26px}
-.sbcell{display:flex;flex-direction:column;gap:2px;padding:14px 16px;text-decoration:none;color:inherit;
+.statband{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:0 0 24px}
+.sbcell{display:flex;flex-direction:column;gap:2px;padding:16px;text-decoration:none;color:inherit;
   background:var(--panel);border:1.5px solid var(--line3);border-radius:12px;
   transition:border-color 150ms ease-out}
 .sbcell:hover{border-color:var(--ink)}
@@ -782,8 +782,8 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 /* Every number on the site lines up in a column. One rule, everywhere. */
 .sbnum,.scoren,.ridx,.stat .n,.wlidx,.big,.mastcount,.n,.wlstat b{font-variant-numeric:tabular-nums}
 
-.fcols{display:flex;gap:40px;flex-wrap:wrap;margin:0 0 22px}
-.fcol{display:flex;flex-direction:column;gap:6px;min-width:150px}
+.fcols{display:flex;gap:40px;flex-wrap:wrap;margin:0 0 24px}
+.fcol{display:flex;flex-direction:column;gap:8px;min-width:152px}
 .fh{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);margin-bottom:2px}
 .fcol a{font-size:12.5px;color:var(--dim);text-decoration:none}
 .fcol a:hover{color:var(--ink);text-decoration:underline}
@@ -806,7 +806,19 @@ footer a:hover{color:var(--ink)}
   .eyebrow::after{transform:scaleX(1);transition:none}
   .scoreg,.panel,.stat,.scorewrap,#overlay,.stack .lg img{transition:none}
   .panel:hover,.stat:hover,.scorewrap:hover{transform:none;box-shadow:none}
+  /* Everything added in the polish pass, and anything added after it. A
+     blanket rule rather than a list, so a transition introduced later is
+     covered without anybody remembering to come back here. */
+  *,*::before,*::after{animation-duration:0.001ms;animation-iteration-count:1;
+    transition-duration:0.001ms;scroll-behavior:auto}
 }
+
+/* One focus ring for the whole site, in the accent, on everything focusable.
+   Keyboard users get the same affordance on a footer link as on the primary
+   button, and no rule anywhere removes an outline without replacing it. */
+a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible,
+[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+.find input:focus-visible{outline-offset:1px}
 
 @media(max-width:860px){
   .cols,.stack{grid-template-columns:1fr}
