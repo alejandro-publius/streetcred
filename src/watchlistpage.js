@@ -63,7 +63,7 @@ ${BASE_CSS}
 <header>
   ${LOGO}
   <div class="mark">Street<span>Cred</span></div>
-  <div class="corner"><b>The Press Watchlist</b>${w?.builtAt ? `Built ${when(w.builtAt)}` : "Not built yet"}</div>
+  <div class="corner"><b>The Press Watchlist</b><span class="csub">${w?.builtAt ? `Built ${when(w.builtAt)}` : "Not built yet"}</span></div>
 </header>
 <main>
 

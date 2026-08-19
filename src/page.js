@@ -98,16 +98,24 @@ export const BASE_CSS = `:root{
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Poppins,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1120px;margin:0 auto;padding:28px 22px 64px}
-/* Two rows, always: controls, then the corner's title block.
-   One row was tried and cannot hold. The content column is capped at 1120px
-   minus padding, and at the longest warmed corner name ("16th Street and
-   Mission Street") the controls plus the title block need more than that, so
-   the title had nowhere to go but into the buttons. The rule the layout has to
-   satisfy is a 24px clear gap between the title block and the nearest control;
-   on one row that gap measured 14px at every width from 360 to 1600, so the
-   title block gets its own row and keeps a real one. */
-header{display:flex;flex-direction:column;align-items:stretch;gap:24px;padding-bottom:22px}
-.hctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* The header wraps rather than stacking. Separate row and column gaps do the
+   work: items sitting together get 14px, and anything that wraps onto its own
+   row clears 24px, which is the gap the title block has to keep from the
+   nearest control.
+
+   Column direction was tried and was wrong sitewide. Only corner pages have a
+   control wrapper to stack against; on /methodology, /status, /changes and
+   /watchdog the header's children are the logo, the wordmark and the nav, and
+   forcing a column put each of those on its own line. */
+header{display:flex;align-items:center;column-gap:14px;row-gap:24px;padding-bottom:22px;flex-wrap:wrap}
+/* Corner pages: the controls take a full row, so the title block takes the
+   next one. One row was tried and cannot hold. The content column is capped at
+   1120px minus padding, and at the longest warmed corner name ("16th Street
+   and Mission Street") the controls plus the title block need more than that,
+   so the title had nowhere to go but into the buttons: the clear gap measured
+   14px at every width from 360 to 1600. */
+.hctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1 0 100%}
+.hctl ~ .corner{flex:1 0 100%;margin-left:0}
 .mark{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1}
 .mark span{color:var(--accent)}
 .switcher{display:flex;gap:7px;margin-left:14px}
@@ -182,14 +190,24 @@ header{display:flex;flex-direction:column;align-items:stretch;gap:24px;padding-b
 @media(prefers-reduced-motion:reduce){
   .rline{opacity:1;transform:none;transition:none}
 }
-.corner{text-align:right;font-size:13px;color:var(--dim);line-height:1.5}
+/* Header text blocks, one pattern for every page.
+   Every line inside one is its own block element with a 4px rhythm, and a bare
+   text node never sits beside another line. That is not a style preference:
+   "San Francisco" followed by a bare counter rendered as
+   "San Francisco7,355 corners graded" the moment the <b> stopped being a
+   block, because two separate sentences were sharing an inline run with
+   nothing between them. Give every line an element of its own and that failure
+   cannot recur. */
+.corner{margin-left:auto;text-align:right;font-size:13px;color:var(--dim);line-height:1.5}
+.corner > b,.corner > .csub,.corner > .cmeta,.corner > .ctwin,.corner > .auto{display:block}
+.corner > b{font-size:15px;color:var(--ink);font-weight:600}
+.corner > .csub,.corner > .cmeta{margin-top:4px}
 /* The name and its tier chip are siblings in a flex row, never one inside the
    other. The chip used to live inside the h1, whose only child was a block
    element, so the two boxes overlapped and the page read "Market StreetAUDITED"
    at every width. Wrapping is allowed: when the name takes the full line the
    chip drops to its own line rather than squeezing. */
 .ctitle{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
-.cmeta{margin-top:4px}
 /* Said on the page, because the alternative is a page that quietly answers
    about a crossing four kilometres from the one somebody meant. Only the few
    slugs two different pairs of streets produce ever show this. */

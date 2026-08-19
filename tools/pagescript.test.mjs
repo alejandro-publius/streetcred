@@ -15,6 +15,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { PAGE, NOT_FOUND } from "../src/page.js";
 import { HOME } from "../src/home.js";
+import { WATCHLIST_PAGE } from "../src/watchlistpage.js";
 import { CORNERS } from "../src/data.js";
 import { TIERS } from "../src/city.js";
 
@@ -111,6 +112,46 @@ test("the header separates its controls from the title block", () => {
   const header = html.match(/<header>([\s\S]*?)<\/header>/);
   assert.ok(header, "header present");
   assert.ok(header[1].indexOf('class="hctl"') < header[1].indexOf('class="corner"'), "controls come first");
+});
+
+// The bug this guards against shipped twice: a header text block whose lines
+// are bare text nodes rather than elements. A line without an element cannot
+// be given a margin, so the moment a display:block rule moves or is deleted,
+// two separate sentences render as one run. On the homepage that read
+// "San Francisco7,355 corners graded".
+//
+// Box metrics catch it in a browser and live outside CI. This catches the
+// shape: inside a header text block, every line must be its own element.
+const cornerBlocks = (html) =>
+  [...html.matchAll(/<div class="corner">([\s\S]*?)<\/div>\s*<\/header>/g)].map((m) => m[1]);
+
+const stripElements = (inner) => {
+  let prev = null;
+  let cur = inner;
+  // Remove balanced elements until nothing but text remains. Any text left
+  // over was never inside an element of its own.
+  while (cur !== prev) {
+    prev = cur;
+    cur = cur.replace(/<(b|span|div|h1|i|a)\b[^>]*>[\s\S]*?<\/\1>/g, "");
+  }
+  return cur.replace(/<[^>]*>/g, "").trim();
+};
+
+test("no header text block contains a bare line", () => {
+  const pages = [
+    ["home", HOME([], "https://example.test", [], null, false,
+      { meta: { totalScored: 7355, totalAudited: 23 }, top: [], queueLength: 10 }, null, null)],
+    ["corner", PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED })],
+    ["watchlist", WATCHLIST_PAGE({ source: "live", builtAt: "2026-08-19", entries: [], rejects: [], queries: [] }, "https://example.test", null)],
+  ];
+  for (const [name, html] of pages) {
+    const blocks = cornerBlocks(html);
+    assert.ok(blocks.length >= 1, `${name}: no header text block found, the extractor is broken`);
+    for (const inner of blocks) {
+      const stray = stripElements(inner);
+      assert.equal(stray, "", `${name}: header text block has a line with no element of its own: "${stray.slice(0, 60)}"`);
+    }
+  }
 });
 
 // Every other row in the Powered by strip names its tool in bold.

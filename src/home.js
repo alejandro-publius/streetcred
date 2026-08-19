@@ -272,7 +272,7 @@ ${BASE_CSS}
 <header>
   ${LOGO}
   <div class="mark">Street<span>Cred</span></div>
-  <div class="corner"><b>San Francisco</b>${scored ? `${n(scored)} corners graded` : `${ranked.length} corners audited`}</div>
+  <div class="corner"><b>San Francisco</b><span class="csub">${scored ? `${n(scored)} corners graded` : `${ranked.length} corners audited`}</span></div>
 </header>
 <main>
 
