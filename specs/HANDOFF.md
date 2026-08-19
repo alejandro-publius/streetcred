@@ -331,6 +331,19 @@ The first twelve are inherited and all still true. 13 onward are new.
     BILLING_QUEUE already states for imagery: operator budgets are separate and
     stricter, never a bypass.
 
+30. **Never cache-bust the homepage with `?x=`.** That parameter is the legacy
+    corner route: `/?x=1` resolves a corner named "1" and answers "Corner not
+    found", with no hero on it at all. A browser harness that used `?x=` to
+    defeat caching spent three runs looking like an intermittent hero failure
+    before the parameter turned out to be the cause. Use any other name.
+
+31. **The comparison slider has one implementation, deliberately.** `SLIDER()`
+    and `SLIDER_JS` in `src/page.js` serve both the corner page and the
+    homepage embed. Its CSS is keyed on `.sbase`, `.sov` and `.shdl`; the
+    element ids are parameters because the corner page's script predates the
+    extraction and addresses `#base`, `#overlay` and `#handle` by name. Adding
+    a second slider rather than a second mount is how the two would drift.
+
 ## Polish pass rollback
 
 The polish pass of 2026-08-19 is visual and copy only: no scoring, data, API
@@ -420,6 +433,57 @@ blocked.
 `specs/BILLING_QUEUE.md`. Everything the burn pass wanted to spend on Exa and
 Apify is still available and untouched: Exa reports $1.245 recorded against its
 own ceiling, and Apify's provider invoice reads $4.62 of the $105 cycle.
+
+## The hero: corner of the day, and the slider inside it
+
+Two commits, 2026-08-19, both live.
+
+```
+602b5c6 phase 1: corner of the day in the hero      version 33e4e97d-37d2-457a-87e7-345982946f57
+4f85e51 hero addendum: slider restored as primary   version e1132b2b-0ff7-41ed-a1f3-a76f0b7edfa7
+```
+
+The homepage hero is two columns on a wide screen, search on the left and the
+corner of the day on the right, and stacks with the search first below 900px.
+The old `<a class="cotd">` strip is gone; the queue line, the voices line and
+the streak ticker stayed. The stat band sits below the hero, which is what
+lifts the embed above the fold on a phone.
+
+**The slider is one component with two mounts.** `SLIDER()` in `src/page.js`
+emits the markup, `SLIDER_JS` carries `mountSlider()` for drag, touch and
+keyboard, and both the corner page and the homepage embed inline the same
+source. The slider CSS is keyed on `.sbase`, `.sov` and `.shdl` rather than on
+the corner page's `#base`, `#overlay` and `#handle`, which is the only reason a
+second mount can exist. The corner page still addresses its own elements by id,
+so ids are a parameter of `SLIDER()`.
+
+Do not write a second slider. If the drag needs to change, change
+`mountSlider()` and both mounts change together, which is the point.
+
+**The embed's states, all four force-tested:**
+
+| frames stored | what renders |
+| --- | --- |
+| today + fix (+ hazards) | slider, photograph left, proposal right, chips Compare / Hazards / Today |
+| today + hazards, no fix | slider against hazards, chips Compare / Today |
+| today only | the photograph, `hero single`, no second pane and no handle in the DOM, pending line, no chips |
+| nothing | the designed pending card, no stage |
+
+A corner that cannot compare never renders a handle. That is enforced by the
+`compare` parameter of `SLIDER()`, not by CSS hiding an empty pane.
+
+**Measured on production**, 2026-08-19, at 1280x900 and 390x844:
+
+- handle centred on load, `aria-valuenow="50"`, both panes decoded before any
+  interaction (640 and 1306 natural width)
+- mouse drag to 25% and a real CDP touch drag to 25% both land on 25%
+- CLS 0.0300 desktop, 0.0000 mobile
+- zero provider calls; the only cross-origin request on the page is the Google
+  Fonts stylesheet the site already loaded
+- the corner page renders **byte identically** to the pre-change deployment
+  across seven interaction steps, screenshots included, with one deliberate
+  difference: `mountSlider` now writes `style.left = "50%"` at mount where the
+  stylesheet alone used to place the handle. Same computed position.
 
 ## Open items for the human
 
