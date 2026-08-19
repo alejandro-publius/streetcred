@@ -396,7 +396,34 @@ reads pages and never touches the imagery lane.
   live keys onto a second public Worker, would put a spendable surface on the
   internet to check a visual change, which is a bad trade.
 
+## Budget burn pass: stopped at the Gemini gate
+
+Attempted 2026-08-19. The pass is designed to stop if the Gemini preflight
+fails, and it failed, so nothing after phase 0 was built and no Exa or Apify
+credit was spent.
+
+**Gate result, recorded at `gate:gemini`:** text fail, image fail, mode
+blocked.
+
+- The **deployed** key answers `429 You exceeded your current quota` for text
+  generation. Verified through the live letter path, which fell back to a
+  tagged sample and re-armed the backoff flag with that verbatim reason.
+- The image probe was not attempted, because the gate's own rule is that a
+  failed text probe stops the pass.
+- Separately: **the `GEMINI_API_KEY` in `.dev.vars` is invalid**, answering
+  `400 API key not valid`. It is not the same key as the deployed secret. Any
+  local tool that reads it is testing a key the site does not use.
+  `tools/gemini_preflight.mjs` now detects that and probes the deployed key
+  through the site instead.
+
+**What unblocks the pass:** a funded Gemini key, which is item 0 of
+`specs/BILLING_QUEUE.md`. Everything the burn pass wanted to spend on Exa and
+Apify is still available and untouched: Exa reports $1.245 recorded against its
+own ceiling, and Apify's provider invoice reads $4.62 of the $105 cycle.
+
 ## Open items for the human
+
+
 
 Unchanged from the morning report, minus nothing:
 
