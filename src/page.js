@@ -34,6 +34,28 @@ export const LOGO = `<svg viewBox="0 0 64 64" width="38" height="38" aria-hidden
 
 // Shared with the city view in home.js, so the two pages cannot drift apart
 // on type, palette, or spacing.
+// One meta block for every route, so a tag added here reaches all nine page
+// types and a count is never written down twice.
+//
+// Text only. No og:image is emitted from here: the corner page carries its own
+// card and adds those tags itself, and no other route has an image worth
+// promising. card defaults to summary because a page with no image should not
+// ask a reader's client to reserve a large one.
+export const META = ({ title, description, url, card = "summary" }) => {
+  const e = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+  return `<title>${e(title)}</title>
+<link rel="canonical" href="${e(url)}">
+<meta name="description" content="${e(description)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="StreetCred">
+<meta property="og:title" content="${e(title)}">
+<meta property="og:description" content="${e(description)}">
+<meta property="og:url" content="${e(url)}">
+<meta name="twitter:card" content="${e(card)}">
+<meta name="twitter:title" content="${e(title)}">
+<meta name="twitter:description" content="${e(description)}">`;
+};
+
 export const FONT_LINK = `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Lora:ital@0;1&display=swap" rel="stylesheet">`;
@@ -651,19 +673,18 @@ export const PAGE = (c, og = {}) => {
   const grade = og.score?.grade;
   const verdict = og.cred?.verdict;
   const records = og.cred?.lanes?.find((l) => l.key === "records");
-  // Falls back to the plain product line when a corner has not been scored yet,
-  // rather than shipping a title with a hole in it.
-  const ogTitle = Number.isFinite(idx)
-    ? `${c.name} scores ${idx}/100 on StreetCred`
-    : `${c.name} on StreetCred`;
-  const ogDesc = [
-    records?.detail,
-    verdict,
-    "Evidence graded and traced, letter drafted.",
-  ]
-    .filter(Boolean)
-    .join(". ")
-    .replace(/\.\./g, ".");
+  // Title and description are built from this corner's own stored numbers, and
+  // the tab title and the share title are now the same string rather than two
+  // that drifted. Anything missing is left out rather than padded: a corner
+  // with no grade yet says so by omission.
+  const ogTitle = grade ? `${c.name} \u00b7 StreetCred grade ${grade}` : `${c.name} \u00b7 StreetCred`;
+  const bits = [];
+  if (Number.isFinite(idx)) bits.push(`Grade ${grade}, worse than ${idx}% of San Francisco intersections`);
+  if (records?.detail) bits.push(records.detail);
+  if (c.district) bits.push(`District ${c.district}`);
+  const ogDesc = bits.length
+    ? `${c.name}, San Francisco. ${bits.join(". ")}.`.replace(/\.\./g, ".")
+    : `${c.name}, San Francisco, graded on the city's own crash and 311 records.`;
   // Absolute, because crawlers do not resolve relative og:url or og:image.
   const base = og.origin || "";
   const url = `${base}/c/${c.slug}`;
@@ -674,22 +695,12 @@ export const PAGE = (c, og = {}) => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>StreetCred, ${c.short}</title>
 <link rel="icon" href="/logo.svg">
-<link rel="canonical" href="${url}">
-<meta name="description" content="${esc(ogDesc)}">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="StreetCred">
-<meta property="og:title" content="${esc(ogTitle)}">
-<meta property="og:description" content="${esc(ogDesc)}">
-<meta property="og:url" content="${url}">
+${META({ title: ogTitle, description: ogDesc, url, card: "summary_large_image" })}
 <meta property="og:image" content="${img}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Street View photograph of ${esc(c.name)}">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${esc(ogTitle)}">
-<meta name="twitter:description" content="${esc(ogDesc)}">
+<meta property="og:image:alt" content="Share card for ${esc(c.name)}, showing its StreetCred grade">
 <meta name="twitter:image" content="${img}">
 ${FONT_LINK}
 <style>

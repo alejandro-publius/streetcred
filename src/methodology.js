@@ -5,7 +5,7 @@
 // enforces it. Nothing on this page is aspirational: if the product does not
 // do a thing, this page says it does not do it.
 
-import { LOGO, FONT_LINK, BASE_CSS } from "./page.js";
+import { LOGO, FONT_LINK, BASE_CSS, META } from "./page.js";
 import { DISTRIBUTION, DISTRIBUTION_DATE } from "./distribution.js";
 import { SERVICE_NAMES } from "./data.js";
 
@@ -20,10 +20,12 @@ export const METHODOLOGY = (origin = "", preview = false) => `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Methodology, StreetCred</title>
 <link rel="icon" href="/logo.svg">
-<link rel="canonical" href="${origin}/methodology">
-<meta name="description" content="Every data source, window, radius, filter, formula and known limitation behind StreetCred's grades, stated plainly.">
+${META({
+  title: "Methodology \u00b7 StreetCred",
+  description: "Every data source, window, radius, filter, formula and known limitation behind StreetCred's grades, stated plainly enough to be checked.",
+  url: `${origin}/methodology`,
+})}
 ${FONT_LINK}
 <style>
 ${BASE_CSS}

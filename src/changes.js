@@ -4,7 +4,7 @@
 // reader holding last week's screenshot can find out what happened between
 // then and now, instead of having to choose which of two numbers to distrust.
 
-import { LOGO, FONT_LINK, BASE_CSS } from "./page.js";
+import { LOGO, FONT_LINK, BASE_CSS, META } from "./page.js";
 
 const esc = (t) =>
   String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
@@ -16,10 +16,12 @@ export const CHANGES = (changes = [], origin = "", preview = false) => `<!doctyp
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Grade changes, StreetCred</title>
 <link rel="icon" href="/logo.svg">
-<link rel="canonical" href="${origin}/changes">
-<meta name="description" content="Every stored grade or index change on StreetCred, newest first, with the reason and the source of the change.">
+${META({
+  title: "Grade changes \u00b7 StreetCred",
+  description: "Every stored grade or index change on StreetCred, newest first, with the reason and the source, so a grade cannot move without a public record of it moving.",
+  url: `${origin}/changes`,
+})}
 ${FONT_LINK}
 <style>
 ${BASE_CSS}

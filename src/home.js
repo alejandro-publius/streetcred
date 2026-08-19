@@ -6,7 +6,7 @@
 // corner's page. Getting that math right is what buys a clickable map for the
 // cost of a single image request.
 
-import { LOGO, FONT_LINK, BASE_CSS } from "./page.js";
+import { LOGO, FONT_LINK, BASE_CSS, META } from "./page.js";
 import { TIER_LABEL, TIER_NOTE } from "./city.js";
 
 const MAP_W = 640;
@@ -113,7 +113,7 @@ export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview
   const runs = [...cotd].filter((e) => e && e.slug).reverse();
   const today = runs[0] || null;
   const view = ranked.length ? fitView(ranked) : { center: { lat: 37.7749, lon: -122.4194 }, zoom: 12 };
-  const title = "StreetCred, the San Francisco corner scoreboard";
+  const title = "StreetCred: every SF intersection, graded";
   // The counter is the city's own count, read from city:meta, not a sum of
   // whatever happens to be loaded on this page. A number the page derives from
   // its own contents drifts the moment a layer fails to load.
@@ -125,28 +125,21 @@ export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview
     : `${ranked.length} intersections fully audited, one more every morning.`;
   const board = city?.top?.length ? city.top : ranked;
   const boardIsCity = Boolean(city?.top?.length);
+  // Built from the same live count the page prints, never a second copy of it.
   const desc = scored
-    ? `${n(scored)} San Francisco intersections graded on reported harm, worst first. Evidence traced to its source, letter drafted.`
+    ? `${n(scored)} San Francisco intersections scored for street danger from the city's own crash and 311 records, with press coverage, resident voices, and a drafted letter to the right Supervisor.`
     : ranked.length
-    ? `${ranked.length} San Francisco intersections graded on reported harm, worst first. Evidence traced to its source, letter drafted.`
-    : "San Francisco intersections graded on reported harm, evidence traced to its source.";
+    ? `${ranked.length} San Francisco intersections scored for street danger from the city's own crash and 311 records, with press coverage, resident voices, and a drafted letter to the right Supervisor.`
+    : "San Francisco intersections scored for street danger from the city's own crash and 311 records.";
 
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>StreetCred</title>
 <link rel="icon" href="/logo.svg">
-<link rel="canonical" href="${origin}/">
-<meta name="description" content="${esc(desc)}">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="StreetCred">
-<meta property="og:title" content="${esc(title)}">
-<meta property="og:description" content="${esc(desc)}">
-<meta property="og:url" content="${origin}/">
+${META({ title, description: desc, url: `${origin}/`, card: ranked.length ? "summary_large_image" : "summary" })}
 ${ranked.length ? `<meta property="og:image" content="${origin}/og.jpg?x=${ranked[0].slug}">` : ""}
-<meta name="twitter:card" content="summary_large_image">
 ${FONT_LINK}
 <style>
 ${BASE_CSS}

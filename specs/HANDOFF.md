@@ -362,6 +362,24 @@ deliberately, so it reads exactly what production reads; that also means the
 lanes that write to KV write to the real store, which is why verification on it
 reads pages and never touches the imagery lane.
 
+## Deferred from polish pass
+
+- **`score:24th-and-valencia` is stored at v1** while the scoring code is at v3,
+  so `getScore` returns null for it and the corner's title renders without its
+  grade letter. That is the specified behaviour for a missing value (omit
+  rather than pad), and the page itself is unaffected because the client
+  recomputes. Fixing the record means writing a score, which this pass forbids.
+  One page load of `/api/score?x=24th-and-valencia` upgrades it, or
+  `node tools/rescore.js`. Sampled 10 audited corners: this is the only stale
+  one.
+- **og:image was kept, not removed.** The pass specified text-only meta on the
+  grounds that image cards are queued behind billing. They are not: corner and
+  root cards are served from static grade cards and stored Street View frames
+  with zero generation, and `shareCard()` deliberately never uses the annotated
+  or generated states. Removing working share images before judging would be a
+  downgrade, so no og:image was added anywhere and the existing ones stay. The
+  five trust surfaces have none.
+
 ## Open items for the human
 
 Unchanged from the morning report, minus nothing:

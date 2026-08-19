@@ -2,7 +2,7 @@
 // changelog recorded. No self-assessment anywhere on this page: every row is a
 // stored record something else wrote, and the page only counts.
 
-import { LOGO, FONT_LINK, BASE_CSS } from "./page.js";
+import { LOGO, FONT_LINK, BASE_CSS, META } from "./page.js";
 
 const esc = (t) =>
   String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
@@ -33,10 +33,12 @@ export const STATUS = (synth = [], incidents = [], changes = [], origin = "", sp
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Status, StreetCred</title>
 <link rel="icon" href="/logo.svg">
-<link rel="canonical" href="${origin}/status">
-<meta name="description" content="Synthetic monitor results, verifier incidents, and recent grade changes.">
+${META({
+  title: "Status \u00b7 StreetCred",
+  description: "Synthetic uptime checks, letter verifier incidents, and the running cost ledger for every autonomous run this site commissions, published whether or not anyone is looking.",
+  url: `${origin}/status`,
+})}
 ${FONT_LINK}
 <style>
 ${BASE_CSS}
