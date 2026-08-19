@@ -18,6 +18,7 @@ import {
   getWatchlist, putWatchlist, getConnections, putConnections,
   getLetterBackoff, setLetterBackoff,
   getVoicesStored, exaBudget, actorRunBudget, getActorCosts, getVoicesSummary,
+  recordExaSpend, recordExaProbe, getExaProbe,
 } from "./store.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import {
@@ -875,6 +876,7 @@ async function health(env, origin) {
     }
   };
   const c = CORNERS[DEFAULT_SLUG];
+  let probe = null;
   const results = await Promise.all([
     ping("datasf", () => soql(DS_CRASHES, { "$select": "count(*)", "$limit": 1 })),
     ping("exa", async () => {
@@ -884,6 +886,13 @@ async function health(env, origin) {
         body: JSON.stringify({ query: "san francisco pedestrian safety", numResults: 1 }),
       });
       if (!r.ok) throw new Error(r.status === 402 ? "402 credits not redeemed" : `http ${r.status}`);
+      // This search is billed whether or not anybody reads the price, so read
+      // it: one result, no contents, which makes the total the plain per
+      // search unit price and therefore the account fingerprint.
+      const d = await r.json().catch(() => null);
+      const cost = d?.costDollars || null;
+      await recordExaSpend(env, Number(cost?.total)).catch(() => {});
+      probe = await recordExaProbe(env, cost).catch(() => null);
     }),
     ping("apify", async () => {
       const r = await fetch(`https://api.apify.com/v2/users/me?token=${env.APIFY_TOKEN}`);
@@ -924,7 +933,16 @@ async function health(env, origin) {
     }),
   ]);
   const out = Object.fromEntries(results);
-  return { ok: Object.values(out).every((v) => v === "ok"), ...out };
+  const seen = probe || (await getExaProbe(env).catch(() => null));
+  return {
+    ok: Object.values(out).every((v) => v === "ok"),
+    ...out,
+    // The measured price of the search this check just made, and the account
+    // it identifies. A price matching neither plan reports as null rather than
+    // being rounded into the nearer one.
+    exaUnitUsd: seen?.unitUsd ?? null,
+    exaAccount: seen?.account ?? null,
+  };
 }
 
 // ---------------------------------------------------------------- resolve

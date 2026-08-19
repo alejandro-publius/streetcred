@@ -501,6 +501,49 @@ export async function recordExaSpend(env, usd) {
   await rawPut(env, "exa:spend", String(Math.round((spend + usd) * 1e6) / 1e6));
 }
 
+// Which Exa account the deployed key belongs to.
+//
+// The API never says. Two accounts fund this project and they are on different
+// plans, so a search costs a different amount on each, and the price of one
+// contents-free search identifies the account without anybody handling a key
+// or reading a billing page. The probe is the health check's own Exa ping,
+// which already spends exactly one search and until now threw the number away.
+//
+// Prices are per search, from the plan pages: $15 and $7 per thousand.
+export const EXA_UNIT_PRICES = { velazquez: 0.015, schroeder: 0.007 };
+
+export function exaAccountFor(unitUsd) {
+  if (!Number.isFinite(unitUsd) || unitUsd <= 0) return null;
+  let best = null;
+  for (const [name, unit] of Object.entries(EXA_UNIT_PRICES)) {
+    const err = Math.abs(unitUsd - unit) / unit;
+    // A 20 percent band. The two prices differ by more than a factor of two,
+    // so nothing lands in both bands, and a price in neither band is reported
+    // as unknown rather than rounded into the nearest story.
+    if (err <= 0.2 && (!best || err < best.err)) best = { name, err };
+  }
+  return best ? best.name : null;
+}
+
+export async function recordExaProbe(env, cost) {
+  const unitUsd = Number(cost?.total);
+  if (!Number.isFinite(unitUsd) || unitUsd <= 0) return null;
+  const rec = {
+    unitUsd,
+    account: exaAccountFor(unitUsd),
+    breakdown: cost || null,
+    at: new Date().toISOString(),
+  };
+  await rawPut(env, "exa:probe", JSON.stringify(rec));
+  return rec;
+}
+
+export async function getExaProbe(env) {
+  const raw = await rawGet(env, "exa:probe");
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
 // ---------------------------------------------------------------- press watchlist
 
 export async function getWatchlist(env, version) {
