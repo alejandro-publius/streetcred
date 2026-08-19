@@ -1574,7 +1574,7 @@ export default {
         if (p === "/api/watchlist") {
           return json(w || { source: "empty", reason: "the watchlist has not been built yet" });
         }
-        return new Response(WATCHLIST_PAGE(w, origin, hub), {
+        return new Response(WATCHLIST_PAGE(w, origin, hub, Boolean(env.PREVIEW)), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1589,7 +1589,7 @@ export default {
       }
 
       if (p === "/methodology" || p === "/methodology/") {
-        return new Response(METHODOLOGY(origin), {
+        return new Response(METHODOLOGY(origin, Boolean(env.PREVIEW)), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1598,7 +1598,7 @@ export default {
       if (p === "/changes" || p === "/api/changes") {
         const changes = (await getChanges(env).catch(() => [])).slice(0, 50);
         if (p === "/api/changes") return json({ source: "live", changes });
-        return new Response(CHANGES(changes, origin), {
+        return new Response(CHANGES(changes, origin, Boolean(env.PREVIEW)), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1618,7 +1618,7 @@ export default {
         const spend = exa && apify
           ? { exa, apify, costs, invoice, apifyUsd: costs.reduce((n, c) => n + (Number(c.costUsd) || 0), 0) }
           : null;
-        return new Response(STATUS(synth, incidents, changes, origin, spend), {
+        return new Response(STATUS(synth, incidents, changes, origin, spend, Boolean(env.PREVIEW)), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1628,7 +1628,7 @@ export default {
           getJournal(env).catch(() => []),
           getAgentRejects(env).catch(() => 0),
         ]);
-        return new Response(WATCHDOG(journal, rejects, origin), {
+        return new Response(WATCHDOG(journal, rejects, origin, Boolean(env.PREVIEW)), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }

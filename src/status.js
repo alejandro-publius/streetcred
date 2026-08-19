@@ -21,7 +21,7 @@ const when = (ts) => {
   }
 };
 
-export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null) => {
+export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null, preview = false) => {
   const runs = Array.isArray(synth) ? synth : [];
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
   const week = runs.filter((r) => new Date(r.ts).getTime() > weekAgo);
@@ -178,6 +178,7 @@ site through a service binding, so an edge-level outage in front of a healthy Wo
 here; that caveat is part of the record too.</p>
 </div>
 </main>
+${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>
 </html>`;

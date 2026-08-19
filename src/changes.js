@@ -11,7 +11,7 @@ const esc = (t) =>
 
 const day = (ts) => String(ts || "").slice(0, 10);
 
-export const CHANGES = (changes = [], origin = "") => `<!doctype html>
+export const CHANGES = (changes = [], origin = "", preview = false) => `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -72,6 +72,7 @@ the reason and the source will be recorded here whether or not anyone is watchin
 }
 </div>
 </main>
+${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>
 </html>`;

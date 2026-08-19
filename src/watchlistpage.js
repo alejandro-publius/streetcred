@@ -11,7 +11,7 @@ const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<
 
 const when = (iso) => String(iso || "").slice(0, 10);
 
-export const WATCHLIST_PAGE = (w, origin = "", hub = null) => {
+export const WATCHLIST_PAGE = (w, origin = "", hub = null, preview = false) => {
   const entries = w?.entries || [];
   const rejects = w?.rejects || [];
   const title = "The Press Watchlist, StreetCred";
@@ -150,6 +150,7 @@ ${rejects
 </main>
 <footer>Exa finds it, Apify hears it, Gemini shows it and writes it. Built at Build Club, August 17 2026.<br>
 A corner on this list has been graded from city records and named in coverage. Nothing here has been audited.<br><a href="/">The scoreboard</a> &middot; <a href="/methodology">Methodology</a> &middot; <a href="/changes">Grade changes</a> &middot; <a href="/status">Status</a> &middot; <a href="/watchdog">The watchdog</a></footer>
+${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>
 </html>`;

@@ -144,7 +144,7 @@ function weeklyPrecision(entries) {
     .filter((w) => w.pct !== null);
 }
 
-export const WATCHDOG = (journal = [], rejects = 0, origin = "") => {
+export const WATCHDOG = (journal = [], rejects = 0, origin = "", preview = false) => {
   const entries = Array.isArray(journal) ? journal : [];
   const s = journalStats(entries);
   const trend = weeklyPrecision(entries);
@@ -300,6 +300,7 @@ ${entries.map(entryHtml).join("\n")}`
 </p>
 
 </main>
+${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>
 </html>`;

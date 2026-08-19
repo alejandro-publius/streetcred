@@ -331,6 +331,37 @@ The first twelve are inherited and all still true. 13 onward are new.
     BILLING_QUEUE already states for imagery: operator budgets are separate and
     stricter, never a bypass.
 
+## Polish pass rollback
+
+The polish pass of 2026-08-19 is visual and copy only: no scoring, data, API
+behaviour, cron or cap changed. It was built on branch `polish/pass-1` and
+verified on a preview Worker before main was touched.
+
+**Production deployment live before the pass:**
+`f75ce774-e045-4aba-9d2d-6969b2c9e878`, deployed 2026-08-19T00:08:50Z.
+
+**Path A, instant:**
+
+```
+npx wrangler rollback f75ce774-e045-4aba-9d2d-6969b2c9e878
+```
+
+**Path B, from source:**
+
+```
+git checkout pre-polish-aug18 && npx wrangler deploy
+```
+
+The tag `pre-polish-aug18` is permanent. Do not delete it.
+
+**Preview:** https://streetcred-preview.thealexschroeder.workers.dev, deployed
+from `polish/pass-1` with `npx wrangler deploy --env preview`. Every page on it
+carries a dashed PREVIEW badge, so a preview screenshot can never be mistaken
+for production. It has no cron triggers. It shares production's KV namespace
+deliberately, so it reads exactly what production reads; that also means the
+lanes that write to KV write to the real store, which is why verification on it
+reads pages and never touches the imagery lane.
+
 ## Open items for the human
 
 Unchanged from the morning report, minus nothing:

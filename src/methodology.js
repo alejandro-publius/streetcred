@@ -15,7 +15,7 @@ const p90 = DISTRIBUTION[Math.floor(0.9 * (n - 1))];
 const max = DISTRIBUTION[n - 1];
 const zeroes = DISTRIBUTION.filter((v) => v === 0).length;
 
-export const METHODOLOGY = (origin = "") => `<!doctype html>
+export const METHODOLOGY = (origin = "", preview = false) => `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -248,6 +248,7 @@ Service health: <a href="/status">/status</a> &middot;
 The agent's decisions: <a href="/watchdog">/watchdog</a></p>
 </div>
 </main>
+${preview ? '<div class="pvw">Preview</div>' : ''}
 </div>
 </body>
 </html>`;
