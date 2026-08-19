@@ -2,7 +2,7 @@
 // changelog recorded. No self-assessment anywhere on this page: every row is a
 // stored record something else wrote, and the page only counts.
 
-import { LOGO, FONT_LINK, BASE_CSS, META } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD } from "./page.js";
 
 const esc = (t) =>
   String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
@@ -21,7 +21,7 @@ const when = (ts) => {
   }
 };
 
-export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null, preview = false) => {
+export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null, preview = false, scored = 0) => {
   const runs = Array.isArray(synth) ? synth : [];
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
   const week = runs.filter((r) => new Date(r.ts).getTime() > weekAgo);
@@ -63,9 +63,8 @@ ${BASE_CSS}
 </head>
 <body>
 <div class="wrap">
+${MASTHEAD({ scored, active: "status" })}
 <header>
-  ${LOGO}
-  <div class="mark">Street<span>Cred</span></div>
   <div class="switcher">
     <a href="/">The city</a>
     <a href="/methodology">Methodology</a>

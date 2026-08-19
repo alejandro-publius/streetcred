@@ -4,14 +4,14 @@
 // reader holding last week's screenshot can find out what happened between
 // then and now, instead of having to choose which of two numbers to distrust.
 
-import { LOGO, FONT_LINK, BASE_CSS, META } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD } from "./page.js";
 
 const esc = (t) =>
   String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 
 const day = (ts) => String(ts || "").slice(0, 10);
 
-export const CHANGES = (changes = [], origin = "", preview = false) => `<!doctype html>
+export const CHANGES = (changes = [], origin = "", preview = false, scored = 0) => `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -42,9 +42,8 @@ ${BASE_CSS}
 </head>
 <body>
 <div class="wrap">
+${MASTHEAD({ scored, active: "changes" })}
 <header>
-  ${LOGO}
-  <div class="mark">Street<span>Cred</span></div>
   <div class="switcher">
     <a href="/">The city</a>
     <a href="/methodology">Methodology</a>

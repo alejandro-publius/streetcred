@@ -56,6 +56,59 @@ export const META = ({ title, description, url, card = "summary" }) => {
 <meta name="twitter:description" content="${e(description)}">`;
 };
 
+export const REPO_URL = "https://github.com/alejandro-publius/streetcred";
+
+// The product level band, above every page's own header.
+//
+// It exists because the trust surfaces were reachable only from a footer, and
+// a judge who lands on a corner page had no way to see that a watchlist, a
+// methodology and a cost ledger exist at all. The count comes from the caller
+// so it is the same live number the page prints rather than a second copy.
+//
+// The search here is a link rather than a second typeahead. public/typeahead.js
+// binds to one input by id, so mounting a compact second instance would need
+// the component to support multiple mounts, which is a behaviour change and
+// this pass is visual only. The link lands on the real search on the root.
+export const MASTHEAD = ({ scored = 0, active = "" } = {}) => {
+  const n = (v) => Number(v).toLocaleString("en-US");
+  const link = (href, label, key) =>
+    `<a href="${href}"${key === active ? ' class="on" aria-current="page"' : ""}>${label}</a>`;
+  return `<div class="mast">
+  <a class="mastmark" href="/" aria-label="StreetCred home">Street<span>Cred</span></a>
+  ${scored ? `<span class="mastcount">${n(scored)} SF intersections scored</span>` : ""}
+  <a class="mastfind" href="/#find">Find your corner</a>
+  <nav class="mastnav" aria-label="Trust surfaces">
+    ${link("/watchlist", "Watchlist", "watchlist")}
+    ${link("/methodology", "Methodology", "methodology")}
+    ${link("/status", "Status", "status")}
+    ${link("/changes", "Changes", "changes")}
+  </nav>
+  <a class="mastgh" href="${REPO_URL}" target="_blank" rel="noopener" aria-label="Source on GitHub">
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+  </a>
+  <button class="mastmenu" id="mastmenu" type="button" aria-expanded="false" aria-controls="mastnav-collapsed">Menu</button>
+</div>
+<nav class="mastdrop" id="mastnav-collapsed" hidden aria-label="Trust surfaces">
+  ${link("/watchlist", "Watchlist", "watchlist")}
+  ${link("/methodology", "Methodology", "methodology")}
+  ${link("/status", "Status", "status")}
+  ${link("/changes", "Changes", "changes")}
+  <a href="/#find">Find your corner</a>
+  <a href="${REPO_URL}" target="_blank" rel="noopener">Source on GitHub</a>
+</nav>
+<script>
+(function(){
+  var b=document.getElementById("mastmenu"),d=document.getElementById("mastnav-collapsed");
+  if(!b||!d) return;
+  b.addEventListener("click",function(){
+    var open=d.hidden===false;
+    d.hidden=open;
+    b.setAttribute("aria-expanded",String(!open));
+  });
+})();
+</script>`;
+};
+
 export const FONT_LINK = `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Lora:ital@0;1&display=swap" rel="stylesheet">`;
@@ -120,6 +173,36 @@ export const BASE_CSS = `:root{
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Poppins,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1120px;margin:0 auto;padding:28px 22px 64px}
+/* The product level band. Slim, above every page's own header, existing palette
+   only. Below 700px it keeps the wordmark and the count and hands the links to
+   a disclosure button, because five links and a count do not fit a phone
+   without either wrapping into a second band or shrinking past legibility. */
+.mast{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:10px 0 12px;margin-bottom:18px;border-bottom:1px solid var(--line)}
+.mastmark{font-size:15px;font-weight:700;letter-spacing:-.01em;text-decoration:none;color:var(--ink);white-space:nowrap}
+.mastmark span{color:var(--accent)}
+.mastcount{font-size:12px;color:var(--dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+.mastfind{font-size:12px;font-weight:600;text-decoration:none;color:var(--ink);
+  border:1px solid var(--line2);border-radius:999px;padding:4px 11px;white-space:nowrap}
+.mastfind:hover{border-color:var(--ink)}
+.mastnav{display:flex;gap:14px;margin-left:auto;flex-wrap:wrap}
+.mastnav a{font-size:12px;font-weight:600;text-decoration:none;color:var(--dim);white-space:nowrap}
+.mastnav a:hover{color:var(--ink)}
+.mastnav a.on{color:var(--ink)}
+.mastgh{display:inline-flex;align-items:center;color:var(--dim)}
+.mastgh:hover{color:var(--ink)}
+.mastmenu{display:none;margin-left:auto;font-family:inherit;font-size:12px;font-weight:600;
+  color:var(--ink);background:var(--card);border:1px solid var(--line2);border-radius:999px;
+  padding:5px 13px;cursor:pointer}
+.mastdrop{display:none}
+@media(max-width:700px){
+  .mastnav,.mastfind{display:none}
+  .mastmenu{display:block}
+  .mastdrop:not([hidden]){display:flex;flex-direction:column;gap:2px;margin:-8px 0 18px;
+    padding:10px 0;border-bottom:1px solid var(--line)}
+  .mastdrop a{font-size:13px;font-weight:600;text-decoration:none;color:var(--ink);padding:7px 2px}
+}
+
 /* The header wraps rather than stacking. Separate row and column gaps do the
    work: items sitting together get 14px, and anything that wraps onto its own
    row clears 24px, which is the gap the title block has to keep from the
@@ -709,10 +792,9 @@ ${BASE_CSS}
 </head>
 <body>
 <div class="wrap">
+${MASTHEAD({ scored: og.scored || 0, active: "" })}
 <header>
   <div class="hctl">
-    ${LOGO}
-    <div class="mark">Street<span>Cred</span></div>
     <nav class="switcher" aria-label="Choose a corner">
       ${Object.values(CORNERS)
         .map(

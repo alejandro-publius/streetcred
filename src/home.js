@@ -6,7 +6,7 @@
 // corner's page. Getting that math right is what buys a clickable map for the
 // cost of a single image request.
 
-import { LOGO, FONT_LINK, BASE_CSS, META } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD } from "./page.js";
 import { TIER_LABEL, TIER_NOTE } from "./city.js";
 
 const MAP_W = 640;
@@ -262,9 +262,8 @@ ${BASE_CSS}
 </head>
 <body>
 <div class="wrap">
+${MASTHEAD({ scored, active: "" })}
 <header>
-  ${LOGO}
-  <div class="mark">Street<span>Cred</span></div>
   <div class="corner"><b>San Francisco</b><span class="csub">${scored ? `${n(scored)} corners graded` : `${ranked.length} corners audited`}</span></div>
 </header>
 <main>

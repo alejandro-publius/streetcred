@@ -5,13 +5,13 @@
 // that got lucky, so the rejects are here with their reasons, and the count of
 // phrases that named no street at all is here too.
 
-import { LOGO, FONT_LINK, BASE_CSS, META } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD } from "./page.js";
 
 const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 
 const when = (iso) => String(iso || "").slice(0, 10);
 
-export const WATCHLIST_PAGE = (w, origin = "", hub = null, preview = false) => {
+export const WATCHLIST_PAGE = (w, origin = "", hub = null, preview = false, scored = 0) => {
   const entries = w?.entries || [];
   const rejects = w?.rejects || [];
   const title = "Press watchlist \u00b7 StreetCred";
@@ -58,9 +58,8 @@ ${BASE_CSS}
 </head>
 <body>
 <div class="wrap">
+${MASTHEAD({ scored, active: "watchlist" })}
 <header>
-  ${LOGO}
-  <div class="mark">Street<span>Cred</span></div>
   <div class="corner"><b>The Press Watchlist</b><span class="csub">${w?.builtAt ? `Built ${when(w.builtAt)}` : "Not built yet"}</span></div>
 </header>
 <main>

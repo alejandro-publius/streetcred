@@ -1563,6 +1563,10 @@ export default {
         });
       }
 
+      // The citywide count the masthead prints on every page. One live source,
+      // read here rather than written down once per template.
+      const mastScored = async () => (await getCityMeta(env).catch(() => null))?.totalScored ?? 0;
+
       // The Press Watchlist. Read only: the pass that builds it runs on the
       // cron, because six semantic searches is not something a page load
       // should start.
@@ -1574,7 +1578,7 @@ export default {
         if (p === "/api/watchlist") {
           return json(w || { source: "empty", reason: "the watchlist has not been built yet" });
         }
-        return new Response(WATCHLIST_PAGE(w, origin, hub, Boolean(env.PREVIEW)), {
+        return new Response(WATCHLIST_PAGE(w, origin, hub, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1589,7 +1593,7 @@ export default {
       }
 
       if (p === "/methodology" || p === "/methodology/") {
-        return new Response(METHODOLOGY(origin, Boolean(env.PREVIEW)), {
+        return new Response(METHODOLOGY(origin, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1598,7 +1602,7 @@ export default {
       if (p === "/changes" || p === "/api/changes") {
         const changes = (await getChanges(env).catch(() => [])).slice(0, 50);
         if (p === "/api/changes") return json({ source: "live", changes });
-        return new Response(CHANGES(changes, origin, Boolean(env.PREVIEW)), {
+        return new Response(CHANGES(changes, origin, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1618,7 +1622,7 @@ export default {
         const spend = exa && apify
           ? { exa, apify, costs, invoice, apifyUsd: costs.reduce((n, c) => n + (Number(c.costUsd) || 0), 0) }
           : null;
-        return new Response(STATUS(synth, incidents, changes, origin, spend, Boolean(env.PREVIEW)), {
+        return new Response(STATUS(synth, incidents, changes, origin, spend, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1628,7 +1632,7 @@ export default {
           getJournal(env).catch(() => []),
           getAgentRejects(env).catch(() => 0),
         ]);
-        return new Response(WATCHDOG(journal, rejects, origin, Boolean(env.PREVIEW)), {
+        return new Response(WATCHDOG(journal, rejects, origin, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -1694,7 +1698,7 @@ export default {
       }
 
       if (/^\/c\/[A-Za-z0-9-]+\/?$/.test(p)) {
-        const og = { ...(await ogFor(c, env)), origin, preview: Boolean(env.PREVIEW) };
+        const og = { ...(await ogFor(c, env)), origin, preview: Boolean(env.PREVIEW), scored: await mastScored() };
         // A corner nobody has opened has no cached verdict yet, so warm it in
         // the background. The response never waits on it.
         if (!og.cred) ctx.waitUntil(getCred(c, env, origin).catch(() => {}));

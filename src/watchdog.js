@@ -11,7 +11,7 @@
 // When the journal is empty the page says the agent has not run yet, because
 // the alternative is a dashboard of zeroes that looks like a working system.
 
-import { LOGO, FONT_LINK, BASE_CSS, META } from "./page.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD } from "./page.js";
 import { journalStats } from "./agent.js";
 
 const esc = (t) =>
@@ -144,7 +144,7 @@ function weeklyPrecision(entries) {
     .filter((w) => w.pct !== null);
 }
 
-export const WATCHDOG = (journal = [], rejects = 0, origin = "", preview = false) => {
+export const WATCHDOG = (journal = [], rejects = 0, origin = "", preview = false, scored = 0) => {
   const entries = Array.isArray(journal) ? journal : [];
   const s = journalStats(entries);
   const trend = weeklyPrecision(entries);
@@ -244,9 +244,8 @@ ${BASE_CSS}
 </head>
 <body>
 <div class="wrap">
+${MASTHEAD({ scored, active: "" })}
 <header>
-  ${LOGO}
-  <div class="mark">Street<span>Cred</span></div>
   <div class="switcher">
     <a href="/">The city</a>
     <a href="/watchdog" class="on">The watchdog</a>
