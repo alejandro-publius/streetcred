@@ -82,6 +82,13 @@ CORNER_ENRICHED="1st-and-bush"
 CORNER_SCORED="18th-and-valencia"
 API_CORNER="16th-mission"
 
+# API_CORNER is deliberately a corner with a stored press record. /api/news
+# answers from that record first and costs nothing (src/index.js:2272-2288);
+# only a corner WITHOUT one falls through to a billed Exa search. If
+# PRESS_VERSION is ever bumped without a backfill, every run of this script
+# would start spending. The /api/news check below would also start failing,
+# which is the signal to look here.
+
 # name | path | marker that proves the body really rendered
 CHECKS=$(cat <<SPEC
 homepage|/|intersections graded citywide
