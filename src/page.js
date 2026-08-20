@@ -1,6 +1,6 @@
 import { CORNERS } from "./data.js";
 import { DISTRIBUTION } from "./score.js";
-import { TIER_LABEL, TIER_NOTE, TIERS } from "./city.js";
+import { TIER_LABEL, TIER_NOTE } from "./city.js";
 
 // The citywide distribution strip, built once at module load from the frozen
 // array rather than shipped to the browser as 600 numbers on every page. The
@@ -1298,7 +1298,6 @@ a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible,
 export const PAGE = (c, og = {}) => {
   const idx = og.score?.index;
   const grade = og.score?.grade;
-  const verdict = og.cred?.verdict;
   const records = og.cred?.lanes?.find((l) => l.key === "records");
   // Title and description are built from this corner's own stored numbers, and
   // the tab title and the share title are now the same string rather than two

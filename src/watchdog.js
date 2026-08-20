@@ -152,7 +152,6 @@ export const WATCHDOG = (journal = [], rejects = 0, origin = "", preview = false
 
   const days = new Set(entries.map((e) => isoDay(e.ts)).filter(Boolean)).size;
 
-  const title = "The Corner Watchdog";
   const desc = ran
     ? `An autonomous agent watching San Francisco street data. ${s.evaluated} changes evaluated, ${s.acted} acted on.`
     : "An autonomous agent watching San Francisco street data. Its decision journal, published in full.";

@@ -34,7 +34,7 @@ import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import {
   cityCornerFor, getCityMeta, getRankPage, cityStats, cityScore, cityCred,
   cityNews, cityVoices, cityTimeline, cityRun, cityHazards, cityLetter,
-  TIERS, TIER_LABEL, tierOf, RANK_PAGE_SIZE, tagTiers, putCityMeta,
+  TIERS, tierOf, RANK_PAGE_SIZE, tagTiers, putCityMeta,
 } from "./city.js";
 import { evidenceLine } from "./page.js";
 import { imageryFor } from "./imagery.js";
@@ -44,13 +44,13 @@ import { buildManifest, PUBLIC_TRIGGERS } from "./manifest.js";
 import { classify, streetTokens, domainOf, searchQuery } from "./newsfilter.js";
 import { buildTimeline, TIMELINE_VERSION } from "./timeline.js";
 import { buildSuggestion, SUGGEST_VERSION } from "./suggest.js";
-import { buildInputSet, verifyLetter, retryInstruction, VERIFY_VERSION } from "./verify.js";
+import { buildInputSet, verifyLetter, retryInstruction } from "./verify.js";
 import { handleAgentReport, journalStats, JOURNAL_CAP } from "./agent.js";
 import { WATCHDOG } from "./watchdog.js";
 import { projectImpact } from "./impact.js";
 import { METHODOLOGY } from "./methodology.js";
 import { WATCHLIST_PAGE } from "./watchlistpage.js";
-import { buildWatchlist, buildConnections, reciprocal, WATCHLIST_VERSION, CONNECTIONS_VERSION } from "./press.js";
+import { buildWatchlist, buildConnections, reciprocal, WATCHLIST_VERSION } from "./press.js";
 import { commissionVoices, ingestVoices } from "./voices.js";
 import { CHANGES } from "./changes.js";
 import { STATUS } from "./status.js";
