@@ -18,10 +18,10 @@
 #
 # Two things to know before you run it.
 #
-# One: /api/health is not free. It pings every provider, and the Exa ping is a
-# billed search, roughly $0.007 at the unit price that endpoint reports. That
-# is the price of learning a lane is down before a stranger does, and it is one
-# search rather than a batch. Do not put this script in a loop.
+# One: the default run spends nothing. /api/health does spend, because its Exa
+# ping is a real billed search, so it is behind --health rather than on by
+# default. Pass --health when you want the provider lanes checked and you are
+# willing to put roughly $0.007 into the Exa ledger to learn it.
 #
 # Two: it needs curl and nothing else. No jq, no timeout. `timeout` is not on
 # macOS, so every request carries curl's own --max-time instead of being
@@ -34,14 +34,17 @@
 DEFAULT_ORIGIN="https://streetcred.thealexschroeder.workers.dev"
 MAXTIME=45
 QUIET=0
+HEALTH=0
 ORIGIN=""
 
 for arg in "$@"; do
   case "$arg" in
     --quiet|-q) QUIET=1 ;;
+    --health) HEALTH=1 ;;
     -h|--help)
-      echo "usage: sh tools/preflight_judging.sh [origin] [--quiet]"
-      echo "  origin defaults to \$STREETCRED_ORIGIN, then $DEFAULT_ORIGIN"
+      echo "usage: sh tools/preflight_judging.sh [origin] [--quiet] [--health]"
+      echo "  origin   defaults to \$STREETCRED_ORIGIN, then $DEFAULT_ORIGIN"
+      echo "  --health also probe /api/health. Costs one billed Exa search."
       exit 0
       ;;
     -*) echo "unknown flag: $arg" >&2; exit 2 ;;
@@ -101,7 +104,6 @@ corner SCORED|/c/$CORNER_SCORED|tierchip t-scored
 /changes|/changes|Grade changes
 /watchlist|/watchlist|found by:
 /watchdog|/watchdog|The Corner Watchdog
-/api/health|/api/health|"ok":true
 /api/board|/api/board|"corners":[
 /api/stats|/api/stats?x=$API_CORNER|"crashes":
 /api/score|/api/score?x=$API_CORNER|"grade":
@@ -109,6 +111,26 @@ corner SCORED|/c/$CORNER_SCORED|tierchip t-scored
 /api/letter|/api/letter?x=$API_CORNER|"text":
 SPEC
 )
+
+# /api/health is opt-in, not default, and this is the one place this script
+# deviates from a monitoring tool's usual instinct to check everything.
+#
+# The endpoint pings every provider, and its Exa ping is a real billed search:
+# probeExa is `opts.probeExa || budget.accountVerified` (src/index.js:1190-1191),
+# the workspace IS confirmed, so a plain GET probes and spends without being
+# asked to. Roughly $0.007 a call.
+#
+# The cost is not the objection. The objection is that this project's Exa ledger
+# is evidence, cited on /status and in docs/EXA_INTEGRATION.md, and a monitoring
+# script that writes to the ledger it monitors corrupts the thing it exists to
+# protect. Run a preflight in a loop while debugging and the spend curve on
+# /status acquires a step that no feature caused.
+#
+# So: off by default, on with --health, and the summary always says which.
+if [ "$HEALTH" -eq 1 ]; then
+  CHECKS="$CHECKS
+/api/health|/api/health|\"ok\":true"
+fi
 
 # Every lane /api/health pings. A lane is healthy when its value is exactly
 # "ok"; anything else is the provider's own error text, truncated by the
@@ -213,16 +235,25 @@ if [ -s "$TMP/notes" ] && [ "$QUIET" -eq 0 ]; then
   say ""
 fi
 
+# Always say whether the provider lanes were actually checked. A green table
+# that quietly skipped the health probe reads as "everything is up" when what
+# it means is "every page rendered".
+if [ "$HEALTH" -eq 1 ]; then
+  MODE="provider lanes probed"
+else
+  MODE="provider lanes NOT probed, pass --health to include them"
+fi
+
 if [ "$FAILCOUNT" -eq 0 ]; then
-  printf '%sPREFLIGHT PASS%s  %d of %d checks green against %s\n' \
-    "$C_PASS" "$C_OFF" "$PASSCOUNT" "$TOTAL" "$ORIGIN"
+  printf '%sPREFLIGHT PASS%s  %d of %d checks green against %s (%s)\n' \
+    "$C_PASS" "$C_OFF" "$PASSCOUNT" "$TOTAL" "$ORIGIN" "$MODE"
   exit 0
 fi
 
 names=$(cut -d: -f1 < "$TMP/failures" \
   | awk 'NR > 1 { printf ", " } { printf "%s", $0 } END { print "" }')
-printf '%sPREFLIGHT FAIL%s  %d of %d checks failed against %s: %s\n' \
-  "$C_FAIL" "$C_OFF" "$FAILCOUNT" "$TOTAL" "$ORIGIN" "$names"
+printf '%sPREFLIGHT FAIL%s  %d of %d checks failed against %s (%s): %s\n' \
+  "$C_FAIL" "$C_OFF" "$FAILCOUNT" "$TOTAL" "$ORIGIN" "$MODE" "$names"
 if [ "$QUIET" -eq 0 ]; then
   while IFS= read -r f; do printf '  %s\n' "$f"; done < "$TMP/failures"
 fi
