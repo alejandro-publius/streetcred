@@ -1511,7 +1511,15 @@ async function ogFor(c, env) {
   // A scored corner already carries all of this on the shard row that resolved
   // it. Two more KV reads to confirm two records that by construction do not
   // exist would double the cost of the commonest page on the site.
-  if (isScored(c)) return { score: cityScore(c), cred: cityCred(c), tier: TIERS.SCORED };
+  // The three stat tiles, server-side, for the 7,355 corners whose figures are
+  // already on the shard row. cityStats is synchronous and reads nothing, so
+  // this costs the page nothing and puts the numbers in the raw HTML instead of
+  // leaving them to a count-up that only fires if the tiles are scrolled into
+  // view. A corner without a shard row keeps its skeleton, which says "loading"
+  // rather than claiming a figure this render does not have.
+  if (isScored(c)) {
+    return { score: cityScore(c), cred: cityCred(c), tier: TIERS.SCORED, stats: cityStats(c) };
+  }
   const [score, cred, imagery, letter] = await Promise.all([
     getScore(env, c.slug, SCORE_VERSION).catch(() => null),
     getCredCached(env, c.slug, CRED_VERSION).catch(() => null),

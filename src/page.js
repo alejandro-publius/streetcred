@@ -1315,7 +1315,36 @@ a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible,
   .toggle{width:auto;flex-wrap:wrap;padding:5px}
   .toggle button{padding:9px 13px;font-size:13px}
 }
-@media(max-width:400px){.stats{grid-template-columns:1fr}}`;
+@media(max-width:400px){.stats{grid-template-columns:1fr}}
+
+/* Print. There was no print stylesheet on this site at all, which is how the
+   operator's PDF came back carrying the hazard tape, the sticky bar and three
+   stat tiles reading zero. A corner page is a document somebody may well print
+   and take to a meeting, so it should print like one.
+
+   Motion is the first thing to go: an animation mid-flight prints whatever
+   frame it had reached, which for the eyebrow rules meant a half-drawn line and
+   for the tiles meant a half-counted number. */
+@media print{
+  *{animation:none !important;transition:none !important}
+  /* Skeletons are a loading state. On paper they are grey boxes with no
+     explanation, so they take no ink. */
+  .sk{animation:none !important;background:transparent !important}
+  /* Fixed and sticky furniture either repeats on every sheet or covers the
+     text under it. */
+  .sticky,.pvw,#replay,.toggle,.share,.vgo,.offer{display:none !important}
+  /* The eyebrow rule is drawn by a scaleX transition that has not run. */
+  .eyebrow::after{transform:scaleX(1) !important}
+  /* Three tiles across, since the paper is wider than the phone breakpoint
+     that stacks them. */
+  .stats{grid-template-columns:repeat(3,1fr) !important}
+  /* A link that says "read the evaluation" is useless on paper without its
+     destination. */
+  .provenance a[href^="http"]::after,.src[href^="http"]::after{content:" (" attr(href) ")";font-size:9px;word-break:break-all}
+  body{background:#fff}
+  .panel{break-inside:avoid;box-shadow:none}
+  .stat{break-inside:avoid}
+}`;
 
 export const PAGE = (c, og = {}) => {
   const idx = og.score?.index;
@@ -1567,10 +1596,29 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
          screen reader announces on entering it, so moving the box did not move
          what it is part of. -->
     <section class="statgroup" role="group" aria-labelledby="recordlabel">
-<div class="stats" id="stats">
+<div class="stats" id="stats">${
+  og.stats
+    ? [
+        [og.stats.crashes, "Injury collisions, last 5 years", `within ${og.stats.radiusM || 80}m`],
+        [
+          og.stats.reports311,
+          `Street-condition 311 reports, ${og.stats.reports311Window || "3 years"}`,
+          `within ${og.stats.radiusM || 80}m`,
+        ],
+        [og.stats.district, "Supervisor district", ""],
+      ]
+        .map(
+          ([v, label, rad]) =>
+            `\n  <div class="stat"><div class="n" data-to="${v ?? ""}">${
+              v === null || v === undefined ? "n/a" : Number(v).toLocaleString("en-US")
+            }</div><div class="l">${label}${rad ? `<br><i class="rad">${rad}</i>` : ""}</div></div>`,
+        )
+        .join("")
+    : `
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Injury collisions, last 5 years<br><i class="rad">within 150m</i></div></div>
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-condition 311 reports, 3 years<br><i class="rad">within 150m</i></div></div>
-  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>
+  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>`
+}
 </div>
 <p class="statcap" id="statcap" hidden></p>
     </section>
@@ -2059,8 +2107,15 @@ LANE_LOADERS.stats = () => fetch("/api/stats" + X).then(r => r.json()).then(d =>
   // clicks re-runs the count on data.sfgov.org; everyone else sees a number.
   const urls = [d.urls && d.urls.crashes, d.urls && d.urls.reports311, d.urls && d.urls.district];
   el("stats").innerHTML = vals.map((v,i) => {
+    // Seeded with the real figure, not with "0". Writing a zero and leaving the
+    // truth in data-to made the count-up the only thing that could produce the
+    // number, and the count-up is gated on the tiles scrolling into view. The
+    // tiles sit below the press and voices cards, so anything that never
+    // scrolls (print, a full-page screenshot, a headless capture, reader mode)
+    // showed three zeros under an F verdict. The animation is decoration now,
+    // replaying 0 to n over a number that was already correct.
     const num = '<div class="n" data-to="' + (v === null || v === undefined ? "" : v) + '">' +
-      (v === null || v === undefined ? "n/a" : "0") + '</div>';
+      (v === null || v === undefined ? "n/a" : Number(v).toLocaleString()) + '</div>';
     const linked = urls[i] && v !== null && v !== undefined
       ? '<a class="src" href="' + urls[i] + '" target="_blank" rel="noopener" ' +
         'aria-label="' + l[i].replace(/"/g, "") + ': opens source query on data.sfgov.org">' + num + '</a>'
@@ -2097,7 +2152,29 @@ LANE_LOADERS.stats = () => fetch("/api/stats" + X).then(r => r.json()).then(d =>
       if(to !== "") countUp(node, to);
     });
   });
+  flushStats();
 });
+
+// data-to is the source of truth; this puts it on screen with no animation and
+// no waiting for anything to be scrolled into view. Called when the lane lands,
+// and again before printing, because a print does not scroll and a half-played
+// count-up prints whatever number it had reached.
+function flushStats(){
+  const wrap = el("stats");
+  if(!wrap) return;
+  wrap.querySelectorAll(".n").forEach(node => {
+    const to = node.getAttribute("data-to");
+    if(to === null || to === "") return;
+    const n = Number(to);
+    node.textContent = Number.isFinite(n) ? n.toLocaleString() : to;
+  });
+}
+window.addEventListener("beforeprint", flushStats);
+// Safari and the headless capture paths do not always fire beforeprint.
+if(window.matchMedia){
+  const pq = window.matchMedia("print");
+  pq.addEventListener && pq.addEventListener("change", e => { if(e.matches) flushStats(); });
+}
 
 // Cred Check. Four lanes, lit when they agree, with the verdict beside them.
 // Detail sits in the title attribute, which is hover on a pointer and long

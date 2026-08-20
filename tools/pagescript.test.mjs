@@ -296,3 +296,60 @@ test("the hero card states no second corner under its buttons", () => {
   assert.match(older, /class="shdl"/, "the slider is unaffected");
   assert.match(older, /Audited autonomously 2026-08-18/, "the featured corner still dates itself");
 });
+
+// The three stat tiles printed as "0 collisions, 0 reports, 0 district" under
+// an F verdict in the operator's PDF. The values were only ever produced by a
+// count-up gated on the tiles scrolling into view, and the tiles sit below the
+// press and voices cards, so anything that does not scroll got zeros. A zero is
+// a claim; a skeleton is not. Neither may be a stand-in for a figure the render
+// already has.
+test("a scored corner's stat tiles carry their real values in the raw HTML", () => {
+  const html = PAGE(scored, {
+    origin: "https://example.test",
+    tier: TIERS.SCORED,
+    stats: {
+      source: "sweep",
+      asOf: "2026-08-18",
+      radiusM: 80,
+      crashes: 65,
+      fatal: 2,
+      reports311: 85,
+      reports311Window: "12 months",
+      district: 9,
+    },
+  });
+  const block = html.slice(html.indexOf('<div class="stats"'), html.indexOf('<p class="statcap"'));
+  assert.match(block, />65</, "the collision count should be in the HTML");
+  assert.match(block, />85</, "the 311 count should be in the HTML");
+  assert.match(block, />9</, "the district should be in the HTML");
+  assert.doesNotMatch(block, />0</, "no tile may render a literal zero it does not mean");
+  assert.doesNotMatch(block, /class="n sk"/, "no skeleton where a value is known");
+  // data-to stays, because the count-up still replays over the real number.
+  assert.match(block, /data-to="65"/);
+});
+
+// Without stats in hand the tile says nothing rather than saying zero.
+test("a corner with no stats in hand keeps the skeleton, never a zero", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  const block = html.slice(html.indexOf('<div class="stats"'), html.indexOf('<p class="statcap"'));
+  assert.match(block, /class="n sk"/, "the loading state is honest, a zero is not");
+  assert.doesNotMatch(block, />0</);
+});
+
+// There was no print stylesheet on this site at all, which is why the PDF came
+// back with the tape, the sticky bar and a half-drawn eyebrow rule.
+test("the corner page has a print stylesheet that stops mid-flight animation", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  assert.match(html, /@media print\{/, "a printable document needs print styles");
+  assert.match(html, /@media print\{[\s\S]*animation:none !important/);
+  assert.match(html, /@media print\{[\s\S]*\.sticky[^}]*display:none/);
+});
+
+// The flush is what puts data-to on screen without waiting to be scrolled to.
+test("the stats flush runs when the lane lands and again before printing", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  const src = scripts(html).join("\n");
+  assert.match(src, /function flushStats\(\)/);
+  assert.match(src, /addEventListener\("beforeprint", flushStats\)/);
+  assert.match(src, /flushStats\(\);/, "the lane must flush as soon as it lands");
+});
