@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { buildLetterPrompt } from "../src/letterprompt.js";
 import { buildInputSet, verifyLetter } from "../src/verify.js";
 import { resolvedDistrict, addresseeFor, SUPERVISORS } from "../src/data.js";
-import { stagedLetterFiles, buildLedger, costOf } from "./generate_letters.mjs";
+import { stagedLetterFiles, buildLedger, costOf, mergeResults, totalsFromRuns } from "./generate_letters.mjs";
 
 const corner = (over = {}) => ({
   slug: "fillmore-and-lombard",
@@ -236,4 +236,62 @@ test("an empty run produces a ledger that claims nothing", () => {
   assert.equal(l.calls, 0);
   assert.equal(l.estUsd, 0);
   assert.deepEqual(l.perCorner, []);
+});
+
+// ------------------------------------------- the log accumulates across runs
+//
+// The bug these hold shut: `--only=` re-runs 18 corners, and the line that
+// saved the results wrote those 18 over the 132 the pass before it had
+// recorded. The ledger built at publish time then read 18 corners of spend for
+// a fleet of 132, and 114 corners with a verified letter on disk vanished from
+// the record of how they got there.
+
+test("a subset re-run merges into the log instead of replacing it", () => {
+  const first = [
+    { slug: "a", state: "passed", attempts: 1 },
+    { slug: "b", state: "pending", attempts: 2 },
+    { slug: "c", state: "passed", attempts: 1 },
+  ];
+  const rerun = [{ slug: "b", state: "passed", attempts: 2 }];
+  const merged = mergeResults(first, rerun);
+
+  assert.equal(merged.length, 3, "the corners the re-run did not touch survive");
+  assert.deepEqual(merged.map((r) => r.slug), ["a", "b", "c"], "sorted by slug");
+  assert.equal(merged.find((r) => r.slug === "b").state, "passed", "the re-run's verdict wins");
+  assert.equal(merged.find((r) => r.slug === "b").reruns, 1, "and the row records that it was re-run");
+  assert.equal(merged.find((r) => r.slug === "a").reruns, undefined, "untouched rows are untouched");
+});
+
+test("a re-run adds to the bill rather than replacing it", () => {
+  // Both passes called Vertex. The second one does not unspend the first.
+  const runs = [
+    { label: "full pass", corners: 132, calls: 217, estUsd: 1.1432, promptTokens: null, outputTokens: null },
+    { label: "re-run", corners: 18, calls: 29, estUsd: 0.1663, promptTokens: 12000, outputTokens: 55000 },
+  ];
+  const t = totalsFromRuns(runs);
+  assert.equal(t.calls, 246);
+  assert.equal(t.estUsd, 1.3095);
+  assert.equal(t.tokensCoverRuns, 1, "only one run recorded token counts");
+  assert.equal(t.promptTokens, 12000, "and the total is over that run only, not a guess for the other");
+});
+
+test("the ledger says how much of itself the token figure covers", () => {
+  const l = buildLedger([{ slug: "a", state: "passed", attempts: 1 }], {
+    runs: [
+      { label: "one", calls: 10, estUsd: 0.5, promptTokens: null, outputTokens: null },
+      { label: "two", calls: 5, estUsd: 0.25, promptTokens: 900, outputTokens: 100 },
+    ],
+  });
+  assert.equal(l.calls, 15, "dollars and calls cover every run");
+  assert.equal(l.estUsd, 0.75);
+  assert.equal(l.tokensCover, "1 of 2 generation runs", "the partial figure names itself partial");
+  assert.equal(l.runs.length, 2, "and the runs are itemised rather than only summed");
+});
+
+test("the ledger reports the letters that exist, not the rows that passed", () => {
+  // At publish time the write set is the staging directory, which carries
+  // letters from every pass. Counting only this run's passing rows would report
+  // 14 letters on a night that published 116.
+  const l = buildLedger([{ slug: "a", state: "passed", attempts: 1 }], { letters: 116 });
+  assert.equal(l.letters, 116);
 });

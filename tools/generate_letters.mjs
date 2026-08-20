@@ -19,7 +19,7 @@
 // application-default login` wrote, and it is never printed or stored.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -210,11 +210,89 @@ export function stagedLetterFiles(names) {
   );
 }
 
+// ------------------------------------------------- the run log, accumulated
+//
+// Two files, because two different things are being recorded and only one of
+// them can be recounted later. `_results.json` is the per corner state: which
+// corners have a verified letter and which are held, latest run wins. Every
+// invocation also appends one line to `_runs.json` holding what that invocation
+// actually spent, because token counts are only ever known while the response
+// is in hand. A corner re-run tomorrow overwrites its own state; it does not
+// unspend yesterday's calls, and the run log is what keeps them counted.
+
+const RUNS = join(STAGE, "_runs.json");
+const RESULTS = join(STAGE, "_results.json");
+
+export function readResults() {
+  try {
+    return JSON.parse(readFileSync(RESULTS, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+export function readRuns() {
+  try {
+    return JSON.parse(readFileSync(RUNS, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+// Latest state per slug, sorted so a diff of the file reads as a diff of the
+// fleet rather than of the order the loop happened to visit corners in.
+export function mergeResults(priorRows, freshRows) {
+  const by = new Map((priorRows || []).map((r) => [r.slug, r]));
+  for (const fresh of freshRows || []) {
+    const was = by.get(fresh.slug);
+    by.set(fresh.slug, was ? { ...fresh, reruns: (was.reruns || 0) + 1 } : fresh);
+  }
+  return [...by.values()].sort((a, b) => String(a.slug).localeCompare(String(b.slug)));
+}
+
+function appendRun(entry) {
+  const all = readRuns();
+  all.push(entry);
+  writeFileSync(RUNS, JSON.stringify(all, null, 2));
+}
+
+// Totals over the run log. Spend and calls are summed across every invocation,
+// so a re-run adds to the bill instead of replacing it. Token counts are summed
+// only over the runs that recorded them, and the count of runs that did is
+// reported, so a partial figure cannot be read as a whole one.
+export function totalsFromRuns(runs) {
+  const rows = runs || [];
+  const withTokens = rows.filter((r) => r.promptTokens != null && r.outputTokens != null);
+  return {
+    runs: rows.length,
+    calls: rows.reduce((a, r) => a + (r.calls || 0), 0),
+    estUsd: Math.round(rows.reduce((a, r) => a + (r.estUsd || 0), 0) * 1e6) / 1e6,
+    promptTokens: withTokens.reduce((a, r) => a + r.promptTokens, 0),
+    outputTokens: withTokens.reduce((a, r) => a + r.outputTokens, 0),
+    tokensCoverRuns: withTokens.length,
+  };
+}
+
 // The ledger, as one record holding a line per letter. One record per letter
 // would be 130 extra writes against a 1,000 a day cap to store what fits in a
 // single value.
 export function buildLedger(rows, opts = {}) {
-  const spent = rows.filter((r) => r.usd).reduce((a, r) => a + r.usd, 0);
+  // Money is summed over the run log when one is supplied, and falls back to
+  // the per corner rows only when it is not. The distinction matters once a
+  // corner has been generated twice: its row carries the latest run's figures,
+  // and the earlier run's calls were still billed.
+  const runs = opts.runs || [
+    {
+      at: opts.now,
+      label: "this run",
+      corners: rows.length,
+      calls: rows.reduce((a, r) => a + (r.attempts || 0), 0),
+      promptTokens: rows.reduce((a, r) => a + (r.promptTokens || 0), 0),
+      outputTokens: rows.reduce((a, r) => a + (r.outputTokens || 0), 0),
+      estUsd: Math.round(rows.filter((r) => r.usd).reduce((a, r) => a + r.usd, 0) * 1e6) / 1e6,
+    },
+  ];
+  const totals = totalsFromRuns(runs);
   return {
     period: (opts.now || new Date().toISOString()).slice(0, 7),
     updated: opts.now || new Date().toISOString(),
@@ -222,15 +300,31 @@ export function buildLedger(rows, opts = {}) {
     via: `vertex:${opts.region || REGION}`,
     project: opts.project || PROJECT,
     auth: "application default credentials, no api key",
-    calls: rows.reduce((a, r) => a + (r.attempts || 0), 0),
-    letters: rows.filter((r) => r.state === "passed").length,
-    promptTokens: rows.reduce((a, r) => a + (r.promptTokens || 0), 0),
-    outputTokens: rows.reduce((a, r) => a + (r.outputTokens || 0), 0),
-    estUsd: Math.round(spent * 1e6) / 1e6,
+    calls: totals.calls,
+    // What a visitor can actually load, when the caller knows. Falls back to
+    // the count of passing rows for a bare in-memory ledger.
+    letters: opts.letters ?? rows.filter((r) => r.state === "passed").length,
+    promptTokens: totals.promptTokens,
+    outputTokens: totals.outputTokens,
+    estUsd: totals.estUsd,
     basis: `estimated from token counts at $${USD_PER_M_IN}/M in and $${USD_PER_M_OUT}/M out`,
+    // What the token figure does and does not cover. Where a run's per corner
+    // token counts were lost, its dollars are still counted and its tokens are
+    // not, and saying so is the difference between a partial total and a wrong
+    // one.
+    tokensCover: `${totals.tokensCoverRuns} of ${totals.runs} generation runs`,
+    runs: runs.map((r) => ({
+      at: r.at,
+      label: r.label,
+      corners: r.corners,
+      calls: r.calls,
+      estUsd: r.estUsd,
+      ...(r.note ? { note: r.note } : {}),
+    })),
     perCorner: rows
       .filter((r) => r.state === "passed" || r.state === "pending")
-      .map((r) => ({ slug: r.slug, state: r.state, attempts: r.attempts, usd: r.usd })),
+      .map((r) => ({ slug: r.slug, state: r.state, attempts: r.attempts })),
+    ...(opts.imagery !== undefined ? { imagery: opts.imagery } : {}),
   };
 }
 
@@ -348,6 +442,13 @@ if (IS_MAIN) {
           via: `vertex:${REGION}`,
         };
         writeFileSync(join(STAGE, `${slug}.json`), JSON.stringify(record));
+        // A corner that passes on a re-run must stop being staged as pending.
+        // Publish already filters `.pending.` out of the write set, so a stale
+        // file could never reach KV, but it would leave the staging directory
+        // claiming a corner is held at the same moment it holds that corner's
+        // verified letter, and the pending count is a number this project
+        // reports.
+        rmSync(join(STAGE, `${slug}.pending.json`), { force: true });
         results.push({ slug, state: "passed", attempts, usd, ...tokens, addressee: addresseeFor(district) });
         console.log(`  [${n}/${slugs.length}] ${slug}: passed on attempt ${attempts}, ${addresseeFor(district)}`);
       } else {
@@ -375,7 +476,26 @@ if (IS_MAIN) {
       }
     }
 
-    writeFileSync(join(STAGE, "_results.json"), JSON.stringify(results, null, 2));
+    // Merge, never replace. A `--only=` run covers a subset, and the first
+    // version of this line wrote that subset over the whole log: an 18 corner
+    // re-run destroyed the 132 corner record of the pass before it, and the
+    // ledger built at publish time then reported 18 corners of spend for a
+    // fleet of 132. The per corner log accumulates by slug and the money lives
+    // in the run log beside it, one entry per invocation.
+    writeFileSync(
+      join(STAGE, "_results.json"),
+      JSON.stringify(mergeResults(readResults(), results), null, 2),
+    );
+    appendRun({
+      at: new Date().toISOString(),
+      label: ONLY.length ? `re-run of ${ONLY.length} named corners` : `full pass, ${slugs.length} corners`,
+      corners: results.length,
+      calls: results.reduce((a, r) => a + (r.attempts || 0), 0),
+      promptTokens: results.reduce((a, r) => a + (r.promptTokens || 0), 0),
+      outputTokens: results.reduce((a, r) => a + (r.outputTokens || 0), 0),
+      estUsd: Math.round(results.reduce((a, r) => a + (r.usd || 0), 0) * 1e6) / 1e6,
+      model: MODEL,
+    });
   }
 
   // ---------------------------------------------------------------- publish
@@ -398,27 +518,30 @@ if (IS_MAIN) {
     // The ledger is ONE record holding a line per letter, not one record per
     // letter. Per letter would be 130 extra writes against a 1,000 a day cap to
     // store what fits in a single value.
-    const spent = prior.filter((r) => r.usd).reduce((a, r) => a + r.usd, 0);
-    const ledger = {
-      period: new Date().toISOString().slice(0, 7),
-      updated: new Date().toISOString(),
-      model: MODEL,
-      via: `vertex:${REGION}`,
-      project: PROJECT,
-      auth: "application default credentials, no api key",
-      calls: prior.filter((r) => r.attempts).reduce((a, r) => a + r.attempts, 0),
+    //
+    // Money comes from the run log, not from the per corner rows. The per
+    // corner rows only ever hold the most recent run's figures for a corner,
+    // and summing those would quietly forget every call an earlier pass paid
+    // for on a corner that was later re-run.
+    const runs = readRuns();
+    let imagery = null;
+    try {
+      imagery = imagerySpend(
+        JSON.parse(readFileSync(join(ROOT, "scratch", "imagery", "_results.json"), "utf8")),
+      );
+    } catch {
+      /* no render run tonight */
+    }
+
+    // The same function the tests exercise. It used to be a second, parallel
+    // copy of this object literal, which meant tools/letters.test.mjs was
+    // guarding a function the publish path never called.
+    const ledger = buildLedger(prior, {
+      now: new Date().toISOString(),
+      runs,
       letters: entries.length,
-      promptTokens: prior.reduce((a, r) => a + (r.promptTokens || 0), 0),
-      outputTokens: prior.reduce((a, r) => a + (r.outputTokens || 0), 0),
-      estUsd: Math.round(spent * 1e6) / 1e6,
-      // Named as an estimate on the record itself. Exa returns costDollars and
-      // that ledger is measured; this one is arithmetic over token counts against
-      // published rates, and the two must not read as the same kind of number.
-      basis: `estimated from token counts at $${USD_PER_M_IN}/M in and $${USD_PER_M_OUT}/M out`,
-      perCorner: prior
-        .filter((r) => r.state === "passed" || r.state === "pending")
-        .map((r) => ({ slug: r.slug, state: r.state, attempts: r.attempts, usd: r.usd })),
-    };
+      imagery,
+    });
     entries.push({ key: "budget:gemini", value: JSON.stringify(ledger) });
 
     const need = entries.length;
