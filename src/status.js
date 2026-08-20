@@ -4,6 +4,7 @@
 
 import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 import { pacificDay } from "./data.js";
+import { runCounts } from "./press.js";
 
 const esc = (t) =>
   String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
@@ -22,7 +23,11 @@ const when = (ts) => {
   }
 };
 
-export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null, preview = false, scored = 0, scan = null) => {
+export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null, preview = false, scored = 0, scan = null, watchlist = null) => {
+  // Attempted against completed, from the stored record. This is the spend
+  // page, so the distinction is the point: the searches that never reached Exa
+  // never cost anything, and printing the attempt here read as money spent.
+  const wl = runCounts(watchlist);
   const runs = Array.isArray(synth) ? synth : [];
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
   const week = runs.filter((r) => new Date(r.ts).getTime() > weekAgo);
@@ -184,8 +189,14 @@ ${
 }
 
 <h2>What the autonomous run spends</h2>
-<p class="note">The morning run commissions two Apify actor runs per corner and 29 Exa searches for
-the citywide watchlist, unattended, against real credit. Both ledgers are written from the numbers the
+<p class="note">The morning run commissions two Apify actor runs per corner and attempts ${wl.attempted} Exa
+searches for the citywide watchlist, unattended, against real credit.${
+  wl.failed
+    ? ` ${wl.completed} of those searches reach Exa and are billed; the other ${wl.failed} are cut off by the
+Worker's subrequest ceiling before any call is made, so they cost nothing. Budget is reserved for the
+full attempt up front, which is why the reservation and the bill differ.`
+    : ""
+} Both ledgers are written from the numbers the
 providers themselves report, because an autonomous system spending money without a ledger is the thing
 nobody should ship. The Exa figure is metered in cents: spend is reserved before a call at 0.7 cents a
 search and 0.1 cents a page of contents, then reconciled against the price the provider returns, and

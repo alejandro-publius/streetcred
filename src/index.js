@@ -1777,8 +1777,11 @@ async function cornerOfTheDay(env, ctx, origin) {
     return conn;
   });
 
-  // The citywide watchlist, refreshed. Seven semantic searches, and the only
-  // lane here that is not about today's corner at all.
+  // The citywide watchlist, refreshed. WATCHLIST_QUERIES.length searches
+  // attempted, and the only lane here that is not about today's corner at all.
+  // It runs near the end of this invocation, after the audit has spent most of
+  // the subrequest budget, so most of them are cut off before they reach Exa.
+  // See docs/WATCHLIST_SUBREQUEST_FINDING.md; the fix is the operator's call.
   const watchlist = await lane("press watchlist", async () => {
     const meta = await getCityMeta(env);
     const skip = new Set([...(meta?.audited || []), corner.slug]);
@@ -2045,8 +2048,8 @@ export default {
       const mastScored = async () => (await getCityMeta(env).catch(() => null))?.totalScored ?? 0;
 
       // The Press Watchlist. Read only: the pass that builds it runs on the
-      // cron, because six semantic searches is not something a page load
-      // should start.
+      // cron, because a couple of dozen semantic searches is not something a
+      // page load should start.
       if (p === "/watchlist" || p === "/watchlist/" || p === "/api/watchlist") {
         const [w, hub] = await Promise.all([
           getWatchlist(env, WATCHLIST_VERSION).catch(() => null),
@@ -2118,7 +2121,10 @@ export default {
       }
 
       if (p === "/methodology" || p === "/methodology/") {
-        return new Response(METHODOLOGY(origin, Boolean(env.PREVIEW), await mastScored()), {
+        // The watchlist record rides along so the search counts on this page
+        // are the stored completion record rather than a number typed once.
+        const wlRec = await getWatchlist(env, WATCHLIST_VERSION).catch(() => null);
+        return new Response(METHODOLOGY(origin, Boolean(env.PREVIEW), await mastScored(), wlRec), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -2157,7 +2163,7 @@ export default {
               live: !burn.stopReason && Date.now() - Date.parse(burn.updatedAt || 0) < 30 * 60 * 1000,
             }
           : null;
-        return new Response(STATUS(synth, incidents, changes, origin, spend, Boolean(env.PREVIEW), await mastScored(), scan), {
+        return new Response(STATUS(synth, incidents, changes, origin, spend, Boolean(env.PREVIEW), await mastScored(), scan, await getWatchlist(env, WATCHLIST_VERSION).catch(() => null)), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }

@@ -44,7 +44,7 @@ const EXCLUDE_DOMAINS = [
 // The San Francisco outlets that actually name a crossing. National and wire
 // coverage says "a San Francisco intersection"; a neighbourhood newsroom says
 // "Mission and Norton", which is the only kind of sentence this pipeline can
-// verify. One query is restricted to them at the API rather than filtered
+// verify. Three queries are restricted to them at the API rather than filtered
 // afterwards, so the whole result slate comes from outlets that write at
 // corner resolution.
 const LOCAL_OUTLETS = [
@@ -65,7 +65,7 @@ const NEIGHBOURHOODS = [
 // the same question, because one phrasing finds one kind of story: a death, a
 // redesign, a campaign, a petition, a meeting, a piece of enforcement news.
 // Roughly thirty in total once the neighbourhood variants are expanded, which
-// is thirty searches per build and the reason this runs once a morning rather
+// is twenty-nine searches per build and the reason this runs once a morning rather
 // than on a page load.
 export const WATCHLIST_QUERIES = [
   { query: "pedestrian struck or killed crossing the street in San Francisco" },
@@ -282,7 +282,50 @@ const publicArticle = ({ title, url, domain, date }) => ({ title, url, domain, d
 // ---------------------------------------------------------------- watchlist
 
 // One pass over the city's recent coverage. Costs one Exa search per query, so
-// the whole watchlist is four searches, reserved against the budget up front.
+// the whole watchlist is WATCHLIST_QUERIES.length searches attempted, reserved
+// against the budget up front. Attempted is not completed: the lane runs inside
+// the daily-audit invocation and the Worker's 50-subrequest ceiling cuts it off
+// partway, which is why runCounts below exists and why every surface that
+// reports this reports all three numbers. See
+// docs/WATCHLIST_SUBREQUEST_FINDING.md.
+// Attempted, completed, failed, from the stored record and nothing else.
+//
+// `calls` is the attempt. Every surface that printed it printed the attempt as
+// if it were the work: /watchlist said "29 searches" and "the whole pass costs
+// 29 searches" while twenty-two of them never reached Exa and cost nothing, and
+// /methodology said seven, which had been true before the list grew. The split
+// moves between runs, so nothing that reports it may hold a literal: it was
+// 8/21 on 2026-08-19 and 7/22 the next morning.
+export function runCounts(w) {
+  const queries = w?.queries || [];
+  const attempted = queries.length || w?.calls || 0;
+  const failedList = queries.filter((q) => q?.failed).map((q) => ({ ...q, failed: tidyReason(q.failed) }));
+  return {
+    attempted,
+    failed: failedList.length,
+    completed: Math.max(0, attempted - failedList.length),
+    failures: failedList,
+    // One reason, if every failure shares it, which is what a subrequest
+    // ceiling produces. Named so a page can say why once instead of
+    // twenty-two times.
+    commonReason:
+      failedList.length && new Set(failedList.map((q) => q.failed)).size === 1
+        ? failedList[0].failed
+        : null,
+  };
+}
+
+// Records already in KV were stored with a 90-character truncation that cuts
+// the subrequest error mid-URL, so every one of them ends "refer to https:".
+// Trimming at read time means the page is right now, rather than right after the
+// next rebuild.
+function tidyReason(reason) {
+  return String(reason || "")
+    .replace(/\s*To configure this limit.*$/s, "")
+    .replace(/\s*(refer to )?https?:\S*$/i, "")
+    .trim();
+}
+
 export async function buildWatchlist(env, opts = {}) {
   const queries = opts.queries || WATCHLIST_QUERIES;
   const days = opts.days || 90;
@@ -316,7 +359,16 @@ export async function buildWatchlist(env, opts = {}) {
           : { excludeDomains: EXCLUDE_DOMAINS }),
       })
         .then((d) => ({ query: q.query, local: Boolean(q.includeDomains), results: d.results || [] }))
-        .catch((e) => ({ query: q.query, local: Boolean(q.includeDomains), results: [], failed: String(e.message || e).slice(0, 90) })),
+        .catch((e) => ({
+          query: q.query,
+          local: Boolean(q.includeDomains),
+          results: [],
+          // The reason is stored to be read on the page, so it is trimmed at a
+          // sentence rather than at 90 characters, which used to cut the
+          // subrequest error mid-URL and store the same truncated string
+          // twenty-two times.
+          failed: String(e.message || e).replace(/\s*To configure this limit.*$/s, "").slice(0, 120),
+        })),
     ),
   );
 

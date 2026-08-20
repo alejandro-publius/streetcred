@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { candidatesFrom, verifyCandidate, reciprocal, WATCHLIST_QUERIES } from "../src/press.js";
+import { candidatesFrom, verifyCandidate, reciprocal, WATCHLIST_QUERIES, runCounts } from "../src/press.js";
 
 const STREETS = new Set(["mission", "norton", "church", "market", "valencia", "sycamore", "16th", "24th"]);
 
@@ -159,4 +159,68 @@ test("the discovery set is broad and not duplicated", () => {
   assert.ok(hoods.length >= 8, "neighbourhood anchored variants missing");
   const civic = WATCHLIST_QUERIES.filter((q) => /petition|meeting/i.test(q.query));
   assert.ok(civic.length >= 2, "petition and meeting phrasings missing");
+});
+
+
+// Attempted is not completed, and every surface that reports either has to read
+// both from the stored record. /methodology said seven for as long as the list
+// has been twenty-nine, and /watchlist printed the attempt as if it were work
+// done while twenty-two of the searches never reached Exa.
+test("runCounts separates what was attempted from what completed", () => {
+  const w = {
+    calls: 5,
+    queries: [
+      { query: "a", results: 15 },
+      { query: "b", results: 15 },
+      { query: "c", results: 0, failed: "Too many subrequests by single Worker invocation." },
+      { query: "d", results: 0, failed: "Too many subrequests by single Worker invocation." },
+      { query: "e", results: 0, failed: "Too many subrequests by single Worker invocation." },
+    ],
+  };
+  const c = runCounts(w);
+  assert.equal(c.attempted, 5);
+  assert.equal(c.completed, 2);
+  assert.equal(c.failed, 3);
+  assert.equal(c.failures.length, 3);
+  assert.equal(c.commonReason, "Too many subrequests by single Worker invocation.");
+});
+
+test("runCounts survives a record that has not been built yet", () => {
+  for (const empty of [null, undefined, {}, { queries: [] }]) {
+    const c = runCounts(empty);
+    assert.equal(c.attempted, 0);
+    assert.equal(c.completed, 0);
+    assert.equal(c.failed, 0);
+    assert.equal(c.commonReason, null);
+  }
+});
+
+// Records already in KV carry a 90-character truncation that cuts the error
+// mid-URL, so every one of them ends "refer to https:". The page has to read
+// correctly against those without waiting for a rebuild.
+test("a stored failure reason truncated mid-URL is tidied for display", () => {
+  const c = runCounts({
+    queries: [
+      { query: "a", failed: "Too many subrequests by single Worker invocation. To configure this limit, refer to https:" },
+    ],
+  });
+  assert.equal(c.failures[0].failed, "Too many subrequests by single Worker invocation.");
+  assert.doesNotMatch(c.failures[0].failed, /https?:/);
+});
+
+test("different reasons do not collapse into one common reason", () => {
+  const c = runCounts({
+    queries: [
+      { query: "a", failed: "Too many subrequests by single Worker invocation." },
+      { query: "b", failed: "rate limited" },
+    ],
+  });
+  assert.equal(c.commonReason, null, "two reasons must not be reported as one");
+});
+
+// /methodology names this count in prose, so it is pinned rather than left to
+// drift the way "seven" did.
+test("exactly three queries are restricted to San Francisco outlets", () => {
+  const local = WATCHLIST_QUERIES.filter((q) => q.includeDomains);
+  assert.equal(local.length, 3, "the methodology page says three passes are outlet-restricted");
 });
