@@ -599,6 +599,36 @@ and states that the visual audit has not run. The homepage audited count does
 not move. Searched and empty is stored and shown with the count of articles
 read behind it.
 
+## After the freeze, Aug 25
+
+StreetCred is feature-frozen until 2026-08-25, breakage only. The two crons
+keep running by design and stopping them counts as breakage, not as a feature.
+Queued for the other side of it:
+
+- **Show the cadence gap, not just the count.** The ledger already behaves
+  correctly and there is nothing to repair: `cotd:log` is append-only and the
+  homepage ticker reads "N audited without a human so far", which is a count of
+  completed cycles. No consecutive-days counter exists anywhere, so a missed
+  day cannot reset one and cannot erase history. What is missing is the display
+  half: nothing says "ran 11 of 12 days" or surfaces a gap at all. Compute
+  days-with-a-completed-cycle against days-elapsed from `cotd:log` and show
+  both. Requested 2026-08-20, deferred to hold the freeze.
+
+- **Nothing can ever be counted as audited-with-imagery-pending.** The cron
+  puts a corner in `audited` only when both frames exist and in `enriched`
+  otherwise, which is right. But `recountAuditTiers` scans the audited roster,
+  where every member has both frames by construction, so `textAudited` is
+  structurally always 0 and the "N more with imagery pending" clause in the
+  homepage subtitle can never fire. The mechanism works and nothing feeds it. A
+  corner audited from the records with imagery pending is currently
+  indistinguishable from one that was only swept. Needs a third state, a flag
+  or a roster, before that sentence can ever be true.
+
+- **The imagery lane failed on the 2026-08-19 daily audit.** `1st-and-bush`
+  came back `partial` and landed in `enriched`. If that repeats, the hero drifts
+  further from today every morning and, because of the item above, no surface
+  will say why. This is the one worth unfreezing for if it happens twice.
+
 ## Open items for the human
 
 
