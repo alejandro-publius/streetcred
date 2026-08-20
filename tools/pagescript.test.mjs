@@ -353,3 +353,53 @@ test("the stats flush runs when the lane lands and again before printing", () =>
   assert.match(src, /addEventListener\("beforeprint", flushStats\)/);
   assert.match(src, /flushStats\(\);/, "the lane must flush as soon as it lands");
 });
+
+// "3 311 reports in 12 months" renders as 3311 to a reader and runs together to
+// a screen reader whatever whitespace sits between the two numbers. The buffer
+// word is the fix, and it is the wording the rest of the site already uses.
+test("a count is never left butting straight against the literal 311", () => {
+  // detailFor is private and its caller makes network calls, so this reads the
+  // source. The pattern is what matters and it is checkable either way: an
+  // interpolated count immediately followed by the digits 311.
+  for (const f of ["hazards.js", "city.js", "cred.js", "page.js", "index.js"]) {
+    const src = readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8");
+    assert.doesNotMatch(
+      src,
+      /\$\{[^}]*\}\s*311 report/,
+      `${f}: a bare count sits against 311 and reads as one number`,
+    );
+  }
+  const hazards = readFileSync(new URL("../src/hazards.js", import.meta.url), "utf8");
+  assert.match(hazards, /street-condition 311 report/, "use the wording the rest of the site uses");
+});
+
+// The endpoint labels printed as one garbled line because three spans shared a
+// space-between row with no gap and nothing stopping the endpoints shrinking.
+test("the percentile scale endpoints are bound to the scale structurally", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  const row = html.slice(html.indexOf('<div class="distax"'), html.indexOf('<div class="sevbar"'));
+  assert.match(row, /class="dend"[^>]*>calmer</, "the calm endpoint needs its own class");
+  assert.match(row, /class="dend"[^>]*>worst</, "the worst endpoint needs its own class");
+  assert.match(row, /class="dmid"/, "the middle label needs its own class");
+  assert.match(html, /\.distax\{display:grid/, "space-between with no gap is what collapsed them");
+  assert.match(html, /\.distax \.dend\{white-space:nowrap\}/);
+});
+
+// The homepage says 7,355 graded and the corner page's scale says 8,254. Both
+// are live constants and both are right; nothing on the page said why.
+test("the two denominators are reconciled where they meet, from live constants", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED, scored: 7355 });
+  assert.match(html, /class="distbridge"/);
+  const bridge = html.slice(html.indexOf('class="distbridge"'), html.indexOf("</p>", html.indexOf('class="distbridge"')));
+  assert.match(bridge, /8,254 crossings in the census/);
+  assert.match(bridge, /7,355 with reported harm, graded/);
+  // The remainder is not all zeroes: 629 of the census sit at zero and the rest
+  // are quadrant duplicates the sweep collapses. Saying "the rest sit at zero"
+  // would be a new wrong number in place of a missing one.
+  assert.doesNotMatch(bridge, /rest sit at zero/);
+});
+
+test("the bridge says nothing rather than printing a zero denominator", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  assert.doesNotMatch(html, /0 with reported harm/);
+});

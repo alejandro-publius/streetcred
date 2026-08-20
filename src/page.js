@@ -733,8 +733,30 @@ header{display:flex;align-items:center;column-gap:14px;row-gap:24px;padding-bott
 .dmark.gC{background:var(--blue)}
 .dmark.gD{background:rgba(240,126,38,.7)}
 .dmark.gF{background:var(--accent)}
-.distax{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);
-  letter-spacing:.04em;margin:4px 0 12px}
+/* Three spans in a space-between flex row with no gap and nothing stopping the
+   endpoints shrinking. The middle label is long, so the moment the three items
+   exceed the track there is no free space left to distribute: the spans butt
+   against each other and the row reads "calmer8,254 SF intersections, the /
+   whole cityworst". A grid gives each label its own column and a real gutter,
+   and the endpoints are bound to the ends structurally rather than by whatever
+   space happens to be left, so linearized and assistive reading keeps them
+   separate and in order. */
+.distax{display:grid;grid-template-columns:auto 1fr auto;align-items:baseline;
+  gap:0 12px;font-size:10px;color:var(--dim);letter-spacing:.04em;margin:4px 0 6px}
+.distax .dend{white-space:nowrap}
+.distax .dend:first-child{justify-self:start}
+.distax .dend:last-child{justify-self:end}
+.distax .dmid{justify-self:center;text-align:center}
+@media(max-width:600px){
+  /* Too narrow for three across. The middle label takes its own line under the
+     two endpoints rather than wrapping into them. */
+  .distax{grid-template-columns:auto auto;justify-content:space-between;gap:2px 12px}
+  .distax .dmid{grid-column:1 / -1;order:2;justify-self:center}
+}
+/* The two denominators reconciled where they first meet. The scale is the whole
+   census; the masthead's count is the graded subset. Both are live constants
+   and they used to appear on the same page contradicting each other. */
+.distbridge{font-size:10.5px;color:var(--dim);line-height:1.6;margin:0 0 12px}
 .sevbar{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--card);margin-bottom:9px}
 .sevbar i{display:block;height:100%}
 .sevbar i.f{background:var(--ink)}
@@ -885,6 +907,13 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
 .lpop-s{color:var(--dim);font-size:11.5px}
 .lpop a{color:var(--accent);font-weight:600;text-decoration:none}
+/* Leaflet pins an inline width on the popup measured with white-space:nowrap
+   and clamped to its own maxWidth, then its stylesheet adds 44px of horizontal
+   margin on top. Sizing the popup to the map element is the real fix, in
+   public/leafmap.js; this is the belt to that pair of braces, so a long
+   crossing name wraps inside the box rather than being clipped by it. */
+.leaflet-popup-content{width:auto !important;max-width:100%;margin:12px 16px}
+.lpop{overflow-wrap:anywhere}
 .leafshell{transition:opacity 300ms ease-out;z-index:1}
 
 /* Lane eyebrow: the page is one long column, so each lane gets a small label
@@ -1540,7 +1569,16 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
       ${DIST_SVG}
       <i class="dmark" id="dmark" hidden></i>
     </div>
-    <div class="distax"><span>calmer</span><span>${DISTRIBUTION.length.toLocaleString("en-US")} SF intersections, the whole city</span><span>worst</span></div>
+    <div class="distax">
+      <span class="dend">calmer</span>
+      <span class="dmid">${DISTRIBUTION.length.toLocaleString("en-US")} SF intersections, the whole city</span>
+      <span class="dend">worst</span>
+    </div>
+    ${
+      og.scored
+        ? `<p class="distbridge">${DISTRIBUTION.length.toLocaleString("en-US")} crossings in the census, ${og.scored.toLocaleString("en-US")} with reported harm, graded. The remainder recorded no harm at all, or are one crossing counted twice where the city splits it into quadrants and the sweep keeps the worst.</p>`
+        : ""
+    }
     <div class="sevbar" id="sevbar"></div>
     <div class="sevkey" id="sevkey"></div>
     <div class="scorecav" id="scorecav"></div>

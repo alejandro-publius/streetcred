@@ -291,6 +291,13 @@ ${BASE_CSS}
 .lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
 .lpop-s{color:var(--dim);font-size:11.5px}
 .lpop a{color:var(--accent);font-weight:600;text-decoration:none}
+/* Leaflet pins an inline width on the popup measured with white-space:nowrap
+   and clamped to its own maxWidth, then its stylesheet adds 44px of horizontal
+   margin on top. Sizing the popup to the map element is the real fix, in
+   public/leafmap.js; this is the belt to that pair of braces, so a long
+   crossing name wraps inside the box rather than being clipped by it. */
+.leaflet-popup-content{width:auto !important;max-width:100%;margin:12px 16px}
+.lpop{overflow-wrap:anywhere}
 .leafshell{transition:opacity 300ms ease-out;z-index:1}
 .cotdi{display:inline-flex;align-items:center;gap:5px;text-decoration:none;color:var(--dim);
   font-size:10.5px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px}

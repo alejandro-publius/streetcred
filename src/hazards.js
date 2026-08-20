@@ -194,7 +194,16 @@ export function label(flagged, ev) {
 
 function detailFor(h, ev) {
   const bits = [];
-  if (ev.reports311) bits.push(`${ev.reports311} 311 report${ev.reports311 === 1 ? "" : "s"} in 12 months`);
+  // "3 311 reports in 12 months" reads as the single number 3311, on the page
+  // and out loud. The buffer word is the fix, not a space: a screen reader runs
+  // "3" and "311" together whatever whitespace sits between them. This is the
+  // wording city.js, cred.js, page.js and the letter prompt already use, so the
+  // site now says it one way everywhere.
+  if (ev.reports311) {
+    bits.push(
+      `${ev.reports311} street-condition 311 report${ev.reports311 === 1 ? "" : "s"} in 12 months`,
+    );
+  }
   if (ev.crossingCollisions)
     bits.push(
       `${ev.crossingCollisions} pedestrian crossing collision${ev.crossingCollisions === 1 ? "" : "s"} in 5 years`,

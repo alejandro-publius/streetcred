@@ -101,7 +101,7 @@
         } else {
           html = "<div class='lpop'><span class='lpop-s'>No crossing within 120m of that tap.</span></div>";
         }
-        var pop = window.L.popup().setLatLng(at).setContent(html).openOn(map);
+        var pop = window.L.popup(popupOpts(map)).setLatLng(at).setContent(html).openOn(map);
         var go = pop.getElement() && pop.getElement().querySelector(".lpop-go");
         if (!go) return;
         go.addEventListener("click", function (ev) {
@@ -117,6 +117,21 @@
         });
       })
       .catch(function () {});
+  }
+
+  // Popup sizing. Leaflet's default maxWidth is a flat 300px and the project
+  // never overrode it, so on a container narrower than that the popup was wider
+  // than the map it sat in and the text was cut: "26m from your ta". Sized to
+  // the element instead, with a floor so a very narrow map still gets a usable
+  // box, and autoPan padding so an edge tap does not open a popup half off
+  // screen.
+  function popupOpts(map) {
+    var w = (map.getSize && map.getSize().x) || 300;
+    return {
+      maxWidth: Math.max(180, Math.min(320, w - 60)),
+      minWidth: 140,
+      autoPanPadding: [12, 12],
+    };
   }
 
   // opts: {center:[lat,lon], zoom, audited:[], scored:[], heatUrl, focus:{lat,lon,name},
@@ -178,7 +193,7 @@
           fillOpacity: 1,
         })
           .addTo(map)
-          .bindPopup(popupHtml(c));
+          .bindPopup(popupHtml(c), popupOpts(map));
       });
 
       // scored: smaller hollow rings, audit pending
@@ -191,7 +206,7 @@
           fillOpacity: 0.85,
         })
           .addTo(map)
-          .bindPopup(popupHtml(Object.assign({ audited: false }, c)));
+          .bindPopup(popupHtml(Object.assign({ audited: false }, c)), popupOpts(map));
       });
 
       // heat: every graded crossing in the census, canvas renderer, only past

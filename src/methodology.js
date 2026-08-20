@@ -69,7 +69,11 @@ Where this page names a file, the file is the authority and this page is the exp
   <li><b>311 Cases</b>, DataSF dataset <code>vw6y-z8j6</code>. Resident service requests, updated continuously.</li>
   <li><b>Street Intersections</b>, DataSF dataset <code>gmfx-8h6i</code>. One row per street leg; a real
   crossing is a <code>cnn</code> carrying at least two distinct street names. 18,546 legs collapse to
-  8,254 crossings, which is the census the grades are measured against.</li>
+  ${n.toLocaleString()} crossings, which is the census the grades are measured against.
+  ${scored ? `${scored.toLocaleString()} of them have reported harm and carry a published grade` : "The graded subset is smaller than the census"};
+  ${zeroes} recorded no harm at all, and the remainder are one crossing counted twice where the city
+  splits it into quadrants, which <code>tools/sweep.mjs</code> collapses to the worst of them. That is
+  why the masthead's count and this page's census are different numbers and both are right.</li>
   <li><b>Street View imagery</b> from Google, one photograph per corner, taken as the record of what the
   corner looks like, never as evidence of harm.</li>
   <li><b>Press coverage</b> found by Exa search, filtered as described below. <b>Resident accounts</b>
@@ -122,7 +126,7 @@ entry on every affected corner's grade history, and a plain explanation here.</p
 <p><b>Every intersection in San Francisco has a grade, and only some have an audit.</b> Those are
 different claims and the site keeps them apart everywhere it makes them.</p>
 <p><b>The sweep.</b> <code>tools/sweep.mjs</code> pulls the two datasets in bulk once, buckets every row
-into a 100 meter grid, and counts within 80 meters of each of the 8,254 crossings locally. That is
+into a 100 meter grid, and counts within 80 meters of each of the ${n.toLocaleString()} crossings locally. That is
 about a dozen paged requests instead of the roughly 25,000 API calls one query per corner would cost,
 and the local counter was proved to reproduce production's own <code>within_circle</code> counts
 exactly, corner by corner, before a single number was written down.
