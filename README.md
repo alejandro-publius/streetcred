@@ -177,7 +177,7 @@ The letter renders as a draft with a copy button. **Nothing is ever sent to any 
 
 One Cloudflare Worker, no build step, no framework.
 
-The tree below was written against `git ls-files` on 2026-08-20 rather than from memory. The version that stood here until 2026-08-19 was wrong in three ways and is worth naming, because it is the ordinary way a README rots: it omitted nineteen source files added after it was written, it pointed at `docs/` for the hero image that now lives in `assets/`, and it described `tools/` as holding two test files when it holds eleven.
+The tree below was written against `git ls-files` on 2026-08-20 rather than from memory. The version that stood here until 2026-08-19 was wrong in three ways and is worth naming, because it is the ordinary way a README rots: it omitted nineteen source files added after it was written, it pointed at `docs/` for the hero image that now lives in `assets/`, and it described `tools/` as holding two test files when it holds fourteen.
 
 ```
 src/
@@ -216,8 +216,10 @@ src/
   manifest.js       what each tool actually did on this corner
   agent.js          the Corner Watchdog's ingest boundary
 
-tools/    33 scripts, 11 test files, 8 recorded fixtures. `node --test tools/*.test.mjs`
-public/   20 served assets: logos, wordmark, grade cards, the typeahead and map scripts
+tools/    61 tracked files: 36 scripts, 14 test files, 8 recorded fixtures, 3 shared
+          modules in tools/lib/. `node --test tools/*.test.mjs`
+public/   20 tracked files: logos, wordmark, grade cards, the typeahead and map
+          scripts. Wrangler reports 24 because it counts the four subdirectories
 assets/   the README hero composite
 data/     committed sweep artifacts: city meta, twin slugs, the CMF table, precedents
 synth/    the hourly synthetic monitor, its own Worker
@@ -427,7 +429,7 @@ status page says so rather than the number quietly improving.
 - Any San Francisco intersection resolves, but the warmed corners are still the ones that look best. A typed corner takes the default panorama orientation, because the heading that puts the crosswalk in the foreground was chosen by hand for the precomputed pair and there is no way to pick it automatically. Expect a resolved corner to sometimes show the street rather than the crossing.
 - DataSF does not have an intersection node for every place two streets meet. Sunset and Sloat is a real junction near the zoo, but the city's dataset models it as a grade-separated interchange rather than a crossing, so the resolver correctly reports that both are San Francisco streets which do not intersect. That is accurate to the source and still not what a person typing it expects.
 - The Danger Index ranks reported harm, not risk. A corner nobody walks through cannot generate pedestrian collisions, so a quiet corner scores low for a reason that has nothing to do with whether crossing it is safe. There is no exposure normalization anywhere in the formula, and the caveat sits on the page for that reason.
-- The index is bounded by a frozen reference, so a corner can exceed it. 16th and Mission already computes above 142 points as newer collisions land, and the index caps at 99 (`percentileOf` in [`src/score.js`](src/score.js), because no corner is worse than itself). Everything at the top of the board is therefore compressed, and a corner reading 99 is not necessarily worse than one reading 96.
+- The index is a percentile against a frozen reference, so the top of the board is compressed and a corner can in principle run off the end of it. The frozen distribution's maximum is 196.9 points, which is 6th and Mission, and that corner still computes exactly 196.9 today. Live points can drift above whatever the sweep recorded as new collisions land, and any corner past the 99th percentile reads 99 regardless of how far past it is, because `percentileOf` in [`src/score.js`](src/score.js) caps there: no corner is worse than itself. 16th and Mission computes 107.4 points and reads 99, and so would a corner at 150. Both read 2026-08-20 from `/api/score`. A corner reading 99 is therefore not necessarily worse than one reading 96.
 - The visual audit reports on one Street View frame, taken on one day, facing one direction. It cannot see the other three approaches to an intersection, and a corner photographed in bright midday sun will not show a lighting problem that only exists at night. CANDIDATE means the model saw something the record has not caught up with; it does not mean the model is right.
 - The press watchlist attempts 29 citywide searches each morning and most of them do not run. It executes last inside the daily-audit cron invocation, so it inherits an already-spent subrequest budget and the rest fail with "Too many subrequests by single Worker invocation". On the 2026-08-19 pass, 8 of 29 completed. Every failure is stored with its reason and the count is in the generated table above, but the lane is seeing a fraction of the coverage it asks for and the fix is scheduling, not searching harder.
 - The Cred Check verdict is a count of lanes, not a weighting of them. Four weak agreements read the same as four strong ones.
