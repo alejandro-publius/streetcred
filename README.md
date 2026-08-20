@@ -178,29 +178,68 @@ This design publishes what it threw away because a discovery pipeline that
 shows only its hits is indistinguishable from a search box that got lucky, and
 the same is true of a budget that only reports what it meant to spend.
 
-## How we used Apify
+## How Apify is used
 
-**The site commissions its own scrapes, unattended.** When the 06:10 cron promotes a corner it starts both Apify actors for that corner over the API, writes down the run ids, and does not wait; the next morning's run ingests whatever finished, scores it, and publishes it into the voices lane. Nobody asks for these scrapes and nobody is present when they run. That is the whole point: a resident-voices lane that only covers corners somebody scraped by hand before a demo covers two corners, and a lane that scrapes during a page load does not exist, because an actor run takes minutes and a visitor will not wait.
+Apify is the resident voices lane: what people say about a corner in the places
+they actually say it, which is the one thing no government database records.
+The part worth your attention is that **nobody asks for these scrapes and
+nobody is present when they run**.
 
-Two things make it safe to leave running. A **hard monthly ceiling of 70 actor runs** is checked before anything starts, in `src/store.js`, which is just above two runs a morning and far below the credit. And every run is written to a **cost ledger** from the number Apify itself reports, visible at [/status](https://streetcred.thealexschroeder.workers.dev/status): both actors are pay-per-event at $0.004 a unit, the inputs cap at 12 places and 25 Reddit results, so a corner is roughly fifteen cents. An autonomous system spending real credit without a ledger is the thing nobody should ship.
+**The site commissions its own scrapes, unattended.** When the 06:10 Pacific
+cron promotes a corner it starts both actors for that corner over the Apify
+API, writes down the run ids, and does not wait. An actor run takes minutes and
+a cron handler must not sit on one, so the *next* morning's run ingests
+whatever finished, scores it, and publishes what survives. A resident voices
+lane that only covers corners somebody scraped by hand before a demo covers two
+corners.
 
-Apify is the resident-voices lane: what people say about a corner in the places they actually say it, which is the one thing no government database records.
+**Two actors, and each needed a different trick.**
 
-Two actors run against the corner, and getting each one to return anything useful took a different trick.
+`compass/crawler-google-places` for Google Maps reviews. An intersection is not
+a place: geocoding "16th and Mission" resolves to a road junction, which has no
+reviews attached, so the obvious query returns nothing. The working approach
+treats the corner as a **geographic circle of roughly 350m** and collects
+reviews from the real businesses and transit stops standing inside it. The
+corner gets a voice by borrowing the voices of everything on it.
 
-**`compass/crawler-google-places`, for Google Maps reviews.** An intersection is not a place. Geocoding "16th and Mission" resolves to a road junction, which has no reviews attached to it, so the obvious query returns nothing. The working approach is to treat the corner as a **geographic circle, roughly 350m**, and collect reviews from the real businesses and the transit station standing inside it. The corner gets a voice by borrowing the voices of everything on it.
+`trudax/reddit-scraper-lite` for Reddit. Driven by **explicit `startUrls`**
+rather than the actor's search builder, which in this configuration enqueued
+zero requests and returned an empty dataset. Pointing it at specific threads is
+less elegant and completely reliable.
 
-**`trudax/reddit-scraper-lite`, for Reddit.** Driven by **explicit `startUrls`** rather than the actor's search builder, which in the configuration used here enqueued zero requests and returned an empty dataset. Pointing it at specific threads is less elegant and completely reliable.
+The two output shapes have nothing in common. Google Maps nests `reviews[]`
+with `text`, `stars` and `publishedAtDate`; Reddit returns flat records with
+`title`, `body` and `createdAt` and no rating at all. Both are flattened into
+one contract, `{source, stars, text, when}`. Reviewer names are dropped on
+purpose, quotes are truncated, and boilerplate is stripped.
 
-**Normalization.** The two output shapes have nothing in common: Google Maps nests `reviews[]` with `text`, `stars`, and `publishedAtDate`, while Reddit returns flat records with `title`, `body`, and `createdAt` and no rating at all. `tools/collect_voices.py` flattens both into one contract, `{source, stars, text, when}`, scoring each candidate on how directly it speaks to street safety and keeping both sources represented. Reviewer names are dropped on purpose, quotes are truncated, and HTML entities and Reddit's "submitted by" boilerplate are stripped.
+**The real funnel, from the stored record at 2026-08-20T13:10:48Z.** **14
+corners commissioned. 4 currently carry an account that clears the relevance
+filter. The other 10 are recorded as scraped and empty**, which is a result and
+not a gap: the corner page says so in those words, and the drafted letter for
+such a corner quotes no resident rather than inventing testimony.
 
-**Serving.** Scraping happens ahead of the demo, never during one: actor runs take minutes and a page load cannot wait on one. `/api/voices` serves the normalized file baked into `public/data/` for corners that were scraped ahead of time, and the honest empty state for every corner that was not. An Upstash path exists in the code and activates if those credentials are ever set, but nothing in the deployed product uses it: the store is Cloudflare KV.
+Those numbers went **down** rather than up, and that is the point. The ledger
+shows earlier ingests keeping 15 quotes across 9 corners; the filter was then
+tightened, every stored scrape was re-scored against the stricter rule, and the
+published count fell to 4. A review of a BART escalator is not testimony about
+a crossing. It is easier to ship the larger number and never look again.
 
-**Honest limit.** Reviews at this corner skew heavily toward the BART station: escalators, cleanliness, policing, rather than crossing conditions. The quotes shown are real scrape output and thinner on traffic safety than the other four lanes. The letter therefore only quotes a resident when the quote is actually about the street, and otherwise quotes no one rather than inventing testimony. The fix is better targeting, not more code.
+**Autonomous means budgeted, or it means nothing.** A hard ceiling of
+**`MONTHLY_ACTOR_RUN_CAP = 70` actor runs** is checked before anything starts,
+which sits just above two runs a morning and far below the credit. **44 of
+those 70 are used this month.** Every run is written to a public cost ledger
+from the number Apify itself reports: both actors are pay per event, the inputs
+cap at 12 places and 25 Reddit results, a corner with both actors costs about
+**27 cents**, and the ledger stands at **$5.10 across 30 actor runs**. It is
+visible at [/status](https://streetcred.thealexschroeder.workers.dev/status).
+An autonomous system spending real credit without a ledger is the thing nobody
+should ship.
 
-The second corner makes the same point more sharply. The Reddit scrape for 6th and Market returned 40 items, none of them actually about crossing that street, so the panel shows an empty state saying no on-topic resident accounts were found and the letter for that corner quotes no resident. A lane that reports nothing when it found nothing is worth more here than a lane that always fills.
-
-This is the Apify category criteria almost word for word: collecting and structuring data from the web, and applying external information the product could not otherwise reach.
+**The honest limit.** Reviews near a station skew toward escalators, cleanliness
+and policing rather than crossing conditions. That is why the filter is strict
+and why ten of fourteen corners show an empty lane. The fix is better targeting,
+not a looser filter.
 
 ## How we used Gemini
 
