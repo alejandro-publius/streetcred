@@ -394,7 +394,7 @@ node --test tools/*.test.mjs          # 158 tests, 158 pass, 0 fail
 npx wrangler deploy --dry-run --outdir /tmp/build
 ```
 
-The dry run reads 24 asset files from `public/`, reports a total upload of 503.67 KiB (135.37 KiB gzipped), and lists the two bindings the Worker uses: `env.STORE`, a KV namespace, and `env.ASSETS`. It warns that multiple environments are defined and no target was named, which is expected: production is the top-level environment and `preview` is the other one.
+The dry run reads 24 asset files from `public/`, reports a total upload of 503.60 KiB (135.36 KiB gzipped), and lists the two bindings the Worker uses: `env.STORE`, a KV namespace, and `env.ASSETS`. It warns that multiple environments are defined and no target was named, which is expected: production is the top-level environment and `preview` is the other one.
 
 **There is no `package.json` and none is needed.** Nothing here is installed, bundled or transpiled. `wrangler` is invoked through `npx`, the source is plain ESM, and the tests use Node's own runner. CI runs those same two commands on **Node 22**, plus the verifier's own test file and a grep for key patterns across the tree, in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
