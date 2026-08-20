@@ -786,7 +786,12 @@ header{display:flex;align-items:center;column-gap:14px;row-gap:24px;padding-bott
 .hzfoot{font-size:11.5px;color:var(--dim);line-height:1.5;margin:2px 0 0}
 .cap b{color:var(--ink);font-weight:600;white-space:nowrap}
 
-.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:14px}
+/* Three across when the column can hold them, two then one when it cannot.
+   auto-fit rather than a fixed three, because these now live in a half width
+   column and a fixed three at 430px is three unreadable tiles. */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px;margin-bottom:0}
+.statgroup{margin:0 0 20px}
+.statgroup .statcap{margin:10px 0 0}
 /* Cred Check. Typographic, not a panel: four lanes either agree or they do not,
    and a lit chip should read as a fact rather than as a badge. */
 .cred{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 30px}
@@ -1201,7 +1206,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible,
   .cols > div:nth-child(2){order:4}
   .eyebrow{order:5}
   #scorewrap{order:6}
-  #stats{order:7}
+  /* The tiles travel with the column they now sit in, which puts them after
+     the voices card. There is no #stats rule here any more because there is
+     no longer a #stats child of main to order. */
   #cred{order:8}
   .cols > div:nth-child(1){order:9}
   #maplane{order:10}
@@ -1400,7 +1407,7 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
   </div>
 </div>
 
-<div class="eyebrow"><span>Official record</span><span class="lanenums" id="recnums"></span></div>
+<div class="eyebrow"><span id="recordlabel">Official record</span><span class="lanenums" id="recnums"></span></div>
 <div class="scorewrap" id="scorewrap" hidden>
   <div class="scorefig">
     <div class="scoren" id="scoren">0<small>/100</small></div>
@@ -1423,12 +1430,6 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
     </details>
   </div>
 </div>
-<div class="stats" id="stats">
-  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Injury collisions, last 5 years<br><i class="rad">within 150m</i></div></div>
-  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-condition 311 reports, 3 years<br><i class="rad">within 150m</i></div></div>
-  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>
-</div>
-<p class="statcap" id="statcap" hidden></p>
 <div class="cred" id="cred" hidden></div>
 
 <section class="lane" id="maplane" hidden>
@@ -1467,6 +1468,21 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
         <div id="voices"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
       </div>
     </div>
+    <!-- The record's three counts, moved here for the column rather than for
+         the lane. A voices card is short whenever a corner has no scraped
+         accounts, which is most of them, and it left a tall press card facing
+         a column of nothing. The tiles belong to the Official record lane and
+         still say so: the group is labelled by that heading, which is what a
+         screen reader announces on entering it, so moving the box did not move
+         what it is part of. -->
+    <section class="statgroup" role="group" aria-labelledby="recordlabel">
+<div class="stats" id="stats">
+  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Injury collisions, last 5 years<br><i class="rad">within 150m</i></div></div>
+  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-condition 311 reports, 3 years<br><i class="rad">within 150m</i></div></div>
+  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>
+</div>
+<p class="statcap" id="statcap" hidden></p>
+    </section>
   </div>
   <div>
     <div class="panel lane-ask" id="letterpanel">
