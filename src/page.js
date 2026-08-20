@@ -974,18 +974,40 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .voice .m{font-size:11.5px;color:var(--dim);margin-top:9px;text-transform:capitalize}
 .empty{margin:0;font-size:13.5px;color:var(--dim);line-height:1.55}
 
-.fixrow{display:grid;grid-template-columns:1fr auto;gap:8px 18px;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+/* The ask's summary row.
+   It was two columns with an auto sized second track holding a nowrap figure.
+   That is fine for "$265,000 estimated" and wrong for "$250,000 to $350,000,
+   order of magnitude": 409px of unbreakable text claimed the whole track, so
+   the figure ran past the card's right edge and the label column collapsed to
+   66px, breaking "Continental crosswalks, corner daylighting, and a leading
+   pedestrian interval" one word to a line.
+   Stacked is the default now, which is always correct, and the two column form
+   is asked for against the CARD's width rather than the viewport's. This panel
+   sits in a column whose width does not track the viewport, so a media query
+   was answering a question about the wrong box. */
+.lane-ask .pbody{container-type:inline-size}
+.fixrow{display:grid;grid-template-columns:minmax(0,1fr);gap:8px 18px;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+@container (min-width:500px){
+  /* Two columns only when the card can hold both honestly. The fix name is the
+     longer text and gets the larger share; an auto track let the figure take
+     279px of a 493px card and pinned the name to its floor, which is the same
+     starvation as before with better manners. Below this the pairs stack and
+     the name has the full width, which reads better than two cramped columns.
+     Measured against the card, not the viewport: this panel sits in a column
+     whose width does not track the window. */
+  .fixrow{grid-template-columns:minmax(240px,1.6fr) minmax(0,1fr)}
+  .fixrow .cost{text-align:right}
+}
 .fixrow .k{font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
 .fixrow .v{font-size:14px;font-weight:500;line-height:1.45}
-/* nowrap keeps a short figure like "$250,000" on one line, which is what this
-   was written for. A scored corner's estimate is a sentence, not a figure:
-   "$250,000 to $350,000, order of magnitude" is 409px of unbreakable text in a
-   362px column, and it pushed every corner page sideways on a phone. It wraps
-   below the two column layout, where there is no second column to align to. */
-.fixrow .cost{font-size:19px;font-weight:700;color:var(--green);white-space:nowrap;text-align:right;min-width:0}
-@media(max-width:860px){
-  .fixrow{grid-template-columns:1fr}
-  .fixrow .cost{white-space:normal;text-align:left;overflow-wrap:break-word}
+/* Wrapping is the default and there is no nowrap anywhere: an estimate that
+   cannot break is an estimate that leaves the card. break-word is the last
+   resort for a single token longer than its track, so nothing escapes at any
+   width, including one narrower than the longest word in the figure. */
+.fixrow .cost{font-size:19px;font-weight:700;color:var(--green);text-align:left;
+  min-width:0;overflow-wrap:break-word;line-height:1.3}
+@container (max-width:340px){
+  .fixrow .cost{font-size:16px}
 }
 .letter{font-family:Lora,Georgia,serif;font-size:14.5px;line-height:1.72;white-space:pre-wrap}
 .lfoot{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);flex-wrap:wrap}
