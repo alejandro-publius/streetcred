@@ -14,7 +14,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PAGES, ORIGIN, normalize, fetchPage } from "./lib/rendered_norm.mjs";
+import { PAGES, ORIGIN, normalize, fetchPage, regionHits } from "./lib/rendered_norm.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const FIXTURE_DIR = join(HERE, "..", "test", "fixtures", "rendered");
@@ -41,10 +41,13 @@ async function main() {
   for (const page of pages) {
     const html = await fetchPage(origin, page.path);
     const text = normalize(html);
+    const regions = regionHits(html);
     writeFileSync(join(dir, page.file), text + "\n");
     const lines = text.split("\n").length;
-    manifest.pages.push({ file: page.file, path: page.path, label: page.label, lines, rawBytes: html.length });
+    manifest.pages.push({ file: page.file, path: page.path, label: page.label, lines, rawBytes: html.length, regions });
+    const fired = Object.entries(regions).map(([k, n]) => `${k}x${n}`).join(" ") || "no region rule fired";
     console.log(`wrote ${page.file}  ${lines} lines  from ${page.path} (${html.length} raw bytes)`);
+    console.log(`      regions collapsed: ${fired}`);
   }
 
   // The capture time lives here rather than inside a snapshot, because a header

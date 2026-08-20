@@ -18,7 +18,7 @@ freeze started". This answers that one.
 | `status.txt` | `/status` |
 | `radar.txt` | `/radar` |
 | `methodology.txt` | `/methodology` |
-| `manifest.json` | when the baseline was captured, from which origin, and how big each page was |
+| `manifest.json` | when the baseline was captured, from which origin, how big each page was, and which region rules fired on it |
 
 They are not HTML. They are normalized text: the markup with every volatile
 value replaced by a shape token, one tag per line. They are not meant to be
@@ -37,7 +37,7 @@ node tools/rendered_diff.mjs      # check the live site against the baseline
 
 Both accept `--origin=`, `--dir=` and `--only=` (`--only=status`, or a path like
 `--only=/radar`). The differ exits 0 when nothing structural moved, 1 when
-something did, and 2 when it could not fetch or could not read a baseline.
+something did or a baseline is missing, and 2 when it could not fetch a page.
 
 Re-baselining is a decision, not a repair. `snap_rendered.mjs` is the only thing
 in the harness that writes a fixture, and it should be run when a change is
@@ -93,6 +93,15 @@ because class is the only stable handle a rendered page offers.
 | `uptime-bars` | `{RUN i.bar n={N2} <skeletons>}` | one `i` per synthetic run, appended hourly, each carrying its own run time in a `title`. |
 | `per-corner-srows` | `{RUN div.srow[corner] n={N1} <skeleton>}` | the Apify ledger and the recent-grade-changes list on `/status`. Both are `div.srow` rows carrying a `/c/` link, which is what separates them from the endpoint checks and the budget lines in the same class, and both grow whenever the morning run does anything. |
 
+`manifest.json` records how many times each region rule matched each page when
+the baseline was taken, and the differ re-checks that on every run. A rule that
+fired then and does not fire now has rotted, and the differ says so by name
+before printing the diff, because the region it used to collapse is about to
+show up as raw markup and the reason should not have to be guessed. `/radar`
+fires no region rule at all today, which is correct: nothing on it grows on its
+own. If a detection ever lands there, the new markup is a loud diff, which is
+also correct.
+
 A collapsed run is replaced by a **skeleton**, not by a blank token: tag names
 and class values survive, every other attribute value and every run of text does
 not. So `[a class="pin" href=* style=* title=*]{t}[/a]` still fails loudly if
@@ -134,6 +143,10 @@ an earlier rule's output.
 
 ### The shape idea, stated plainly
 
+The principle is borrowed from `tools/shape.test.mjs`, which says it in one
+line: values drift as the city's data does, shapes are a contract. That file
+applies it to JSON payloads. This one applies it to rendered HTML.
+
 A token keeps the digit count and throws away the digits. 24 audited corners and
 25 audited corners are the same token. 24 and 4 are not, because losing twenty
 corners is a real event. That is the whole trade: a number changing is
@@ -158,8 +171,9 @@ Named here rather than discovered later.
 - **Anything off these five pages.** `/watchlist`, `/changes` and `/c/` pages
   other than 16th and Mission are not covered. Adding one is a line in `PAGES`
   in `tools/lib/rendered_norm.mjs` and a re-run of the snapshotter.
-- **A page that fails to load.** The differ exits 2 on a non-200, which is the
-  right answer but is not the same signal as a rendering change.
+- **A page that fails to load.** The differ exits 2 on a non-200 and stops,
+  which is the right answer but is not the same signal as a rendering change,
+  and it means one dead page hides whatever the later pages would have said.
 
 ## Wiring it into CI later
 

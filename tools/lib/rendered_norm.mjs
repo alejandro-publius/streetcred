@@ -296,6 +296,20 @@ function normalizeTag(tag, lot) {
 const RAW_BLOCK = /<(script|style|pre|code)\b[^>]*>[\s\S]*?<\/\1\s*>/gi;
 const COMMENT = /<!--[\s\S]*?-->/g;
 
+// Which region rules actually fired, and how often. A rule that stops matching
+// is not an error: the region simply stops being collapsed and the next diff
+// asks about it. But a rule that has quietly rotted is worth saying out loud,
+// so the snapshotter records this and the differ compares against it.
+export function regionHits(html) {
+  const doc = String(html).replace(/\r\n/g, "\n");
+  const hits = {};
+  for (const rule of REGION_RULES) {
+    const found = doc.match(rule.re);
+    if (found) hits[rule.name] = found.length;
+  }
+  return hits;
+}
+
 export function normalize(html) {
   const lot = makeLot();
   let doc = String(html).replace(/\r\n/g, "\n");

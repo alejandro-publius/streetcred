@@ -20,7 +20,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PAGES, ORIGIN, normalize, fetchPage, sectionsFor } from "./lib/rendered_norm.mjs";
+import { PAGES, ORIGIN, normalize, fetchPage, sectionsFor, regionHits } from "./lib/rendered_norm.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = join(HERE, "..", "test", "fixtures", "rendered");
@@ -181,9 +181,14 @@ async function main() {
   }
 
   let baselineAge = "unknown";
+  let baselineRegions = {};
   const manifestPath = join(dir, "manifest.json");
   if (existsSync(manifestPath)) {
-    try { baselineAge = JSON.parse(readFileSync(manifestPath, "utf8")).captured; } catch { /* keep unknown */ }
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      baselineAge = manifest.captured;
+      for (const p of manifest.pages || []) baselineRegions[p.file] = p.regions || {};
+    } catch { /* keep unknown */ }
   }
 
   console.log(`streetcred rendered-diff  ${new Date().toISOString()}`);
@@ -199,8 +204,15 @@ async function main() {
       continue;
     }
     const baseLines = readFileSync(path, "utf8").replace(/\n$/, "").split("\n");
-    const liveLines = normalize(await fetchPage(origin, page.path)).split("\n");
+    const html = await fetchPage(origin, page.path);
+    const liveLines = normalize(html).split("\n");
     const n = reportPage(page, baseLines, liveLines);
+    // A region rule that fired when the baseline was taken and fires no longer
+    // has rotted, and the collapse it used to do is now raw markup in the diff.
+    const now = regionHits(html);
+    for (const name of Object.keys(baselineRegions[page.file] || {})) {
+      if (!now[name]) console.log(`  note: region rule "${name}" no longer matches this page. It has rotted, or the region is gone.`);
+    }
     totalChanged += n;
     if (n) changedPages++;
   }
