@@ -428,7 +428,16 @@ preview Worker before main was touched.
 **Production deployment live before this pass:**
 `a044a0af-cdaa-46ab-86ca-e52bffc3fd36`, deployed 2026-08-20T04:19:47Z.
 
-**Path A, instant:**
+**Production deployment after this pass:**
+`edee624a-9d89-43df-8c9e-0e83b3f186a9`, deployed 2026-08-20T16:30:24Z, from
+main at the `polish pass 2` merge. Verified after cutover: 21 addendum matrix
+cells, 18 live honesty assertions and 196 unit tests, all green, three
+consecutive matrix runs identical.
+
+**Preview:** `933e96d8-eba0-4cbf-ac7b-8af9c390e2b5` on
+streetcred-preview.thealexschroeder.workers.dev, from `polish/pass-2`.
+
+**Path A, instant. This is the rollback for this pass:**
 
 ```
 npx wrangler rollback a044a0af-cdaa-46ab-86ca-e52bffc3fd36

@@ -1,13 +1,13 @@
 {
-  "captured": "2026-08-20T06:14:43.787Z",
+  "captured": "2026-08-20T16:31:29.115Z",
   "origin": "https://streetcred.thealexschroeder.workers.dev",
   "pages": [
     {
       "file": "home.txt",
       "path": "/",
       "label": "homepage",
-      "lines": 1930,
-      "rawBytes": 105916,
+      "lines": 2040,
+      "rawBytes": 114930,
       "regions": {
         "corner-of-the-day": 1,
         "audited-roster-js": 1,
@@ -19,16 +19,16 @@
       "file": "corner-16th-mission.txt",
       "path": "/c/16th-mission",
       "label": "corner page",
-      "lines": 2754,
-      "rawBytes": 133896,
+      "lines": 2860,
+      "rawBytes": 139931,
       "regions": {}
     },
     {
       "file": "status.txt",
       "path": "/status",
       "label": "status",
-      "lines": 1095,
-      "rawBytes": 68357,
+      "lines": 1153,
+      "rawBytes": 72427,
       "regions": {
         "uptime-bars": 1,
         "per-corner-srows": 2
@@ -38,16 +38,16 @@
       "file": "radar.txt",
       "path": "/radar",
       "label": "radar",
-      "lines": 1048,
-      "rawBytes": 63193,
+      "lines": 1104,
+      "rawBytes": 66627,
       "regions": {}
     },
     {
       "file": "methodology.txt",
       "path": "/methodology",
       "label": "methodology",
-      "lines": 1320,
-      "rawBytes": 75007,
+      "lines": 1386,
+      "rawBytes": 79093,
       "regions": {}
     }
   ]

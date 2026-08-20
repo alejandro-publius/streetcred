@@ -229,8 +229,30 @@ width:8px;height:8px;border-radius:50%;background:inherit}
 .dmark.gC{background:var(--blue)}
 .dmark.gD{background:rgba(240,126,38,.7)}
 .dmark.gF{background:var(--accent)}
-.distax{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);
-letter-spacing:.04em;margin:4px 0 12px}
+/* Three spans in a space-between flex row with no gap and nothing stopping the
+endpoints shrinking. The middle label is long, so the moment the three items
+exceed the track there is no free space left to distribute: the spans butt
+against each other and the row reads "calmer8,254 SF intersections, the /
+whole cityworst". A grid gives each label its own column and a real gutter,
+and the endpoints are bound to the ends structurally rather than by whatever
+space happens to be left, so linearized and assistive reading keeps them
+separate and in order. */
+.distax{display:grid;grid-template-columns:auto 1fr auto;align-items:baseline;
+gap:0 12px;font-size:10px;color:var(--dim);letter-spacing:.04em;margin:4px 0 6px}
+.distax .dend{white-space:nowrap}
+.distax .dend:first-child{justify-self:start}
+.distax .dend:last-child{justify-self:end}
+.distax .dmid{justify-self:center;text-align:center}
+@media(max-width:600px){
+/* Too narrow for three across. The middle label takes its own line under the
+two endpoints rather than wrapping into them. */
+.distax{grid-template-columns:auto auto;justify-content:space-between;gap:2px 12px}
+.distax .dmid{grid-column:1 / -1;order:2;justify-self:center}
+}
+/* The two denominators reconciled where they first meet. The scale is the whole
+census; the masthead's count is the graded subset. Both are live constants
+and they used to appear on the same page contradicting each other. */
+.distbridge{font-size:10.5px;color:var(--dim);line-height:1.6;margin:0 0 12px}
 .sevbar{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--card);margin-bottom:9px}
 .sevbar i{display:block;height:100%}
 .sevbar i.f{background:var(--ink)}
@@ -375,6 +397,13 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
 .lpop-s{color:var(--dim);font-size:11.5px}
 .lpop a{color:var(--accent);font-weight:600;text-decoration:none}
+/* Leaflet pins an inline width on the popup measured with white-space:nowrap
+and clamped to its own maxWidth, then its stylesheet adds 44px of horizontal
+margin on top. Sizing the popup to the map element is the real fix, in
+public/leafmap.js; this is the belt to that pair of braces, so a long
+crossing name wraps inside the box rather than being clipped by it. */
+.leaflet-popup-content{width:auto !important;max-width:100%;margin:12px 16px}
+.lpop{overflow-wrap:anywhere}
 .leafshell{transition:opacity 300ms ease-out;z-index:1}
 /* Lane eyebrow: the page is one long column, so each lane gets a small label
 and a hairline to separate it from the one above. */
@@ -786,6 +815,33 @@ header stops wrapping. */
 .toggle button{padding:9px 13px;font-size:13px}
 }
 @media(max-width:400px){.stats{grid-template-columns:1fr}}
+/* Print. There was no print stylesheet on this site at all, which is how the
+operator's PDF came back carrying the hazard tape, the sticky bar and three
+stat tiles reading zero. A corner page is a document somebody may well print
+and take to a meeting, so it should print like one.
+Motion is the first thing to go: an animation mid-flight prints whatever
+frame it had reached, which for the eyebrow rules meant a half-drawn line and
+for the tiles meant a half-counted number. */
+@media print{
+*{animation:none !important;transition:none !important}
+/* Skeletons are a loading state. On paper they are grey boxes with no
+explanation, so they take no ink. */
+.sk{animation:none !important;background:transparent !important}
+/* Fixed and sticky furniture either repeats on every sheet or covers the
+text under it. */
+.sticky,.pvw,#replay,.toggle,.share,.vgo,.offer{display:none !important}
+/* The eyebrow rule is drawn by a scaleX transition that has not run. */
+.eyebrow::after{transform:scaleX(1) !important}
+/* Three tiles across, since the paper is wider than the phone breakpoint
+that stacks them. */
+.stats{grid-template-columns:repeat(3,1fr) !important}
+/* A link that says "read the evaluation" is useless on paper without its
+destination. */
+.provenance a[href^="http"]::after,.src[href^="http"]::after{content:" (" attr(href) ")";font-size:9px;word-break:break-all}
+body{background:#fff}
+.panel{break-inside:avoid;box-shadow:none}
+.stat{break-inside:avoid}
+}
 .doc{max-width:720px}
 .doc h1{font-size:28px;letter-spacing:-.02em;margin:0 0 6px}
 .doc .sub{font-size:13.5px;color:var(--dim);margin:0 0 34px}
@@ -898,6 +954,12 @@ crossing is a
 <code>cnn
 </code> carrying at least two distinct street names. {N5} legs collapse to
 {N4} crossings, which is the census the grades are measured against.
+{N4} of them have reported harm and carry a published grade;
+{N3} recorded no harm at all, and the remainder are one crossing counted twice where the city
+splits it into quadrants, which
+<code>tools/sweep.mjs
+</code> collapses to the worst of them. That is
+why the masthead's count and this page's census are different numbers and both are right.
 </li>
 <li>
 <b>Street View imagery
@@ -1118,9 +1180,13 @@ because a corner was press checked.
 runs the other way: it starts from the city's coverage and asks which corners are in it. That is an
 entity-discovery problem, and it is only worth anything if the entities are verified.
 </p>
-<p>Seven citywide semantic searches run each morning through Exa, with the news category, a published
-date window, lead-generation domains excluded at the API, and one pass restricted to San Francisco
-outlets that write at corner resolution. Every crossing name in every result is pulled out by the same
+<p>{N2} citywide semantic searches are attempted each morning through Exa, with the news
+category, a published date window, lead-generation domains excluded at the API, and three passes
+restricted to San Francisco outlets that write at corner resolution. {N1} currently complete within the Worker's subrequest budget; the other {N2}
+are cut off before they reach Exa, and
+<a href="https://streetcred.thealexschroeder.workers.dev/watchlist">the watchlist
+</a> lists every one
+of them with its reason rather than counting the attempt as work done. Every crossing name in every result is pulled out by the same
 extractor the related-corner lead and the connections pass use, and then each candidate has to clear
 three bars before it can appear:
 </p>

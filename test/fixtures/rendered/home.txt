@@ -230,8 +230,30 @@ width:8px;height:8px;border-radius:50%;background:inherit}
 .dmark.gC{background:var(--blue)}
 .dmark.gD{background:rgba(240,126,38,.7)}
 .dmark.gF{background:var(--accent)}
-.distax{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);
-letter-spacing:.04em;margin:4px 0 12px}
+/* Three spans in a space-between flex row with no gap and nothing stopping the
+endpoints shrinking. The middle label is long, so the moment the three items
+exceed the track there is no free space left to distribute: the spans butt
+against each other and the row reads "calmer8,254 SF intersections, the /
+whole cityworst". A grid gives each label its own column and a real gutter,
+and the endpoints are bound to the ends structurally rather than by whatever
+space happens to be left, so linearized and assistive reading keeps them
+separate and in order. */
+.distax{display:grid;grid-template-columns:auto 1fr auto;align-items:baseline;
+gap:0 12px;font-size:10px;color:var(--dim);letter-spacing:.04em;margin:4px 0 6px}
+.distax .dend{white-space:nowrap}
+.distax .dend:first-child{justify-self:start}
+.distax .dend:last-child{justify-self:end}
+.distax .dmid{justify-self:center;text-align:center}
+@media(max-width:600px){
+/* Too narrow for three across. The middle label takes its own line under the
+two endpoints rather than wrapping into them. */
+.distax{grid-template-columns:auto auto;justify-content:space-between;gap:2px 12px}
+.distax .dmid{grid-column:1 / -1;order:2;justify-self:center}
+}
+/* The two denominators reconciled where they first meet. The scale is the whole
+census; the masthead's count is the graded subset. Both are live constants
+and they used to appear on the same page contradicting each other. */
+.distbridge{font-size:10.5px;color:var(--dim);line-height:1.6;margin:0 0 12px}
 .sevbar{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--card);margin-bottom:9px}
 .sevbar i{display:block;height:100%}
 .sevbar i.f{background:var(--ink)}
@@ -376,6 +398,13 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
 .lpop-s{color:var(--dim);font-size:11.5px}
 .lpop a{color:var(--accent);font-weight:600;text-decoration:none}
+/* Leaflet pins an inline width on the popup measured with white-space:nowrap
+and clamped to its own maxWidth, then its stylesheet adds 44px of horizontal
+margin on top. Sizing the popup to the map element is the real fix, in
+public/leafmap.js; this is the belt to that pair of braces, so a long
+crossing name wraps inside the box rather than being clipped by it. */
+.leaflet-popup-content{width:auto !important;max-width:100%;margin:12px 16px}
+.lpop{overflow-wrap:anywhere}
 .leafshell{transition:opacity 300ms ease-out;z-index:1}
 /* Lane eyebrow: the page is one long column, so each lane gets a small label
 and a hairline to separate it from the one above. */
@@ -787,6 +816,33 @@ header stops wrapping. */
 .toggle button{padding:9px 13px;font-size:13px}
 }
 @media(max-width:400px){.stats{grid-template-columns:1fr}}
+/* Print. There was no print stylesheet on this site at all, which is how the
+operator's PDF came back carrying the hazard tape, the sticky bar and three
+stat tiles reading zero. A corner page is a document somebody may well print
+and take to a meeting, so it should print like one.
+Motion is the first thing to go: an animation mid-flight prints whatever
+frame it had reached, which for the eyebrow rules meant a half-drawn line and
+for the tiles meant a half-counted number. */
+@media print{
+*{animation:none !important;transition:none !important}
+/* Skeletons are a loading state. On paper they are grey boxes with no
+explanation, so they take no ink. */
+.sk{animation:none !important;background:transparent !important}
+/* Fixed and sticky furniture either repeats on every sheet or covers the
+text under it. */
+.sticky,.pvw,#replay,.toggle,.share,.vgo,.offer{display:none !important}
+/* The eyebrow rule is drawn by a scaleX transition that has not run. */
+.eyebrow::after{transform:scaleX(1) !important}
+/* Three tiles across, since the paper is wider than the phone breakpoint
+that stacks them. */
+.stats{grid-template-columns:repeat(3,1fr) !important}
+/* A link that says "read the evaluation" is useless on paper without its
+destination. */
+.provenance a[href^="http"]::after,.src[href^="http"]::after{content:" (" attr(href) ")";font-size:9px;word-break:break-all}
+body{background:#fff}
+.panel{break-inside:avoid;box-shadow:none}
+.stat{break-inside:avoid}
+}
 .askhero{text-align:center;padding:26px 0 30px}
 .askq{font-size:clamp(26px, 4.5vw, 40px);font-weight:700;letter-spacing:-.02em;margin:0 0 18px}
 .findbig{margin:0 auto;max-width:520px;display:flex;justify-content:center;position:relative}
@@ -855,6 +911,12 @@ display:block;text-indent:-9999px;overflow:hidden}
 .mapfoot{font-size:11.5px;color:var(--dim);margin:0 0 30px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
 .key{display:inline-flex;align-items:center;gap:5px}
 .key i{width:9px;height:9px;border-radius:50%;display:block}
+/* The A..F row under the map used to be five tiny dots beside five dim
+letters, which read as plain text at a glance. The letter itself is now the
+swatch, in the same .gA..gF colours the board rows and the corner pages use,
+so there is one source of grade colour on the site. */
+.gk{font-size:11px;font-weight:700;min-width:19px;height:19px;border-radius:5px;
+display:inline-grid;place-items:center;color:#fff;letter-spacing:0}
 .board{border-top:1px solid var(--line2)}
 .row{display:grid;grid-template-columns:34px 1fr auto auto;gap:14px;align-items:center;
 padding:13px 4px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit;
@@ -913,6 +975,13 @@ machine talking about itself. */
 .lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
 .lpop-s{color:var(--dim);font-size:11.5px}
 .lpop a{color:var(--accent);font-weight:600;text-decoration:none}
+/* Leaflet pins an inline width on the popup measured with white-space:nowrap
+and clamped to its own maxWidth, then its stylesheet adds 44px of horizontal
+margin on top. Sizing the popup to the map element is the real fix, in
+public/leafmap.js; this is the belt to that pair of braces, so a long
+crossing name wraps inside the box rather than being clipped by it. */
+.leaflet-popup-content{width:auto !important;max-width:100%;margin:12px 16px}
+.lpop{overflow-wrap:anywhere}
 .leafshell{transition:opacity 300ms ease-out;z-index:1}
 .cotdi{display:inline-flex;align-items:center;gap:5px;text-decoration:none;color:var(--dim);
 font-size:10.5px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
@@ -934,9 +1003,14 @@ background:var(--card);border:1px solid var(--line2);border-radius:10px}
 .lead a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
 .lead a.leadgo{color:var(--accent);border-color:var(--accent);font-weight:600;white-space:nowrap}
 .emptyboard{font-size:13.5px;color:var(--dim);line-height:1.6;padding:22px 0}
+.boardkey{font-size:11.5px;color:var(--dim);line-height:1.6;margin:-4px 0 12px;padding-left:2px;max-width:640px}
+.boardkey b{color:var(--ink);font-weight:600}
 @media(max-width:600px){
-.row{grid-template-columns:26px 1fr auto;gap:10px}
-.ridx{display:none}
+.row{grid-template-columns:26px 1fr auto auto;gap:9px}
+/* The index used to be hidden here, which left every phone row reading the
+same F with nothing to tell them apart. It is the column that ranks, so it
+shrinks instead of vanishing. */
+.ridx{font-size:15px}
 }
 </style>
 </head>
@@ -1165,24 +1239,24 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 </p>
 <p class="mapfoot">
 <span class="key">
-<i style="background:var(--green)">
-</i>A
+<b class="gk gA">A
+</b>
 </span>
 <span class="key">
-<i style="background:rgba(120,140,93,.62)">
-</i>B
+<b class="gk gB">B
+</b>
 </span>
 <span class="key">
-<i style="background:var(--blue)">
-</i>C
+<b class="gk gC">C
+</b>
 </span>
 <span class="key">
-<i style="background:rgba(240,126,38,.7)">
-</i>D
+<b class="gk gD">D
+</b>
 </span>
 <span class="key">
-<i style="background:var(--accent)">
-</i>F
+<b class="gk gF">F
+</b>
 </span>
 <span id="mapdata">Map data: Google. Danger Index ranks reported harm, not risk per crossing.
 </span>
@@ -1199,6 +1273,12 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="tag">Danger Index, worst first
 </span>
 </div>
+<p class="boardkey">Ranked by
+<b>Danger Index
+</b>, the number beside each corner. The grade is a percentile against the whole census: every corner on this first page sits in the
+<b>99th percentile
+</b>, which is why they all read F. The index is what separates them.
+</p>
 <div class="board" id="board">
 <a class="row" href="/c/6th-and-mission">
 <span class="rank">{N1}
@@ -1211,7 +1291,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1227,7 +1307,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} fatal, {N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1243,7 +1323,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1259,7 +1339,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1275,7 +1355,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1291,7 +1371,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} fatal, {N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1307,7 +1387,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1323,7 +1403,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1339,7 +1419,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1355,7 +1435,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} fatal, {N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1371,7 +1451,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} fatal, {N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1387,7 +1467,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1403,7 +1483,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1419,7 +1499,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} fatal, {N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1435,7 +1515,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} fatal, {N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1451,7 +1531,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} fatal, {N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1467,7 +1547,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1483,7 +1563,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1499,7 +1579,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1515,7 +1595,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1531,7 +1611,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N1} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1547,7 +1627,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} fatal, {N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1563,7 +1643,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1579,7 +1659,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} severe, {N2} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1595,7 +1675,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 <span class="rsev">{N1} fatal, {N1} severe, {N1} other visible, {N2} complaint of pain
 </span>
 </span>
-<span class="ridx">{N2}
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">{N3.1}
 </span>
 <span class="rg gF" title="Worse than {%2.0} of San Francisco intersections">F
 </span>
@@ -1648,7 +1728,7 @@ alt="Map of San Francisco with {N4} graded intersections marked, {N2} fully audi
 </span>
 </a>
 </section>
-<p class="cotdq">{N4} corners in line, worst first.
+<p class="cotdq">{N4} corners in the audit queue, worst first.
 </p>
 <p class="cotdq">Resident voices commissioned autonomously at {N2} corners. {N1} produced an account that cleared the relevance filter; the rest are recorded as scraped and empty, which is a result rather than a gap.
 </p>
@@ -1753,6 +1833,20 @@ Hazard and proposed-fix images are AI generated from the Street View photograph.
 </footer>
 </div>
 <script>
+// YYYY-MM-DD in America/Los_Angeles. "" for anything unparseable.
+function ptDay(ts){
+if(ts === null || ts === undefined || ts === "") return "";
+var d = (ts instanceof Date) ? ts : new Date(ts);
+if(isNaN(d.getTime())) return "";
+try {
+return new Intl.DateTimeFormat("en-CA", {timeZone:"America/Los_Angeles",
+year:"numeric", month:"2-digit", day:"2-digit"}).format(d);
+} catch(e) {
+// No Intl timezone data is a browser old enough that a wrong date is worse
+// than none, so this says nothing rather than saying UTC.
+return "";
+}
+}
 const el = id => document.getElementById(id);
 document.querySelectorAll(".eyebrow").forEach(e => e.classList.add("drawn"));
 (function(){
@@ -1774,6 +1868,10 @@ const nudge = el("nudge");
 if(nudge) nudge.addEventListener("click", () => { input.focus(); input.select(); });
 })();
 var VIEW = {lat: 37.757162079, lon: -122.4456771055, zoom: 12};
+// [south, west, north, east] from the corner index. The static image keeps
+// VIEW, because that frame was computed for its exact pixel size; the
+// interactive map fits these instead, for its own.
+var CITY_BOUNDS = [37.707846,-122.511938,37.829862,-122.361332];
 var AUDITED = {JSON-ARRAY items={N2}};
 // The scope line is server-rendered from city:meta and is not touched here.
 // It used to be recomputed in the browser by adding two loaded layers
@@ -1802,6 +1900,11 @@ if(k.otherVisible) bits.push(k.otherVisible + " other visible");
 if(k.pain) bits.push(k.pain + " complaint of pain");
 return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
+// Same rule as the server's idx(): the Danger Index, one decimal, falling
+// back to the percentile only if a row somehow has no points.
+function cidx(c){
+return (typeof c.points === "number") ? String(Math.round(c.points * 10) / 10) : String(c.index);
+}
 function draw(d){
 var start = (d.page - 1) * d.size;
 board.innerHTML = d.rows.map(function(c, i){
@@ -1822,7 +1925,7 @@ return '
 </span>
 </span>' +
 '
-<span class="ridx">' + c.index + '
+<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">' + cidx(c) + '
 </span>' +
 '
 <span class="rg g' + esc(c.grade) + '" title="' + GRADE_TITLE + c.index +
@@ -1870,7 +1973,10 @@ fetch("/data/scoretier.json").then(function(r){return r.ok?r.json():{corners:[]}
 row.innerHTML = visits.slice(0, 12).map(function(v){
 var now = current[v.slug] || v.gradeSeen;
 var changed = current[v.slug] && v.gradeSeen && current[v.slug] !== v.gradeSeen;
-var when = v.at ? new Date(v.at).toISOString().slice(0,10) : "";
+// Pacific, not UTC. toISOString here stamped tomorrow's date on every
+// corner checked after 5pm Pacific, so a chip and the Corner of the Day
+// block disagreed by a day on the same screen.
+var when = ptDay(v.at);
 return '
 <a class="mcard" href="/c/' + v.slug + '">
 <span class="mg g' + now + '">' + now + '
@@ -1909,6 +2015,10 @@ var auditedSlugs = new Set(AUDITED.map(function(c){return c.slug;}));
 var scored = (tier.corners||[]).filter(function(c){return !auditedSlugs.has(c.slug);});
 StreetMap.upgrade(mapEl, {
 center: [VIEW.lat, VIEW.lon], zoom: VIEW.zoom,
+// First paint only. Everything after it is the reader's: fitBounds
+// sets the opening frame and then zoom and pan behave exactly as
+// they did before.
+bounds: CITY_BOUNDS, boundsPadding: 14,
 audited: AUDITED, scored: scored, heatUrl: "/data/city/dots.json",
 tapAnywhere: true,
 onReady: function(map){
