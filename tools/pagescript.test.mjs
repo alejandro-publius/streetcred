@@ -471,7 +471,7 @@ test("the empty state does not claim searches ran that did not", () => {
 test("a pass with nothing cut off says so plainly", () => {
   const clean = { ...wlRecord, queries: wlRecord.queries.map(({ failed, ...q }) => ({ ...q, results: 15 })) };
   const txt = WATCHLIST_PAGE(clean, "https://example.test", null).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-  assert.match(txt, /All 5 completed/);
+  assert.match(txt, /The last pass completed all 5/);
   assert.match(txt, /The pass costs 5 searches/);
   // The stat chip is the claim; a sentence about being cut off is not.
   assert.doesNotMatch(txt, /\d+ cut off/);
@@ -480,10 +480,16 @@ test("a pass with nothing cut off says so plainly", () => {
 // The lane has its own cron now, so the page states that rather than pointing
 // at a finding doc for a decision that has been made.
 test("the page states that the lane runs on its own invocation", () => {
+  // Unconditionally. The lane having its own trigger is true whether or not the
+  // last pass finished, and burying it in the success branch meant the page
+  // stopped explaining its own schedule on exactly the days a reader would want
+  // to know it.
   const clean = { ...wlRecord, queries: wlRecord.queries.map(({ failed, ...q }) => ({ ...q, results: 15 })) };
-  const txt = WATCHLIST_PAGE(clean, "https://example.test", null).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-  assert.match(txt, /own cron trigger at 13:20 UTC/);
-  assert.match(txt, /own subrequest budget/);
+  for (const rec of [wlRecord, clean]) {
+    const txt = WATCHLIST_PAGE(rec, "https://example.test", null).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    assert.match(txt, /own cron trigger at 13:20 UTC/);
+    assert.match(txt, /own subrequest budget/);
+  }
 });
 
 test("the page reports whether the last run finished", () => {

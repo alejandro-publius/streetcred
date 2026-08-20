@@ -185,10 +185,11 @@ ${rejects
 
 <div class="eyebrow"><span>How it runs</span></div>
 <p class="wlnote">${run.attempted} citywide semantic searches are attempted over the last ${w?.windowDays ?? 90} days, run through Exa with the news category, a published-date window, and lead-generation domains excluded at the API rather than filtered afterwards. Each result's text is scanned for crossing names, and every name is checked against the same index the site grades from. It runs again every morning with the daily audit.</p>
+<p class="wlnote">This lane has its own cron trigger at 13:20 UTC and therefore its own subrequest budget. A Worker invocation may make fifty external requests and this lane costs exactly one per query, so the set fits with room to spare. It used to run as the last lane of the daily audit, sharing that invocation's fifty with everything the audit had already spent, and arrived with about seven of them left: twenty-two searches were cut off before they reached Exa every morning, and this page reported twenty-nine.</p>
 ${
   run.failed
-    ? `<p class="wlnote"><b>${run.completed} of the ${run.attempted} completed.</b> A Worker invocation may make fifty external requests and this lane costs one per query, so a run of this size is supposed to fit with room to spare. The remaining ${run.failed} were cut off before they reached Exa, which means something else spent the budget first. They cost nothing and found nothing, so the pass costs ${run.completed} searches rather than ${run.attempted}. Every one of them is listed below.</p>`
-    : `<p class="wlnote"><b>All ${run.attempted} completed.</b> The pass costs ${run.attempted} searches. This lane has its own cron trigger at 13:20 UTC and therefore its own subrequest budget: it used to run as the last lane of the daily audit, sharing that invocation's fifty external requests, and arrived with about seven of them left. Twenty-two searches were cut off every morning and the page reported twenty-nine.</p>`
+    ? `<p class="wlnote"><b>The last pass completed ${run.completed} of the ${run.attempted} it attempted.</b> On a budget of its own that should not happen, so the ${run.failed} that were cut off mean something else spent the invocation first. They cost nothing and found nothing, so the pass costs ${run.completed} searches rather than ${run.attempted}. Every one of them is listed below.</p>`
+    : `<p class="wlnote"><b>The last pass completed all ${run.attempted}.</b> The pass costs ${run.attempted} searches.</p>`
 }
 ${
   cycle.rotating
