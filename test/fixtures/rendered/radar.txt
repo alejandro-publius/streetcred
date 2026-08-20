@@ -1,0 +1,1048 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>The press radar
+</title>
+<link rel="canonical" href="https://streetcred.thealexschroeder.workers.dev/radar">
+<meta name="description" content="Exa watches San Francisco's press coverage continuously. New reporting about a watched corridor lands here within hours of publication, with every detection logged, filtered in public, and costed.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="StreetCred">
+<meta property="og:title" content="The press radar">
+<meta property="og:description" content="Exa watches San Francisco's press coverage continuously. New reporting about a watched corridor lands here within hours of publication, with every detection logged, filtered in public, and costed.">
+<meta property="og:url" content="https://streetcred.thealexschroeder.workers.dev/radar">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="The press radar">
+<meta name="twitter:description" content="Exa watches San Francisco's press coverage continuously. New reporting about a watched corridor lands here within hours of publication, with every detection logged, filtered in public, and costed.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Lora:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{
+--bg:#faf9f5; --panel:#fff; --card:#f4f2ec; --line:#e8e6dc;
+/* One step darker than --line, for panel edges that need to hold their own
+against the page rather than disappear into it. */
+--line2:#dcd9cc;
+/* Darker again, and the one every panel edge actually uses. On a #faf9f5
+ground a white panel with a #e8e6dc hairline reads as floating text rather
+than as a container, which is the whole problem this fixes. */
+--line3:#d6d2c4;
+--ink:#141B2D; --accent:#F07E26; --blue:#6a9bcc; --green:#788c5d;
+/* Dim text was #8a867c, 3.45:1 against the page ground, an AA failure on
+every caption on the site. #6f6b61 is the same warm gray darkened until it
+clears 4.5:1 on the ground (5.04), the panel (5.31) and the card (4.75).
+Decorative uses that need the old lightness read --dimline instead. */
+--dim:#6f6b61; --dimline:#8a867c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Poppins,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:28px 22px 64px}
+/* The product level band. Slim, above every page's own header, existing palette
+only. Below 700px it keeps the wordmark and the count and hands the links to
+a disclosure button, because five links and a count do not fit a phone
+without either wrapping into a second band or shrinking past legibility. */
+.mast{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+padding:8px 0 16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+.mastmark{font-size:15px;font-weight:700;letter-spacing:-.01em;text-decoration:none;color:var(--ink);white-space:nowrap}
+.mastmark span{color:#a04d0c}
+.mastcount{font-size:12px;color:var(--dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+.mastfind{font-size:12px;font-weight:600;text-decoration:none;color:var(--ink);
+border:1px solid var(--line2);border-radius:999px;padding:4px 11px;white-space:nowrap}
+.mastfind:hover{border-color:var(--ink)}
+.mastnav{display:flex;gap:16px;margin-left:auto;flex-wrap:wrap}
+.mastnav a{font-size:12px;font-weight:600;text-decoration:none;color:var(--dim);white-space:nowrap}
+.mastnav a:hover{color:var(--ink)}
+.mastnav a.on{color:var(--ink)}
+.mastgh{display:inline-flex;align-items:center;color:var(--dim)}
+.mastgh:hover{color:var(--ink)}
+.mastmenu{display:none;margin-left:auto;font-family:inherit;font-size:12px;font-weight:600;
+color:var(--ink);background:var(--card);border:1px solid var(--line2);border-radius:999px;
+padding:5px 13px;cursor:pointer}
+.mastdrop{display:none}
+@media(max-width:700px){
+.mastnav,.mastfind{display:none}
+.mastmenu{display:block}
+.mastdrop:not([hidden]){display:flex;flex-direction:column;gap:2px;margin:-8px 0 18px;
+padding:10px 0;border-bottom:1px solid var(--line)}
+.mastdrop a{font-size:13px;font-weight:600;text-decoration:none;color:var(--ink);padding:7px 2px}
+}
+/* The header wraps rather than stacking. Separate row and column gaps do the
+work: items sitting together get 14px, and anything that wraps onto its own
+row clears 24px, which is the gap the title block has to keep from the
+nearest control.
+Column direction was tried and was wrong sitewide. Only corner pages have a
+control wrapper to stack against; on /methodology, /status, /changes and
+/watchdog the header's children are the logo, the wordmark and the nav, and
+forcing a column put each of those on its own line. */
+header{display:flex;align-items:center;column-gap:14px;row-gap:24px;padding-bottom:22px;flex-wrap:wrap}
+/* Corner pages: the controls take a full row, so the title block takes the
+next one. One row was tried and cannot hold. The content column is capped at
+1120px minus padding, and at the longest warmed corner name ("16th Street
+and Mission Street") the controls plus the title block need more than that,
+so the title had nowhere to go but into the buttons: the clear gap measured
+14px at every width from 360 to 1600. */
+.hctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1 0 100%}
+.hctl ~ .corner{flex:1 0 100%;margin-left:0}
+.mark{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1}
+.mark span{color:var(--accent)}
+.switcher{display:flex;gap:7px;margin-left:14px}
+.switcher a{font-size:12.5px;font-weight:600;text-decoration:none;color:var(--dim);
+background:var(--card);border:1px solid var(--line);border-radius:999px;padding:7px 15px;white-space:nowrap}
+.switcher a.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.find{display:flex;align-items:center;gap:7px;margin-left:6px;position:relative}
+.find input{font-family:inherit;font-size:13px;color:var(--ink);background:var(--panel);
+border:1px solid var(--line);border-radius:999px;padding:8px 15px;width:200px}
+.find input:focus{border-color:var(--accent)}
+.find input::placeholder{color:var(--dim)}
+/* Typeahead. A listbox under the find input, same vocabulary as the board:
+solid chip = audited grade, hollow dot = scored and waiting for its audit. */
+.ta{position:absolute;top:44px;left:0;right:0;margin:0;padding:5px;list-style:none;z-index:7;
+background:var(--panel);border:1px solid var(--line2);border-radius:10px;
+box-shadow:0 6px 18px rgba(20,27,45,.09);min-width:260px}
+.ta li{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:7px;
+font-size:13px;cursor:pointer}
+.ta li.on,.ta li:hover{background:var(--card)}
+.ta li[aria-disabled]{color:var(--dim);cursor:default}
+.ta li[aria-disabled]:hover{background:none}
+.ta-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ta-n b{font-weight:700}
+.ta-g{display:inline-grid;place-items:center;min-width:19px;height:19px;border-radius:6px;
+color:#fff;font-weight:700;font-size:10.5px;padding:0 4px}
+.ta-dot{display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid var(--dim);
+background:none}
+.find button{font-family:inherit;font-size:12.5px;font-weight:600;color:#fff;background:var(--ink);
+border:0;border-radius:999px;padding:9px 16px;cursor:pointer;white-space:nowrap}
+.find button[disabled]{opacity:.5;cursor:default}
+.findmsg{position:absolute;top:44px;left:0;font-size:12.5px;color:var(--ink);background:var(--panel);
+border:1px solid var(--line);border-radius:10px;padding:9px 13px;width:300px;line-height:1.5;
+z-index:6;box-shadow:0 6px 18px rgba(20,27,45,.09)}
+.share{font-family:inherit;font-size:12.5px;font-weight:600;color:var(--dim);background:var(--card);
+border:1px solid var(--line);border-radius:999px;padding:8px 15px;cursor:pointer;white-space:nowrap;
+transition:color 150ms ease-out,border-color 150ms ease-out}
+.share:hover{color:var(--ink);border-color:var(--ink)}
+.share.ghost{background:none;border-color:var(--line2)}
+/* The replay. A terminal log of what the tools actually did on this corner,
+read from the stored run manifest and never recomputed. It is theatre, and it
+says so twice: it names the date of the run it is replaying and it states
+that the timings are for display. An animation that implied these tools ran
+in five seconds would be a lie told with CSS. */
+.replay{background:var(--ink);border:1.5px solid var(--ink);border-radius:12px;
+padding:0;margin:0 0 20px;overflow:hidden;box-shadow:0 1px 3px rgba(20,27,45,.06)}
+.rhead{display:flex;align-items:center;gap:10px;padding:11px 16px;
+background:rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.12)}
+.rttl{font-size:11.5px;color:rgba(255,255,255,.72);letter-spacing:.02em}
+.rttl b{color:#fff;font-weight:600}
+.rtrig{font-size:9.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+color:var(--accent);border:1px solid rgba(240,126,38,.5);border-radius:4px;padding:2px 7px;white-space:nowrap}
+.rgrow{flex:1}
+.rbtn{font-family:inherit;font-size:11.5px;font-weight:600;color:rgba(255,255,255,.72);
+background:none;border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:5px 13px;cursor:pointer}
+.rbtn:hover{color:#fff;border-color:#fff}
+.rlog{padding:14px 16px;min-height:150px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+font-size:12px;line-height:1.5}
+.rline{display:flex;gap:10px;padding:4px 0;color:rgba(255,255,255,.86);
+opacity:0;transform:translateY(4px);transition:opacity 150ms ease-out,transform 150ms ease-out}
+.rline.in{opacity:1;transform:none}
+.rline b{display:block;width:3px;flex:0 0 3px;border-radius:2px;background:var(--dimline);margin-top:3px;align-self:stretch}
+.rline.record b{background:#fff}
+.rline.press b{background:var(--blue)}
+.rline.voices b{background:var(--dimline)}
+.rline.vision b{background:var(--accent)}
+.rline.index b{background:var(--accent)}
+.rline.ask b{background:var(--green)}
+.rline.off{color:rgba(255,255,255,.5)}
+.rline a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(240,126,38,.5)}
+.rfoot{font-size:10.5px;color:rgba(255,255,255,.5);margin:0;padding:0 16px 13px;line-height:1.5}
+@media(prefers-reduced-motion:reduce){
+.rline{opacity:1;transform:none;transition:none}
+}
+/* Header text blocks, one pattern for every page.
+Every line inside one is its own block element with a 4px rhythm, and a bare
+text node never sits beside another line. That is not a style preference:
+"San Francisco" followed by a bare counter rendered as
+"San Francisco7,355 corners graded" the moment the
+<b> stopped being a
+block, because two separate sentences were sharing an inline run with
+nothing between them. Give every line an element of its own and that failure
+cannot recur. */
+.corner{margin-left:auto;text-align:right;font-size:13px;color:var(--dim);line-height:1.5}
+.corner > b,.corner > .csub,.corner > .cmeta,.corner > .ctwin,.corner > .auto{display:block}
+.corner > b{font-size:15px;color:var(--ink);font-weight:600}
+.corner > .csub,.corner > .cmeta{margin-top:4px}
+/* The name and its tier chip are siblings in a flex row, never one inside the
+other. The chip used to live inside the h1, whose only child was a block
+element, so the two boxes overlapped and the page read "Market StreetAUDITED"
+at every width. Wrapping is allowed: when the name takes the full line the
+chip drops to its own line rather than squeezing. */
+.ctitle{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+/* Said on the page, because the alternative is a page that quietly answers
+about a crossing four kilometres from the one somebody meant. Only the few
+slugs two different pairs of streets produce ever show this. */
+.ctwin{margin-top:6px;font-size:11.5px;line-height:1.5;color:var(--dim)}
+.ctwin a{color:var(--accent);text-decoration:none;font-weight:600}
+.ctwin a:hover{text-decoration:underline}
+/* Only present on a corner the scheduled handler audited by itself. It is a
+claim about the product rather than about the corner, so it appears only when
+the run record says so and never as decoration. */
+.corner .auto{display:block;font-size:10.5px;font-weight:600;letter-spacing:.06em;
+text-transform:uppercase;color:var(--accent);margin-top:3px}
+.lede{font-size:15px;color:var(--dim);max-width:660px;margin:0 0 26px;line-height:1.6}
+.nudge{font-family:inherit;font-size:inherit;color:#b0560e;background:none;border:0;padding:0;
+cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+/* Danger Index. The grade chip and the severity ramp stay inside the existing
+palette: ink reads as most severe, then the accent, then two accent tints. No
+new hues, so the score cannot fight the rest of the page. */
+.scorewrap{display:flex;gap:24px;align-items:center;background:var(--panel);border:1.5px solid var(--line3);
+border-top:3px solid var(--ink);border-radius:12px;padding:18px 20px;margin-bottom:12px;flex-wrap:wrap;
+box-shadow:0 1px 3px rgba(20,27,45,.06);
+transition:transform 150ms ease-out,box-shadow 150ms ease-out}
+.scorefig{display:flex;align-items:center;gap:12px}
+.scoren{font-size:50px;font-weight:700;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.scoren small{font-size:17px;font-weight:600;color:var(--dim);letter-spacing:0}
+.scoreg{font-size:21px;font-weight:700;min-width:40px;height:40px;padding:0 9px;border-radius:11px;
+display:grid;place-items:center;color:#fff;background:var(--card);
+transition:background-color 2s ease-in,color 2s ease-in}
+/* Five steps through two existing hues. No new red: an F is the accent at full
+strength, which is already the loudest thing in this palette. */
+.scoreg.gA{background:var(--green)}
+.scoreg.gB{background:rgba(120,140,93,.62)}
+.scoreg.gC{background:var(--blue)}
+.scoreg.gD{background:rgba(240,126,38,.7)}
+.scoreg.gF{background:var(--accent)}
+.scoremeta{flex:1;min-width:230px}
+.scorelabel{font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:7px}
+.scorepct{font-size:13px;font-weight:600;color:var(--ink);line-height:1.45;margin:0 0 9px}
+/* The citywide distribution, drawn from the same frozen 600 intersection sample
+the grade is computed against. Square root scaled on the vertical, because on
+a linear scale the tail is so heavy that only the last three bars are visible
+and the shape stops making its own argument. Pure SVG, no library. */
+.distwrap{position:relative;margin:0}
+.dist{display:block;width:100%;height:30px}
+.dist rect{fill:#c7c3b3}
+.dmark{position:absolute;top:-5px;bottom:-1px;width:2px;margin-left:-1px;background:var(--ink);border-radius:1px}
+.dmark::after{content:"";position:absolute;top:-4px;left:50%;transform:translateX(-50%);
+width:8px;height:8px;border-radius:50%;background:inherit}
+.dmark.gA{background:var(--green)}
+.dmark.gB{background:rgba(120,140,93,.62)}
+.dmark.gC{background:var(--blue)}
+.dmark.gD{background:rgba(240,126,38,.7)}
+.dmark.gF{background:var(--accent)}
+.distax{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);
+letter-spacing:.04em;margin:4px 0 12px}
+.sevbar{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--card);margin-bottom:9px}
+.sevbar i{display:block;height:100%}
+.sevbar i.f{background:var(--ink)}
+.sevbar i.s{background:var(--accent)}
+.sevbar i.o{background:rgba(240,126,38,.55)}
+.sevbar i.p{background:rgba(240,126,38,.25)}
+.sevkey{display:flex;gap:13px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin-bottom:7px}
+.sevkey b{font-weight:600;color:var(--ink)}
+.scorecav{font-size:11.5px;color:var(--dim);line-height:1.5}
+.ghist{margin-top:8px}
+.ghist summary{font-size:11.5px;font-weight:600;color:var(--dim);cursor:pointer;list-style:none;
+display:inline-block;border-bottom:1px dashed var(--line2)}
+.ghist summary::-webkit-details-marker{display:none}
+.ghist summary:hover{color:var(--ink)}
+.ghist div{font-size:12px;color:var(--dim);line-height:1.7;margin-top:6px}
+.ghist b{color:var(--ink);font-variant-numeric:tabular-nums}
+/* Hazard tape.
+Caution stripes around the press card, because press coverage of a corner is
+the one lane that is somebody else already saying this place is dangerous.
+The motion rule is the whole point. Stripes are static. They slide exactly
+twice, 1.6s a loop, the first time the card is scrolled into view, and then
+they hold still forever. A border that never stops moving stops meaning
+anything and starts being wallpaper, so continuous motion is reserved for a
+run that is genuinely happening right now: the /status scan card, and only
+while a batch is actually reporting progress.
+The band period along the diagonal is 28px, so a 39.6px horizontal shift is
+exactly one repeat and the loop is seamless. */
+.tape{padding:6px;border-radius:16px;margin-bottom:20px;
+background:repeating-linear-gradient(45deg,#EDA100 0 14px,#2C2C2A 14px 28px)}
+.tape > *{margin-bottom:0 !important;border-radius:11px}
+@keyframes tapeslide{from{background-position:0 0}to{background-position:39.6px 0}}
+.tape.play{animation:tapeslide 1.6s linear 2}
+.tape.live{animation:tapeslide 1.6s linear infinite}
+@media(prefers-reduced-motion:reduce){
+.tape.play,.tape.live{animation:none}
+}
+.toggle{display:flex;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;width:max-content;margin-bottom:16px}
+.toggle button{font-family:inherit;font-size:14px;font-weight:600;color:var(--dim);background:none;border:0;padding:10px 20px;border-radius:8px;cursor:pointer}
+.toggle button[disabled]{opacity:.42;cursor:default}
+.toggle button[aria-pressed="true"]{background:var(--ink);color:#fff}
+.toggle button:nth-child(2)[aria-pressed="true"]{background:var(--accent)}
+.toggle button:nth-child(3)[aria-pressed="true"]{background:var(--green)}
+/* The comparison slider. Two mounts, one component: the corner page fills it
+from the imagery lane after load, the homepage hero renders both frames
+straight out of KV. These rules are keyed on classes rather than on the
+corner page's element ids, which is what lets the second mount exist. */
+.hero{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--card);aspect-ratio:640/400}
+.hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.hero img[hidden]{display:none}
+.hero .sov{transition:opacity 200ms ease-out;clip-path:inset(0 0 0 50%)}
+.hero.single .sov{display:none}
+.hero.single .shdl{display:none}
+.hero .shdl{position:absolute;top:0;bottom:0;left:50%;width:3px;background:#fff;box-shadow:0 0 0 1px rgba(20,27,45,.25);cursor:ew-resize;touch-action:none}
+.hero .shdl::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;background:#fff;box-shadow:0 2px 10px rgba(20,27,45,.35)}
+.hero .shdl::before{content:"‹ ›";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2;font-size:17px;font-weight:700;color:var(--ink);letter-spacing:2px}
+.hero .shdl:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.cap{display:flex;gap:10px;align-items:baseline;margin:12px 0 14px;font-size:13.5px;color:var(--dim);line-height:1.55}
+/* Corroboration chips. Green means the record backs the audit, outline means
+the audit saw something the record has not recorded, gray means the record
+raised something the photograph does not show. */
+.hz{display:flex;flex-direction:column;gap:8px;margin:0 0 30px}
+.hz .r{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:12.5px;color:var(--dim);line-height:1.45}
+.hz .n{color:var(--ink);font-weight:500}
+.hzc{font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+padding:2px 7px;border-radius:4px;white-space:nowrap}
+.hzc.confirmed{background:rgba(120,140,93,.16);color:var(--green);border:1px solid rgba(120,140,93,.4)}
+.hzc.candidate{background:transparent;color:var(--dim);border:1px dashed var(--line2)}
+.hzc.reported{background:var(--card);color:var(--dim);border:1px solid var(--line2)}
+.hzfoot{font-size:11.5px;color:var(--dim);line-height:1.5;margin:2px 0 0}
+.cap b{color:var(--ink);font-weight:600;white-space:nowrap}
+/* Three across when the column can hold them, two then one when it cannot.
+auto-fit rather than a fixed three, because these now live in a half width
+column and a fixed three at 430px is three unreadable tiles. */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px;margin-bottom:0}
+.statgroup{margin:0 0 20px}
+.statgroup .statcap{margin:10px 0 0}
+/* Cred Check. Typographic, not a panel: four lanes either agree or they do not,
+and a lit chip should read as a fact rather than as a badge. */
+.cred{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 30px}
+.cred .c{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+padding:5px 11px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);
+color:var(--dim);cursor:default;white-space:nowrap}
+.cred .c::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--line2)}
+.cred .c.on{color:var(--ink);border-color:var(--ink)}
+.cred .c.on::before{background:var(--ink)}
+/* Three states, not two. A lane nobody has checked is not a lane that failed,
+and drawing them the same way is how absence gets read as evidence. */
+.cred .c.pending{border-style:dashed}
+.cred .c.pending::before{background:none;box-shadow:inset 0 0 0 1.5px var(--line2)}
+.vcred i.pending{background:none;box-shadow:inset 0 0 0 2px var(--line2)}
+.cred .v{font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);margin-left:3px}
+.cred .v.strong{color:var(--ink)}
+.stat{background:var(--panel);border:1.5px solid var(--line3);border-top:3px solid var(--ink);border-radius:12px;
+padding:20px 22px;min-width:0;box-shadow:0 1px 3px rgba(20,27,45,.06);
+transition:transform 150ms ease-out,box-shadow 150ms ease-out}
+.stat .n{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--accent)}
+.stat .l{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.45}
+/* Provenance links. Same size, same color as the bare number, so trust is one
+hover away without turning the page into a link farm. */
+a.src{color:inherit;text-decoration:none}
+a.src:hover .n,a.src:focus-visible .n{text-decoration:underline;text-underline-offset:4px}
+a.src:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:6px}
+.srcq{color:var(--dim);text-decoration:none;border-bottom:1px dashed var(--line2)}
+.srcq:hover{color:var(--ink)}
+/* Footprint labels. The grade counts an 80m core and the tiles count 150m;
+both are deliberate and neither used to say so, which left the letter
+citing two different collision counts in one paragraph. */
+.rad{font-style:normal;font-size:11px;color:var(--dim);display:inline-block;margin-top:3px}
+/* The freshness line under the tiles. Swept figures are true as of a date, and
+the date is part of the number rather than a footnote about it. */
+.statcap{margin:-4px 0 16px;font-size:11.5px;color:var(--dim);line-height:1.5}
+/* Which tier this corner is in, said once, next to its name. */
+/* inline-flex and no margin: the 10px gap belongs to the flex container, so
+the chip cannot drift out of alignment with whatever it sits beside. */
+.tierchip{display:inline-flex;align-items:center;font-size:10px;font-weight:700;letter-spacing:.12em;
+padding:3px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--dim);
+white-space:nowrap;flex:none}
+.tierchip.t-audited{border-color:var(--ink);color:var(--ink)}
+.tierchip.t-scored{border-style:dashed}
+/* The one line every unchecked lane shows, so the page says the same thing in
+six places rather than six things. */
+.lanenote{margin:10px 0 0;font-size:12px;color:var(--dim);line-height:1.55;
+padding-left:10px;border-left:2px solid var(--line3)}
+.tlhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 8px}
+.tlttl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+/* Only ever shown when both dates exist, so the chip is a comparison rather
+than a hunch. */
+.tag.tlfirst{background:rgba(240,126,38,.10);color:#a04d0c;cursor:help}
+/* What the press connects this corner to. Not a finding about the corner: a
+finding about the coverage, so it sits under the coverage. */
+.pconn{margin:14px 0 0;padding:12px 14px;background:var(--card);border:1px solid var(--line);
+border-radius:10px;font-size:12.5px;line-height:1.55}
+.pconn b{font-weight:600}
+.pconn a{color:var(--accent);text-decoration:none;font-weight:600}
+.pconn a:hover{text-decoration:underline}
+.pconn .pcw{display:block;color:var(--dim);margin-top:4px}
+.pcauto{margin:8px 0 0;font-size:11.5px;color:var(--dim);line-height:1.5}
+.gated{margin:10px 0 0;font-size:12.5px;color:var(--dim);line-height:1.55}
+.gated b{color:var(--ink);font-weight:600}
+button.offer[disabled]{opacity:.55;cursor:not-allowed}
+.lpop{font-family:Poppins,system-ui,sans-serif;font-size:12.5px;line-height:1.5;color:var(--ink)}
+.lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
+.lpop-s{color:var(--dim);font-size:11.5px}
+.lpop a{color:var(--accent);font-weight:600;text-decoration:none}
+.leafshell{transition:opacity 300ms ease-out;z-index:1}
+/* Lane eyebrow: the page is one long column, so each lane gets a small label
+and a hairline to separate it from the one above. */
+.eyebrow{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;
+font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+color:var(--dim);margin:0 0 13px;padding-bottom:7px}
+.eyebrow::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--line2);
+transform:scaleX(0);transform-origin:left center;transition:transform 300ms ease-out}
+.eyebrow.drawn::after{transform:scaleX(1)}
+.lane[hidden]{display:none}
+#mappanel[hidden]{display:none}
+#mappanel .pbody{padding:16px 18px 14px}
+.mapimg{display:block;width:100%;max-height:230px;object-fit:cover;object-position:center;border-radius:10px;border:1px solid var(--line)}
+.mapfoot{font-size:11.5px;color:var(--dim);margin:9px 0 0}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+.panel{background:var(--panel);border:1.5px solid var(--line3);border-radius:12px;padding:0;margin-bottom:20px;
+box-shadow:0 1px 3px rgba(20,27,45,.06);
+transition:transform 150ms ease-out,box-shadow 150ms ease-out}
+/* A 3px cap in the lane's own color, full width and part of the radius. Reads
+as the tab on a file folder, which is the right metaphor for a page that is
+arguing from a case file. */
+.panel.lane-record{border-top:3px solid var(--ink)}
+.panel.lane-press{border-top:3px solid var(--blue)}
+.panel.lane-ask{border-top:3px solid var(--green)}
+.panel.lane-voices{border-top:3px solid var(--dim)}
+.panel.lane-imagery{border-top:3px solid var(--accent)}
+.panel.lane-corner{border-top:3px solid var(--line3)}
+.panel:hover,.stat:hover,.scorewrap:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(20,27,45,.10)}
+/* The lid. A header strip in the card tint with a rule under it is what turns
+loose text inside a border into a card, and it is where the lane's title and
+its live/cache/sample tag belong: on the container they describe. */
+/* Wraps rather than overflows. A panel heading and its tag together are wider
+than a 360px phone once the padding is counted, and with nowrap the tag ran
+off the right edge and gave the whole page a horizontal scrollbar. It only
+became visible when scored corners started showing the map panel without
+waiting for a thumbnail, which is what put a panel heading on screen at that
+width for the first time. */
+.phs{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+background:var(--card);border-bottom:1px solid var(--line3);padding:11px 20px;
+border-radius:9px 9px 0 0}
+.phs h2{font-size:13px;font-weight:600;margin:0;letter-spacing:.01em}
+.phs .draft{margin:0}
+.pbody{padding:20px}
+/* One tag system. Every lane status chip is the same size and letterspacing;
+what varies is only the color, which is the lane's own, and the border,
+which goes dashed exactly when the content is degraded (sample, none found,
+audit pending). Live tags are solid, degraded tags are provisional at a
+glance, and no tag is ever the only thing carrying the information: the
+text inside it says the same thing the style does. */
+/* Source badge. Same box as the imagery card's tag, with the provider's mark
+set into it: the imagery card names Street View and Gemini, so the press
+card should name what finds the press. Attribution, not a plug, so it is a
+badge and not a link. The mark is capped to the cap height of the label
+beside it so the two read as one object rather than a logo with text after
+it. */
+.tag.src{display:inline-flex;align-items:center;gap:6px;
+background:rgba(106,155,204,.14);color:#3d6690}
+.tag.src img{height:11px;width:auto;display:block;opacity:.85}
+.tag{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;
+border-radius:5px;background:rgba(106,155,204,.14);color:#3d6690;border:1px solid transparent}
+.tag.lane-voices{background:rgba(111,107,97,.12);color:var(--dim)}
+.tag.lane-audit{background:rgba(240,126,38,.10);color:#a04d0c}
+.tag.pending{background:rgba(111,107,97,.10);color:var(--dim);border:1px dashed var(--line2)}
+/* Dashed, so a sample or empty state is legible as provisional at a glance and
+never gets mistaken for a live figure. */
+.tag.sample{background:rgba(240,126,38,.10);color:#a04d0c;border:1px dashed rgba(240,126,38,.55)}
+/* The year strip. One tick per year since 2014, height by how many results
+passed the same filter the panel below uses. A collision record says a corner
+is dangerous now; this says people have been writing about it for a decade,
+which is a different argument and a better one. Pure flexbox, no library. */
+.tl{margin:0 0 16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.tlbars{display:flex;align-items:flex-end;gap:3px;height:36px}
+.tlb{flex:1;display:flex;align-items:flex-end;justify-content:stretch;height:100%;
+background:none;border:0;padding:0;cursor:pointer}
+.tlb i{display:block;width:100%;background:var(--line2);border-radius:2px 2px 0 0;
+transition:background-color 120ms ease-out}
+/* A year with nothing found still draws a floor, so the strip reads as a
+continuous timeline rather than as gaps where the chart broke. */
+.tlb.none i{background:var(--line)}
+.tlb:hover i,.tlb:focus-visible i,.tlb.on i{background:var(--blue)}
+.tlb:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:3px}
+.tlax{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);
+letter-spacing:.04em;margin-top:5px}
+.tlnote{font-size:12.5px;color:var(--ink);font-weight:600;line-height:1.5;margin:9px 0 0}
+/* Reserved height, so moving across the strip never reflows the panel. */
+.tlpop{font-size:11.5px;color:var(--dim);line-height:1.5;margin:5px 0 0;min-height:2.9em}
+.tlpop a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
+.tlpop a:hover{color:var(--accent);border-color:var(--accent)}
+@media(prefers-reduced-motion:reduce){.tlb i{transition:none}}
+.news a{display:block;text-decoration:none;color:inherit;padding:13px 0;border-top:1px solid var(--line)}
+.news a:first-of-type{border-top:0;padding-top:0}
+.news .t{font-size:14px;font-weight:500;line-height:1.45}
+.osrc{display:inline-block;font-size:9.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+color:var(--dim);border:1px dashed var(--line2);border-radius:4px;padding:1px 5px;vertical-align:2px;white-space:nowrap}
+.news a:hover .t{color:var(--accent)}
+.news .m{font-size:11.5px;color:var(--dim);margin-top:5px}
+/* The scrape funnel. Three quotes look like a thin result until you know how
+many accounts were read to find them, and the volume is the part of this lane
+that is actually hard. Renders only from real counts, never estimated. */
+.funnel{font-size:11.5px;color:var(--dim);line-height:1.55;margin:0 0 14px;
+padding-bottom:12px;border-bottom:1px solid var(--line)}
+.funnel b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.voice{background:var(--card);border-radius:11px;padding:15px 17px;margin-bottom:11px}
+.voice p{margin:0;font-family:Lora,Georgia,serif;font-style:italic;font-size:14.5px;line-height:1.6}
+.voice .m{font-size:11.5px;color:var(--dim);margin-top:9px;text-transform:capitalize}
+.empty{margin:0;font-size:13.5px;color:var(--dim);line-height:1.55}
+/* The ask's summary row.
+It was two columns with an auto sized second track holding a nowrap figure.
+That is fine for "$265,000 estimated" and wrong for "$250,000 to $350,000,
+order of magnitude": 409px of unbreakable text claimed the whole track, so
+the figure ran past the card's right edge and the label column collapsed to
+66px, breaking "Continental crosswalks, corner daylighting, and a leading
+pedestrian interval" one word to a line.
+Stacked is the default now, which is always correct, and the two column form
+is asked for against the CARD's width rather than the viewport's. This panel
+sits in a column whose width does not track the viewport, so a media query
+was answering a question about the wrong box. */
+.lane-ask .pbody{container-type:inline-size}
+.fixrow{display:grid;grid-template-columns:minmax(0,1fr);gap:8px 18px;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+@container (min-width:500px){
+/* Two columns only when the card can hold both honestly. The fix name is the
+longer text and gets the larger share; an auto track let the figure take
+279px of a 493px card and pinned the name to its floor, which is the same
+starvation as before with better manners. Below this the pairs stack and
+the name has the full width, which reads better than two cramped columns.
+Measured against the card, not the viewport: this panel sits in a column
+whose width does not track the window. */
+.fixrow{grid-template-columns:minmax(240px,1.6fr) minmax(0,1fr)}
+.fixrow .cost{text-align:right}
+}
+.fixrow .k{font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
+.fixrow .v{font-size:14px;font-weight:500;line-height:1.45}
+/* Wrapping is the default and there is no nowrap anywhere: an estimate that
+cannot break is an estimate that leaves the card. break-word is the last
+resort for a single token longer than its track, so nothing escapes at any
+width, including one narrower than the longest word in the figure. */
+.fixrow .cost{font-size:19px;font-weight:700;color:var(--green);text-align:left;
+min-width:0;overflow-wrap:break-word;line-height:1.3}
+@container (max-width:340px){
+.fixrow .cost{font-size:16px}
+}
+.letter{font-family:Lora,Georgia,serif;font-size:14.5px;line-height:1.72;white-space:pre-wrap}
+.lfoot{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);flex-wrap:wrap}
+/* Copy is the ask's primary action, so it wears the accent; download is its
+quieter sibling. Both are real buttons, no anchors pretending. */
+.lfoot button{font-family:inherit;font-size:13px;font-weight:600;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 20px;cursor:pointer}
+.lfoot button.dl{background:none;color:var(--ink);border:1px solid var(--line2)}
+.lfoot button.dl:hover{border-color:var(--ink)}
+.lfoot span{font-size:11.5px;color:var(--dim)}
+.draft{font-size:11.5px;color:#a04d0c;font-weight:600;margin-bottom:12px;letter-spacing:.03em}
+/* The one status that belongs on the lid rather than in the body: a reader who
+only ever sees the header strip still learns this letter was never sent. */
+.phs .draft{letter-spacing:.09em}
+.phs-lg h2{font-size:15px}
+.vnote{font-size:11px;color:var(--dim);margin:9px 0 0;line-height:1.5;max-width:520px}
+.stack{display:grid;grid-template-columns:repeat(3,1fr);gap:18px 26px;margin-top:8px}
+.stack div{font-size:12px;color:var(--dim);line-height:1.5}
+/* Fixed 140x44 box on every row, whether it holds a mark or a name. The space
+is reserved before anything loads, so a blocked, slow, or failed logo shifts
+nothing: the strip is the same height with images off. */
+.stack .lg{display:flex;align-items:center;gap:9px;width:140px;height:44px;margin-bottom:2px;overflow:hidden}
+.stack .lg img{max-height:24px;width:auto;display:block}
+.stack .lg b{font-size:14px;color:var(--ink);font-weight:600;white-space:nowrap;letter-spacing:-.01em}
+@media(max-width:860px){.stack .lg{width:auto}}
+.cname{display:block;font-size:15px;color:var(--ink);font-weight:600;margin:0;letter-spacing:inherit;line-height:1.3}
+/* The corner's identity, now the imagery card's own header. The page used to
+open on a band carrying a name and a district and little else; the card that
+shows the corner is where its name belongs, and the top of the page is the
+grade. The name is the dominant element here, so it is larger than the h2 it
+replaced, and "The corner, three ways" survives above it as an eyebrow. */
+.phs-id{align-items:flex-start}
+.cardid{min-width:0;flex:1}
+/* .corner was written for the page header, where it sat on the right and was
+right aligned and pushed by margin-left:auto. In a card header it is the
+left hand element, so both are undone here rather than removed there: the
+homepage and the watchlist still use the original behaviour. */
+.phs-id .corner{margin-left:0;text-align:left;flex:none}
+.cardeyebrow{display:block;font-size:10px;font-weight:700;letter-spacing:.12em;
+text-transform:uppercase;color:var(--dim);margin-bottom:5px}
+.phs-id .cname{font-size:22px;line-height:1.2;letter-spacing:-.01em}
+/* justify-content:flex-end is the page header's, where the block hangs off the
+right edge. Here the name starts the row. */
+.phs-id .ctitle{justify-content:flex-start}
+.phs-id .cmeta{margin-top:4px;font-size:12.5px;color:var(--dim);line-height:1.45}
+.phs-id .ctwin{margin-top:6px;font-size:12px;color:var(--dim);line-height:1.5;max-width:60ch}
+.phs-id .auto{display:block;margin-top:6px;font-size:11px;font-weight:700;letter-spacing:.08em;
+text-transform:uppercase;color:var(--dim)}
+@media(max-width:600px){
+.phs-id .cname{font-size:19px}
+}
+/* The tagline closes the page instead of opening it: it is orientation for
+somebody who has read the evidence, not a preamble in front of it. */
+.lede-close{margin:30px 0 0;padding-top:22px;border-top:1px solid var(--line)}
+/* Projected outcome. Corroboration-chip scale, under the fix caption, shown
+only on the fix state. The not-a-promise label is the header, permanently. */
+.impact{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.ihead{font-size:12px;font-weight:700;letter-spacing:.02em;margin-bottom:8px}
+.inote{display:block;font-weight:400;font-size:11px;color:var(--dim);margin-top:2px;line-height:1.5}
+.irow{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:12px;padding:5px 0;
+border-bottom:1px solid var(--line);line-height:1.5}
+.irow .iname{font-weight:600;min-width:150px}
+.irow .ibasis{color:var(--dim)}
+.irow a{color:var(--dim);text-decoration:none;border-bottom:1px dashed var(--line2)}
+.irow a:hover{color:var(--ink)}
+.irow .irange{font-weight:600}
+.irow.nofactor span{color:var(--dim)}
+.icombined{font-size:11.5px;color:var(--dim);line-height:1.6;margin:9px 0 0}
+.pfoot{font-size:11px;color:var(--dim);margin:10px 0 0}
+.prow{padding:9px 0;border-bottom:1px solid var(--line);font-size:12.5px;line-height:1.55}
+.prow b{display:block;font-size:13px}
+.prow .pw{color:var(--dim);font-size:11.5px}
+.prow .po{margin-top:3px}
+.prow a{color:var(--dim);font-size:11px;text-decoration:none;border-bottom:1px dashed var(--line2)}
+/* The split stage. Desktop only: at 1100px and up the imagery panel and the
+corner map share one band under the verdict, imagery 60, map 40, equal
+height. Below that everything stacks exactly as before; the band is created
+by script, so no JavaScript means no band and nothing is lost. The 520px
+imagery floor is structural: at the narrowest band viewport the left column
+is ~630px, and if a future layout change ever squeezed it the stack rule
+wins because the slider must never be starved. */
+.band{display:grid;grid-template-columns:60fr 40fr;gap:18px;align-items:stretch;margin-bottom:20px}
+.band > *{margin-bottom:0 !important;min-width:0}
+.band #mappanel{display:flex;flex-direction:column;height:100%}
+.band #mappanel .pbody{flex:1;display:flex;flex-direction:column}
+.band #mappanel .pbody > div:first-of-type,
+.band #mappanel .mapwrap{flex:1;min-height:420px}
+.band .mapfoot{margin-top:10px}
+/* The sticky letter bar. Appears on scroll, never taller than 48px, hides
+while the letter panel is on screen because an arrow pointing at something
+already visible is noise. Dismiss survives until the next page load. */
+.sticky{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:center;gap:10px;
+height:48px;max-height:48px;padding:0 14px calc(env(safe-area-inset-bottom, 0px) / 2);
+background:var(--panel);border-top:1.5px solid var(--line3);box-shadow:0 -4px 14px rgba(20,27,45,.08)}
+.sg{font-size:13px;font-weight:700;min-width:26px;height:26px;border-radius:7px;display:grid;
+place-items:center;color:#fff;background:var(--dimline)}
+.sg.gA{background:var(--green)} .sg.gB{background:#a3b088} .sg.gC{background:var(--blue)}
+.sg.gD{background:#e89a5f} .sg.gF{background:var(--accent)}
+.sname{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
+.sn{min-width:0;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sgo{font-size:12.5px;font-weight:600;color:#fff;background:var(--ink);border-radius:999px;
+padding:8px 16px;text-decoration:none;white-space:nowrap}
+.sx{font-size:18px;line-height:1;background:none;border:0;color:var(--dim);cursor:pointer;padding:6px}
+/* The verdict block. The page's conclusion, stated first: the grade, the
+percentile sentence that must never travel without it, one thesis sentence
+from the same payloads every panel below re-derives, and the door to the
+letter. Everything below it remains the receipt. */
+.verdict{display:flex;align-items:center;gap:18px;background:var(--panel);
+border:1.5px solid var(--line3);border-top:3px solid var(--ink);border-radius:12px;
+padding:18px 22px;margin:0 0 20px;box-shadow:0 1px 3px rgba(20,27,45,.06);flex-wrap:wrap}
+.vg{font-size:30px;font-weight:700;min-width:56px;height:56px;border-radius:14px;display:grid;
+place-items:center;color:#fff;background:var(--dimline);flex:0 0 auto}
+.vg.gA{background:var(--green)} .vg.gB{background:#a3b088} .vg.gC{background:var(--blue)}
+.vg.gD{background:#e89a5f} .vg.gF{background:var(--accent)}
+.vmain{flex:1;min-width:240px}
+.vline{font-size:15.5px;font-weight:600;margin:0;line-height:1.45}
+.vthesis{font-size:13px;color:var(--dim);margin:4px 0 0;line-height:1.55}
+.vcred{display:flex;align-items:center;gap:6px;margin:8px 0 0;font-size:11px;font-weight:700;
+letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.vcred i{width:9px;height:9px;border-radius:50%;background:var(--line2);display:inline-block}
+.vcred i.on{background:var(--green)}
+.vgo{font-size:13.5px;font-weight:600;color:#fff;background:var(--ink);border-radius:999px;
+padding:12px 22px;text-decoration:none;white-space:nowrap;flex:0 0 auto}
+.vgo:hover{background:#000}
+.vgo:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.panel.lit{box-shadow:0 0 0 3px rgba(240,126,38,.35), 0 6px 16px rgba(20,27,45,.10)}
+@media (prefers-reduced-motion: reduce){.panel.lit{box-shadow:0 0 0 3px rgba(240,126,38,.35)}}
+/* Preview badge. Only the preview environment renders the element at all, so
+production carries neither the node nor the style burden of hiding it. */
+.pvw{position:fixed;right:14px;bottom:62px;z-index:80;font-size:10px;font-weight:700;
+letter-spacing:.12em;text-transform:uppercase;color:var(--dim);background:var(--panel);
+border:1px dashed var(--line2);border-radius:999px;padding:5px 12px;opacity:.85;pointer-events:none}
+footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim);line-height:1.6}
+/* A lane's own count, in its header. Same numbers the lane body renders, so a
+reader can see the size of the evidence before reading it. */
+/* The placeholder that replaces an image element with nothing in it. */
+/* display:flex beats the [hidden] attribute's UA rule, so setting hidden on
+this box set an attribute and changed nothing: the placeholder stayed under
+the photograph it was standing in for, as a permanent empty panel. Same
+defect class as an img with display:block ignoring hidden. */
+.imgph[hidden]{display:none}
+.imgph{display:flex;flex-direction:column;justify-content:center;gap:8px;min-height:208px;
+padding:24px;background:var(--card);border:1px dashed var(--line2);border-radius:12px}
+.imgphl{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.ldrafting{margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:.06em;
+text-transform:uppercase;color:var(--dim)}
+.imgphn{margin:0;font-size:13.5px;color:var(--ink);line-height:1.55;max-width:52ch}
+.lanenums{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;margin-left:auto;margin-right:8px}
+.eyebrow .lanenums{margin-left:16px;margin-right:0}
+/* The corner of the day, in the hero. Two columns on a wide screen with the
+search on the left, stacked on a narrow one with the search first, because a
+returning visitor comes to type. */
+.herohead{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:start;margin:0 0 32px}
+@media(max-width:900px){.herohead{grid-template-columns:1fr;gap:24px}}
+.herocorner{background:var(--panel);border:1.5px solid var(--line3);border-top:3px solid var(--accent);
+border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(20,27,45,.06)}
+.hchead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hceyebrow{font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:#b0560e;width:100%}
+.hcname{font-size:17px;font-weight:600;color:var(--ink);text-decoration:none}
+.hcname:hover{text-decoration:underline}
+.hcgrade{margin-left:auto;font-size:13px;font-weight:700;min-width:28px;height:28px;border-radius:8px;
+display:grid;place-items:center;color:#fff;background:var(--dim)}
+.hcwhen{margin:4px 0 12px;font-size:11.5px;color:var(--dim);line-height:1.5}
+/* The stage is the shared slider at embed size. It owns its height from the
+ratio, so nothing reflows when the bytes land, and both frames load eagerly
+because both panes have to be there before anyone drags anything. Only the
+corner radius is local: the handle keeps the corner page's dimensions, so
+the thing a visitor drags here is the thing they will drag there. */
+.herocorner .hero{border-radius:9px}
+.hctoggle{display:flex;gap:6px;margin:8px 0 0;flex-wrap:wrap}
+.hctoggle button{font-family:inherit;font-size:11.5px;font-weight:600;color:var(--dim);background:var(--card);
+border:1px solid var(--line);border-radius:999px;padding:5px 12px;cursor:pointer}
+.hctoggle button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.hccap{margin:8px 0 0;font-size:11.5px;color:var(--dim);line-height:1.5}
+.hccap b{color:var(--ink);font-weight:600}
+.hcdisclaim{margin:10px 0 0;font-size:11.5px;color:var(--ink);line-height:1.5;
+padding-left:10px;border-left:2px solid var(--accent)}
+.hcpending{margin:8px 0 0;font-size:11.5px;color:var(--dim);line-height:1.5}
+.hcev{margin:12px 0 0;font-size:12.5px;color:var(--dim);line-height:1.55}
+.hcact{display:flex;align-items:center;gap:16px;margin:16px 0 0;flex-wrap:wrap}
+.hcgo{font-size:13px;font-weight:600;color:#fff;background:var(--ink);border-radius:999px;
+padding:9px 18px;text-decoration:none}
+.hcletter{font-size:12.5px;font-weight:600;color:var(--dim);text-decoration:none}
+.hcletter:hover{color:var(--ink);text-decoration:underline}
+.hcnone{display:flex;flex-direction:column;justify-content:center;gap:8px;aspect-ratio:640/400;
+padding:24px;background:var(--card);border:1px dashed var(--line2);border-radius:9px}
+.hcnonel{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.hcnonen{margin:0;font-size:13.5px;color:var(--ink);line-height:1.55}
+/* The stat band. Numbers as the design, each one a link to its own evidence. */
+.statband{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:0 0 24px}
+.sbcell{display:flex;flex-direction:column;gap:2px;padding:16px;text-decoration:none;color:inherit;
+background:var(--panel);border:1.5px solid var(--line3);border-radius:12px;
+transition:border-color 150ms ease-out}
+.sbcell:hover{border-color:var(--ink)}
+.sbnum{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.15;color:var(--ink)}
+.sblabel{font-size:12.5px;font-weight:600;color:var(--ink)}
+.sbnote{font-size:11.5px;color:var(--dim);line-height:1.45}
+@media(max-width:820px){.statband{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:380px){.statband{grid-template-columns:1fr}}
+/* Every number on the site lines up in a column. One rule, everywhere. */
+.sbnum,.scoren,.ridx,.stat .n,.wlidx,.big,.mastcount,.n,.wlstat b{font-variant-numeric:tabular-nums}
+.fcols{display:flex;gap:40px;flex-wrap:wrap;margin:0 0 24px}
+.fcol{display:flex;flex-direction:column;gap:8px;min-width:152px}
+.fh{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);margin-bottom:2px}
+.fcol a{font-size:12.5px;color:var(--dim);text-decoration:none}
+.fcol a:hover{color:var(--ink);text-decoration:underline}
+/* The honesty lines close the page. Never collapsed, never moved above the
+columns, never smaller than the links they follow. */
+.fhonest{margin:0;font-size:12.5px;color:var(--dim);line-height:1.6}
+.fhonest a{color:var(--dim)}
+footer a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
+footer a:hover{color:var(--ink)}
+.sk{background:linear-gradient(90deg,var(--card) 25%,#eeece4 50%,var(--card) 75%);background-size:200% 100%;animation:sh 1.3s infinite;border-radius:6px;height:13px;margin:9px 0}
+@keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+/* The stat row holds three across well past the point the two-column body has to
+collapse, so it breaks on its own, later: 3 across, then 2+1, then stacked. */
+/* Motion is decoration here, never information. Under reduced-motion the rules
+are already drawn, the numbers are already final, and the shimmer holds still.
+Nothing on the page becomes unreadable or unavailable. */
+@media(prefers-reduced-motion:reduce){
+.sk{animation:none;background:var(--card)}
+.eyebrow::after{transform:scaleX(1);transition:none}
+.scoreg,.panel,.stat,.scorewrap,#overlay,.stack .lg img{transition:none}
+.panel:hover,.stat:hover,.scorewrap:hover{transform:none;box-shadow:none}
+/* Everything added in the polish pass, and anything added after it. A
+blanket rule rather than a list, so a transition introduced later is
+covered without anybody remembering to come back here. */
+*,*::before,*::after{animation-duration:0.001ms;animation-iteration-count:1;
+transition-duration:0.001ms;scroll-behavior:auto}
+}
+/* One focus ring for the whole site, in the accent, on everything focusable.
+Keyboard users get the same affordance on a footer link as on the primary
+button, and no rule anywhere removes an outline without replacing it. */
+a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible,
+[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+.find input:focus-visible{outline-offset:1px}
+@media(max-width:860px){
+.cols,.stack{grid-template-columns:1fr}
+/* Mobile reading order: verdict, imagery, letter, evidence, map, stack.
+The letter is why a person came; on a phone it must not sit under four
+panels of receipts. display:contents releases the two columns into main's
+flex flow so order can interleave them. */
+main{display:flex;flex-direction:column}
+main > *{order:20}
+.lede{order:0}
+#verdict{order:1}
+#replay{order:2}
+.panel.lane-imagery{order:3}
+.cols{display:contents}
+.cols > div:nth-child(2){order:4}
+.eyebrow{order:5}
+#scorewrap{order:6}
+/* The tiles travel with the column they now sit in, which puts them after
+the voices card. There is no #stats rule here any more because there is
+no longer a #stats child of main to order. */
+#cred{order:8}
+.cols > div:nth-child(1){order:9}
+#maplane{order:10}
+}
+@media(max-width:600px){
+.stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+/* Panels now carry their own padding, so on a phone the body inset has to
+give some of it back or the widest fixed element in the page, the three
+button view toggle, pushes the whole document past the viewport and the
+header stops wrapping. */
+.wrap{padding:22px 14px 52px}
+.pbody{padding:16px}
+.phs{padding:10px 16px}
+.toggle{width:auto;flex-wrap:wrap;padding:5px}
+.toggle button{padding:9px 13px;font-size:13px}
+}
+@media(max-width:400px){.stats{grid-template-columns:1fr}}
+.rfeed{display:flex;flex-direction:column}
+.rhit{display:grid;grid-template-columns:130px minmax(0,1fr) auto;gap:14px;align-items:baseline;
+padding:12px 0;border-bottom:1px solid var(--line);font-size:13px}
+.rhit:last-child{border-bottom:0}
+.rwhen{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+.rtitle{color:var(--ink);line-height:1.45;text-decoration:none}
+a.rtitle:hover{text-decoration:underline}
+.rmeta{display:block;font-size:11.5px;color:var(--dim);margin-top:3px}
+.rfilt .rtitle{color:var(--dim)}
+.rlag{font-size:11.5px;color:var(--dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+.rchip{font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:2px 7px;
+border-radius:4px;white-space:nowrap}
+.rchip.pass{background:rgba(120,140,93,.16);color:var(--green);border:1px solid rgba(120,140,93,.4)}
+.rchip.filt{background:transparent;color:var(--dim);border:1px dashed var(--line2)}
+.rinst{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:0 0 20px}
+.ricell{background:var(--panel);border:1.5px solid var(--line3);border-radius:12px;padding:14px}
+.ricell b{display:block;font-size:24px;font-weight:700;line-height:1.1}
+.ricell span{display:block;font-size:11.5px;color:var(--dim);margin-top:4px;line-height:1.45}
+.rq{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0}
+.rq code{font-size:11px;background:var(--card);border:1px solid var(--line);border-radius:5px;padding:3px 8px;color:var(--dim)}
+.rpaused{background:rgba(240,126,38,.10);border:1px solid rgba(240,126,38,.35);border-radius:9px;
+padding:12px 14px;font-size:13px;color:#a04d0c;margin:0 0 16px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="mast" aria-label="StreetCred">
+<a class="mastmark" href="/" aria-label="StreetCred home">Street
+<span>Cred
+</span>
+</a>
+<span class="mastcount">{N4} SF intersections scored
+</span>
+<a class="mastfind" href="/#find">Find your corner
+</a>
+<nav class="mastnav" aria-label="Trust surfaces">
+<a href="/watchlist">Watchlist
+</a>
+<a href="/methodology">Methodology
+</a>
+<a href="/status">Status
+</a>
+<a href="/changes">Changes
+</a>
+</nav>
+<a class="mastgh" href="https://github.com/alejandro-publius/streetcred" target="_blank" rel="noopener" aria-label="Source on GitHub">
+<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+<path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+</svg>
+</a>
+<button class="mastmenu" id="mastmenu" type="button" aria-expanded="false" aria-controls="mastnav-collapsed">Menu
+</button>
+</nav>
+<nav class="mastdrop" id="mastnav-collapsed" hidden aria-label="Trust surfaces">
+<a href="/watchlist">Watchlist
+</a>
+<a href="/methodology">Methodology
+</a>
+<a href="/status">Status
+</a>
+<a href="/changes">Changes
+</a>
+<a href="/#find">Find your corner
+</a>
+<a href="https://github.com/alejandro-publius/streetcred" target="_blank" rel="noopener">Source on GitHub
+</a>
+</nav>
+<script>
+(function(){
+var b=document.getElementById("mastmenu"),d=document.getElementById("mastnav-collapsed");
+if(!b||!d) return;
+b.addEventListener("click",function(){
+var open=d.hidden===false;
+d.hidden=open;
+b.setAttribute("aria-expanded",String(!open));
+});
+})();
+</script>
+<header>
+<div class="hctl">
+</div>
+<div class="corner">
+<b>The press radar
+</b>
+<span class="csub">Exa watches San Francisco's coverage continuously
+</span>
+</div>
+</header>
+<p class="lede">New reporting about a watched corridor lands here within hours of publication. Delivery is
+push: Exa holds the queries open and sends a detection as coverage appears, so nothing here is on a
+schedule this page could promise. What it can show is the lag it actually measured.
+</p>
+<div class="rinst">
+<div class="ricell">
+<b>{N2}
+</b>
+<span>monitors running
+</span>
+</div>
+<div class="ricell">
+<b>{N1}
+</b>
+<span>detections this week
+</span>
+</div>
+<div class="ricell">
+<b>{N1}
+</b>
+<span>cleared the relevance filter
+</span>
+</div>
+<div class="ricell">
+<b>n/a
+</b>
+<span>median publication to detection, last {N1} hits
+</span>
+</div>
+<div class="ricell">
+<b>{CENTS}
+</b>
+<span>spent today of a {CENTS} daily cap
+</span>
+</div>
+</div>
+<p class="note">For comparison, and measured separately: the batch press lane found coverage at
+{%2.1} of the {N3} corners it has checked. That is a different question
+asked of a different population, the worst corners in the city rather than this week's news, and the two
+rates should not be read as one number.
+</p>
+<div class="eyebrow">
+<span>Detections
+</span>
+<span class="tag src">
+<img src="/logos/exa.svg" alt="" width="35" height="11" loading="lazy">Press via Exa
+</span>
+</div>
+<div class="tape live">
+<div class="panel">
+<div class="pbody">
+<p class="empty">No detections yet. The monitors are running and nothing has been published about a watched corridor since they started.
+</p>
+</div>
+</div>
+</div>
+<div class="eyebrow">
+<span>The standing queries
+</span>
+<span class="lanenums">{N2} monitors
+</span>
+</div>
+<p class="note">Corridors, not corners. A street-level query is the efficient unit: every corner on
+Mission shares Mission's coverage, so one standing query serves all of them. Which corners a story
+attaches to is decided afterwards, by whether the article names both streets of a crossing.
+</p>
+<div class="rq">
+<code>Mission San Francisco pedestrian OR collision OR crash
+</code>
+<code>3rd San Francisco pedestrian OR collision OR crash
+</code>
+<code>Folsom San Francisco pedestrian OR collision OR crash
+</code>
+<code>Van Ness San Francisco pedestrian OR collision OR crash
+</code>
+<code>Harrison San Francisco pedestrian OR collision OR crash
+</code>
+<code>Market San Francisco pedestrian OR collision OR crash
+</code>
+<code>Franklin San Francisco pedestrian OR collision OR crash
+</code>
+<code>Bay Shore San Francisco pedestrian OR collision OR crash
+</code>
+<code>Bryant San Francisco pedestrian OR collision OR crash
+</code>
+<code>Geary San Francisco pedestrian OR collision OR crash
+</code>
+<code>Valencia San Francisco pedestrian OR collision OR crash
+</code>
+<code>Howard San Francisco pedestrian OR collision OR crash
+</code>
+<code>16th San Francisco pedestrian OR collision OR crash
+</code>
+<code>Laguna San Francisco pedestrian OR collision OR crash
+</code>
+<code>14th San Francisco pedestrian OR collision OR crash
+</code>
+<code>Gough San Francisco pedestrian OR collision OR crash
+</code>
+<code>Jones San Francisco pedestrian OR collision OR crash
+</code>
+<code>Alemany San Francisco pedestrian OR collision OR crash
+</code>
+<code>Polk San Francisco pedestrian OR collision OR crash
+</code>
+<code>5th San Francisco pedestrian OR collision OR crash
+</code>
+<code>4th San Francisco pedestrian OR collision OR crash
+</code>
+<code>Kearny San Francisco pedestrian OR collision OR crash
+</code>
+<code>2nd San Francisco pedestrian OR collision OR crash
+</code>
+<code>Post San Francisco pedestrian OR collision OR crash
+</code>
+<code>Bush San Francisco pedestrian OR collision OR crash
+</code>
+<code>San Francisco Vision Zero
+</code>
+<code>SFMTA quick build
+</code>
+<code>San Francisco pedestrian death
+</code>
+<code>San Francisco protected bike lane
+</code>
+</div>
+<p class="note" style="margin-top:22px">Radar queries cost {CENTS} today against a {CENTS} daily cap and {CENTS} this month against {N3}. The full ledger is on
+<a href="/status">/status
+</a>.
+</p>
+<footer>
+<div class="fcols">
+<div class="fcol">
+<span class="fh">Product
+</span>
+<a href="/#find">Find your corner
+</a>
+<a href="/watchlist">Watchlist
+</a>
+<a href="/methodology">How it is scored
+</a>
+</div>
+<div class="fcol">
+<span class="fh">Trust
+</span>
+<a href="/radar">Press radar
+</a>
+<a href="/status">Status and cost ledger
+</a>
+<a href="/changes">Changes
+</a>
+<a href="/watchdog">Watchdog
+</a>
+</div>
+<div class="fcol">
+<span class="fh">Source
+</span>
+<a href="https://github.com/alejandro-publius/streetcred" target="_blank" rel="noopener">GitHub repo
+</a>
+<a href="https://data.sfgov.org/Public-Safety/Traffic-Crashes-Resulting-in-Injury/ubvf-ztfx" target="_blank" rel="noopener">DataSF collisions
+</a>
+<a href="https://data.sfgov.org/City-Infrastructure/311-Cases/vw6y-z8j6" target="_blank" rel="noopener">DataSF {N3} cases
+</a>
+</div>
+</div>
+<p class="fhonest">Exa finds it, Apify hears it, Gemini shows it and writes it.
+<a href="https://github.com/alejandro-publius/streetcred" target="_blank" rel="noopener">Built at Build Club, {DAY}
+</a>.
+<br>
+Hazard and proposed-fix images are AI generated from the Street View photograph. The proposed fix is a visualization, not a photograph of anything that exists. Nothing here is sent to any official.
+</p>
+</footer>
+</div>
+</body>
+</html>

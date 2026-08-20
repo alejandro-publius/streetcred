@@ -1,0 +1,41 @@
+{
+  "captured": "2026-08-20T06:03:26.798Z",
+  "origin": "https://streetcred.thealexschroeder.workers.dev",
+  "pages": [
+    {
+      "file": "home.txt",
+      "path": "/",
+      "label": "homepage",
+      "lines": 1930,
+      "rawBytes": 105916
+    },
+    {
+      "file": "corner-16th-mission.txt",
+      "path": "/c/16th-mission",
+      "label": "corner page",
+      "lines": 2754,
+      "rawBytes": 133896
+    },
+    {
+      "file": "status.txt",
+      "path": "/status",
+      "label": "status",
+      "lines": 1095,
+      "rawBytes": 68313
+    },
+    {
+      "file": "radar.txt",
+      "path": "/radar",
+      "label": "radar",
+      "lines": 1048,
+      "rawBytes": 63193
+    },
+    {
+      "file": "methodology.txt",
+      "path": "/methodology",
+      "label": "methodology",
+      "lines": 1320,
+      "rawBytes": 75007
+    }
+  ]
+}
