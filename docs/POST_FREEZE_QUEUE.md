@@ -716,3 +716,37 @@ Coverage is unaffected either way and stays 23 discs. A promoted render does not
 make a corner audited, which is the whole point of ruling 1.
 
 Source: publish close-out, 2026-08-20.
+
+## 19. A letter with no salutation at all still skips the addressee check
+
+Closed in burn 30: a salutation without the word "Dear" no longer skips the
+addressee gate. What is still open is the case below it. `verifyLetter` runs:
+
+```js
+if (inputs.addressee) {
+  const m = body.match(SALUTATION) || body.match(SALUTATION_BARE);
+  if (m) { ...compare office and person... }
+}
+```
+
+A body matching neither pattern is not checked and not failed. Silence reads as
+consent, which is the same shape as the bug just fixed, one level down.
+
+Why it was not closed at the same time: `verifyLetter` is called on
+single-sentence fragments throughout `tools/verify.test.mjs`, which supply an
+addressee in their inputs and carry no salutation because they are testing the
+number, voices, press and magnitude rules. Requiring a salutation to exist fails
+six of those cases, and rewriting fixtures under time pressure to satisfy a rule
+change is how a real regression gets hidden in the churn.
+
+The fix wants a caller-supplied intent rather than a guess at the body's shape:
+`verifyLetter(text, inputs, { whole: true })`, set on the production paths in
+`src/index.js`, `src/agent.js` and `tools/generate_letters.mjs`, and left off in
+fragment tests. Then a whole letter with no addressee fails, and a fragment
+under test does not.
+
+Not urgent. Every one of the 116 letters published 2026-08-21 carries a
+salutation naming its own district's representative, checked directly rather
+than inferred from the gate having passed them.
+
+Source: publish close-out, 2026-08-20.
