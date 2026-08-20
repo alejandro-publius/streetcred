@@ -403,7 +403,7 @@ DataSF's own intersection table rather than the KV index (`src/suggest.js:56-58`
 | Websets refusal as a diagnostic | `GET /websets/v0/websets`, team name parsed from the refusal | `tools/exa_probe.mjs:53-56` |
 
 The nested `contents.text` shape is not cosmetic. A flat `text` field is rejected by the API, which the
-README records at `README.md:52`.
+README records in "How we used Exa", under **The call** (`README.md:101` as of 2026-08-20T06:03Z).
 
 ---
 
@@ -444,7 +444,7 @@ counter, and saying so is the only way the two figures can ever be reconciled
 | Reserved units this period | 1,228 searches, 2,552 pages of contents |
 | Spend all time | **$13.8680**, of which **$1.2690** predates this counter |
 
-Two checks a judge can do on those numbers without leaving this page:
+Three checks a judge can do on those numbers without leaving this page:
 
 - `13.8680 - 1.2690 = 12.5990`, so the all-time figure and the period figure agree.
 - The reservation estimate implied by the unit counters is
@@ -539,7 +539,8 @@ distribution are stored in `press:rollup.costUsd` and `press:rollup.citations`
 carrying the Exa mark: `src/page.js:1520`. The same tag appears on the press scan card on `/status`
 (`src/status.js:160`) and above the detections feed on `/radar` (`src/radarpage.js:116`). Every
 headline in the panel renders its outlet domain and publish date and links out
-(`README.md:60`), so any claim on the page can be checked in one click.
+(README.md, "How we used Exa", under **The render**, `README.md:109` as of 2026-08-20T06:03Z), so any
+claim on the page can be checked in one click.
 
 **The lane tag states which lane produced the record.** A stored batch record carries
 `lane: "press-checked"` (`src/pressenrich.js:243`), and the client reads that flag
@@ -558,10 +559,13 @@ have to agree:
    pending state, and the audited count on the homepage does not move because a corner was press
    checked.
 
-The counts confirm it. Read live at 2026-08-20T05:53Z: `/api/board` returns **24** corners on the
-roster while the masthead reads **7,355 SF intersections scored** and the homepage subtitle reads
-**23 fully audited**. 346 corners have been press-checked this month and the audited figure is 23.
-Press checking moved neither number.
+The counts confirm it. Read live between 2026-08-20T05:53Z and 06:07Z: `/api/board` returns **24**
+corners on the roster, the masthead reads **7,355 SF intersections scored**, and the homepage subtitle
+reads "7,355 intersections graded citywide, **23 fully audited**, one attempted every morning". The
+roster is 24 while the audited figure is 23 because one corner, 1st and Bush, is enriched rather than
+fully audited: `/status` at 2026-08-20T05:55Z shows it as "2 runs commissioned, in flight". 346 corners
+have been press-checked this month and the audited figure is still 23. Press checking moved neither
+number.
 
 **Three states, three different sentences.** The lane distinguishes not-checked from checked-and-empty,
 which is the distinction most sites collapse:
@@ -601,7 +605,7 @@ corner level only when its title or url carries every street token (`src/newsfil
 panel claims corner-level precision only when at least three results clear that bar
 (`src/pressenrich.js:216-218`, `src/index.js:490-493`), and below that the heading reads "Coverage of
 this corridor" (`src/pressenrich.js:273`, `src/index.js:541`). In practice most live headlines are
-corridor level, and `README.md:54` says so. The radar applies the same rule: a corridor match is not a
+corridor level, and the README says so under **The filter** (`README.md:103` as of 2026-08-20T06:03Z). The radar applies the same rule: a corridor match is not a
 corner match, and a story about Mission Street does not become a citation on forty Mission crossings
 (`src/radar.js:119-135`).
 
@@ -628,17 +632,19 @@ six plausible payload shapes (`src/radar.js:74-88`). Nothing has yet arrived to 
 sends, because the feed is empty. Unrecognised payloads are stored rather than dropped
 (`src/index.js:1008-1014`), which is the right posture and is not the same thing as knowing.
 
-**Documentation that is currently stale, stated so a judge is not misled.** The live system has moved
-past three published figures:
+**Documentation that is currently stale, stated so a judge is not misled.** Two published figures have
+been overtaken by the live system. Note that `README.md` was being revised by another pass while this
+document was written, so its line numbers are stamped and its earlier watchlist figures (104 articles,
+7 searches, 4 corners, 22 discarded) have already been corrected there. A related earlier figure of 104
+articles and four corners still stands at `specs/MAKE_THEM_KNOW.md:67-68`.
 
 | Stale claim | Where | Live truth, as of 2026-08-20T05:55Z |
 |---|---|---|
-| "Seven citywide semantic searches" | `README.md:66`, `src/methodology.js:189` | 29 searches, from `WATCHLIST_QUERIES` (`src/press.js:70-102`) and confirmed by `/api/watchlist` `calls: 29` |
-| "104 articles across 7 searches, 4 corners, 7 rejects, 22 discarded" | `README.md:68`; a related figure at `specs/MAKE_THEM_KNOW.md:67-68` | 117 articles across 29 searches, 5 verified, 7 rejected, 25 discarded |
-| "a hard 1,500-call ceiling" | `README.md:72` | The ceiling is cent-denominated: `EXA_CAP_CENTS = 6500`, that is $65.00 (`src/store.js:489`) |
+| "Seven citywide semantic searches" | `src/methodology.js:189` | 29 searches, from `WATCHLIST_QUERIES` (`src/press.js:70-102`) and confirmed by `/api/watchlist` `calls: 29`. The README carried the same figure and no longer does. |
+| "a hard 1,500-call ceiling" | `README.md:120` as of 2026-08-20T06:03Z | The ceiling is cent-denominated: `EXA_CAP_CENTS = 6500`, that is $65.00 (`src/store.js:489`) |
 
-Those files are under a feature freeze and were not edited by this document. The figures in this
-document supersede them.
+`src/methodology.js` and `specs/` are under the feature freeze and were not edited by this document.
+The live figures above supersede them.
 
 ---
 

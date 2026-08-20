@@ -49,8 +49,9 @@ visibly not tracking the file. Fix that sentence first.
 | "One KV read against the same 7,353 corner index the site grades from" | 199-200 | **STALE** | 7,355. `data/city/meta.json` `totalScored: 7355`; live `/api/city` returns `"total":7355`. Re-derived locally from `sweep-results.json` (7,353 rows) plus the two crossings split out by `data/city/twins.json`: 7,357 shard rows, 2 of them alias rows, 7,355 distinct places (`tools/build_city_shards.mjs:88-135`). |
 | "packs the 7,353 corners with recorded harm into 71 KV bundles ... largest bundle 175 KB" | 131-132 | **STALE in part** | 7,355, not 7,353. The rest is CURRENT: `data/city/meta.json` has `shardCount: 71` and `largestShardBytes: 179643`, which is 175.4 KB, key `c`. |
 | "would be 7,353 writes to publish the city and 7,353 more to correct it" | 133-134 | **STALE** | Same figure, same fix: 7,355. |
-| "of 23 audited corners, four have a connection" | 218-219 | **CURRENT TODAY, HARDCODED** | Literal text in the template, not interpolated: `METHODOLOGY` takes only `(origin, preview, scored)` (`src/methodology.js:18`). Correct at this hour: live homepage says "23 fully audited", and of the 24 roster slugs on `/api/board`, exactly four return a live non-reciprocal connections record (`16th-mission`, `fulton-and-masonic`, `mission-and-silver`, `19th-and-mission`). It goes wrong at 06:10 Pacific tomorrow, when the daily cron promotes a 24th corner (`src/index.js:1713-1733`). |
-| (the count omits reciprocals) | 218-219 | **INCOMPLETE** | Three further corners carry a connection record written from the other end (`grant-and-jackson`, `fulton-and-park-presidio`, `18th-and-potrero`, all `reciprocal: true` on `/api/connections`). They are not audited corners, so the sentence is not false, but seven corners carry a connection, not four. Reciprocal writes are at `src/press.js:475-493` and `src/index.js:1684-1688`. |
+| "of 23 audited corners, four have a connection" | 218-219 | **STALE, AND HARDCODED** | The "four" is wrong now: **five** of the 23 audited corners carry a connection. Checked one by one against `/api/connections` on 2026-08-20 for every slug in the `audited` roster: `16th-mission` links to `grant-and-jackson`, `19th-and-mission` and `mission-and-silver` both link to `18th-and-potrero`, `24th-and-valencia` links to `sycamore-and-valencia`, `fulton-and-masonic` links to `fulton-and-park-presidio`. The other 18 return `source: "empty"`. The "23" is right today: the live homepage says "23 fully audited". Both figures are literal text, not interpolated: `METHODOLOGY` takes only `(origin, preview, scored)` (`src/methodology.js:18`), so the pair goes stale again the next morning the cron promotes a corner (`src/index.js:1713-1733`). |
+| (the count omits reciprocals) | 218-219 | **INCOMPLETE** | Four further corners carry a connection record written from the other end (`grant-and-jackson`, `18th-and-potrero`, `sycamore-and-valencia`, `fulton-and-park-presidio`, all `reciprocal: true` on `/api/connections`). None of them is an audited corner, so the sentence is not false, but nine corners on the site carry a connection, not five. Reciprocal writes are at `src/press.js:475-493` and `src/index.js:1684-1688`. |
+| (a trap for whoever re-counts this) | 218-219 | **NOTE** | The audited roster is the `audited` array in `city:meta` (`src/city.js:169-180`, mirrored on disk at `data/city/meta.json`), not `/api/board`. `/api/board` serves the HIN list (`src/index.js:1848-1863`), which held 24 slugs at measurement time and overlaps the audited roster without matching it: it omits `19th-and-judah`, `24th-and-valencia` and `church-and-duboce`, and adds `1st-and-bush`, `12th-and-moraga`, `31st-and-lawton` and `40th-and-cabrillo`. Counting connections against `/api/board` returns four and is the wrong denominator. |
 | "the connecting article must be dated ... and must be recent" | 216-218 | **INCOMPLETE** | Three bars in code, not two: undated (`src/press.js:419-422`), older than `CONNECTION_MAX_AGE_MS`, which is three years (`src/press.js:144`, checked at `:428`), and a bare-path URL, which is a site homepage (`src/press.js:432-436`). The page folds the third into a parenthetical on the first, and never says how recent "recent" is. |
 | "It is implemented directly on Exa's search API, which is what the event credits cover." | 210-211 | **STALE** | Three Exa endpoints are in production: `POST /search` (`src/press.js:32`, `src/pressenrich.js:58`), `POST /findSimilar` (`src/press.js:33`), and `POST /monitors` (`src/index.js:945`). `POST /contents` is a fourth (`src/pressenrich.js:59`). The sentence was true before the radar shipped. |
 | (nothing on the page about the press radar) | whole page | **MISSING** | `src/radar.js` (170 lines), the webhook at `src/index.js:992-1049`, monitor creation at `src/index.js:895-977`, the budget rails at `src/store.js:901-990`, and the `/radar` page (`src/radarpage.js`). The only trace on the methodology page is a footer link reading "Press radar". Live `/api/radar`: 29 monitors created, 0 failed, created 2026-08-20T02:08:16Z, feed empty. |
@@ -141,17 +142,24 @@ Optional added clause, if the twin split is worth naming on this page:
 
 ### 4. Lines 218 to 219, the connection count
 
-The count is a literal in the template, so it goes stale on its own every
-morning. Two options, and the first is the one that survives a freeze.
+The count is wrong now, and it is a literal in the template, so correcting the
+digit only buys until the next morning the cron promotes a corner. Three
+options, in the order they should be considered.
 
-Freeze-safe replacement for `Empty stays empty, and nothing fuzzy is shown: of 23 audited corners, four have a connection.`:
+**Best, and it needs plumbing rather than a paste.** `METHODOLOGY` takes only
+`(origin, preview, scored)` at `src/methodology.js:18`. Give it the audited
+count and the connected count the way it already takes `scored`, and render the
+sentence from them. The homepage already reads both halves out of `city:meta`.
 
-> Empty stays empty, and nothing fuzzy is shown. Most audited corners have no connection at all, and the ones that do carry the exact article that links them, on both pages. The current count is on /watchlist rather than here, because a number typed into this paragraph goes wrong the next morning without anybody touching it.
+**Freeze-safe, and correct for as long as it stands.** Replace
+`Empty stays empty, and nothing fuzzy is shown: of 23 audited corners, four have a connection.`
+with:
 
-The better fix, which needs plumbing rather than a paste: `METHODOLOGY` takes
-only `(origin, preview, scored)` at `src/methodology.js:18`. Give it the
-connection tally the way it already takes `scored`, and render the sentence.
-Until then, do not restate the number here.
+> Empty stays empty, and nothing fuzzy is shown. Most audited corners have no connection at all, which is the honest answer rather than a disappointing one, and the ones that do carry the exact article that links them, on both pages. The live count is on /watchlist, not typed into this paragraph, because a number typed here goes wrong the next morning without anybody touching it.
+
+**Worst, and only if a number is wanted in the prose.** Replace `four` with
+`five` and re-check both figures against `/api/connections` and the homepage
+counter before every deploy. Five of 23 was true at 2026-08-20T02:00Z.
 
 ### 5. Line 126, the sweep's request count
 
@@ -264,13 +272,15 @@ all.
    do a thing, the page says so; the inverse failure, doing a thing the page
    never mentions, reads to a careful judge as the same kind of gap. The footer
    of this very page links to "Press radar".
-3. **"7,353" against the masthead's "7,355" (131, 133, 199).** Two different
+3. **"of 23 audited corners, four have a connection" (218).** Wrong today: it is
+   five of 23, checked corner by corner against `/api/connections`. It is also
+   hardcoded, so it will be wrong again in a different way the next morning the
+   cron promotes a corner. It undersells the one lane that is hardest to build,
+   and it is wrong in a paragraph whose whole point is that nothing fuzzy is
+   shown.
+4. **"7,353" against the masthead's "7,355" (131, 133, 199).** Two different
    sizes of the same city, on one screen, sixty lines apart. Small in magnitude
    and instant to spot, which is exactly what makes it expensive.
-4. **"of 23 audited corners, four have a connection" (218).** True at this hour,
-   hardcoded, and wrong by tomorrow morning when the cron promotes the 24th
-   corner. A number that goes stale while nobody touches it is the failure mode
-   this whole page is written against.
 5. **"one pass restricted to San Francisco outlets" (190).** Same sentence as
    finding 1, same fix, listed separately because it is a separate wrong number.
 6. **The AUDITED tier definition overclaims (139).** The page says four lanes
@@ -306,14 +316,20 @@ all.
 Not this document's job to fix, but the same edit pass should catch it, because
 these repeat the sentences corrected above:
 
-- `README.md:66` says "Seven citywide semantic searches" and cites the older
-  pass, 104 articles, 4 corners, 7 rejects, 22 discarded. The live pass built
-  2026-08-19T13:11Z read 117 articles across 29 queries and produced 5 entries,
-  7 rejects and 25 discarded. `README.md:66` also carries "7,353-corner index"
-  and "Of 23 audited corners, four have a connection".
+- **`README.md` was already corrected in the working tree** during this same
+  freeze window by a parallel pass, and its new wording is the model to copy.
+  It now reads "A bank of citywide semantic searches runs every morning over a
+  90 day window", cites the 2026-08-19T13:11Z pass at 29 searches, 117 articles,
+  5 corners, 7 rejects and 25 discarded, says "7,355 distinct crossings", and
+  says "Of the 23 audited corners, five carry a connection, checked one by one
+  against `/api/connections` on 2026-08-20" (`README.md:115-119`). Before that
+  pass it carried the same seven-searches, 7,353 and four-connections figures
+  the live page still carries. One caveat: README still says "two extra bars
+  apply" to a connection, which is the same undercount as page line 216.
 - `specs/MAKE_THEM_KNOW.md:81-82` cites 104 articles, 4 corners, 24 discarded,
   and a "7,355-corner index" that happens to be right where the methodology page
-  is wrong.
+  is wrong. Not checked for other edits by other agents; re-read it before
+  relying on those figures.
 - `src/index.js:1694` and `src/press.js:284-285` carry code comments that say
   "Seven semantic searches" and "the whole watchlist is four searches". Comments
   rather than page copy, so no reader is misled, but they are the reason the
