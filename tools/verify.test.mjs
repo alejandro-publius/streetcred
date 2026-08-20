@@ -60,6 +60,24 @@ if (!retry.includes('"412"')) {
   console.log("pass  retry instruction names the failing token");
 }
 
+// Both radii are constants the prompt instructs the letter to state. 80 was
+// missing from the input set, so a draft that followed the prompt was rejected
+// for citing a figure the records "do not support".
+test_both_radii();
+function test_both_radii() {
+  const r = verifyLetter(
+    "The count covers a 150 metre radius while the grade is computed over a tighter 80 metre core.",
+    inputs,
+  );
+  const bad = r.failures.filter((f) => f.kind === "number").map((f) => f.token);
+  if (bad.length) {
+    failed++;
+    console.log(`FAIL  both radii are sourced constants (flagged: ${bad.join(", ")})`);
+  } else {
+    console.log("pass  both radii are sourced constants");
+  }
+}
+
 // ------------------------------------------------- lane consistency cases
 //
 // Every case below is a sentence with no checkable digit in it. That is the

@@ -49,12 +49,20 @@ export function buildInputSet({ corner, stats, score, news, timeline, supervisor
   addNum(score?.percentile);
 
   // Constants the prompt states, not model output: the 311 dataset's name, the
-  // five year collision window, the three year report window, the 150 metre
-  // radius. All appear as digits in nearly every draft.
+  // five year collision window, the three year report window, and BOTH radii.
+  // All appear as digits in nearly every draft.
+  //
+  // 80 was missing until 2026-08-20 and it is the prompt's own instruction:
+  // "the Danger Index grade is computed over a tighter 80 metre core". A model
+  // that followed that instruction had its draft rejected for citing a figure
+  // the records do not support, which is the verifier failing a letter for
+  // obeying the prompt. Found by the first offline fleet run, where both
+  // corners in the sample failed on exactly this.
   addNum(311);
   addNum(3);
   addNum(5);
   addNum(150);
+  addNum(80);
 
   addNum(timeline?.firstReportedYear);
   addNum(timeline?.yearsReported);
@@ -343,6 +351,20 @@ export function verifyLetter(text, inputs) {
         reason: `${d} was not among the sources fetched for this corner`,
       });
     }
+  }
+
+  // 4a. Em dashes. The prompt forbids them and the house style forbids them, so
+  // a draft carrying one is a draft that did not follow its instructions, which
+  // is worth knowing about a model even when the sentence around it is true.
+  // En dashes count: the failure mode is a model reaching for typographic
+  // punctuation, and which one it reached for is not the point.
+  for (const m of body.matchAll(/[^\s]*\s*[\u2014\u2013]\s*[^\s]*/g)) {
+    failures.push({
+      token: m[0].trim().slice(0, 60),
+      kind: "emdash",
+      reason: "the letter uses an em or en dash, which the prompt forbids and the house style does not use",
+    });
+    break; // one verdict per letter; the retry fixes all of them or none
   }
 
   // 4b. The addressee. Who the letter is addressed TO, against the sitting

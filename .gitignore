@@ -18,3 +18,6 @@ docs/hazards.jpg
 .suggest-bulk.json
 .city-bulk.json
 .slug-collisions.json
+
+# Staged letters, published to KV, never committed.
+scratch/

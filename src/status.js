@@ -23,7 +23,7 @@ const when = (ts) => {
   }
 };
 
-export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null, preview = false, scored = 0, scan = null, watchlist = null) => {
+export const STATUS = (synth = [], incidents = [], changes = [], origin = "", spend = null, preview = false, scored = 0, scan = null, watchlist = null, gemini = null) => {
   // Attempted against completed, from the stored record. This is the spend
   // page, so the distinction is the point: the searches that never reached Exa
   // never cost anything, and printing the attempt here read as money spent.
@@ -185,6 +185,27 @@ ${
   }
 </div>
 </div>`
+    : ""
+}
+
+${
+  gemini
+    ? `<h2>What the letter fleet cost</h2>
+<p class="note">Letters are drafted <b>off this Worker</b>, on a maintainer's machine, against Vertex AI
+in ${esc(gemini.via || "")} under Application Default Credentials. The Worker holds no model credential
+of any kind and never has: it serves the letters that pass the check and the honest pending state for
+the ones that do not. ${esc(gemini.letters ?? 0)} letters from ${esc(gemini.calls ?? 0)} model calls,
+${(gemini.promptTokens ?? 0).toLocaleString("en-US")} tokens in and
+${(gemini.outputTokens ?? 0).toLocaleString("en-US")} out.</p>
+<div class="wlstat">
+  <span><b>${esc(gemini.letters ?? 0)}</b>letters</span>
+  <span><b>${esc(gemini.calls ?? 0)}</b>model calls</span>
+  <span><b>$${(gemini.estUsd ?? 0).toFixed(4)}</b>estimated</span>
+</div>
+<p class="note"><b>That dollar figure is an estimate and the Exa one is not.</b> Exa returns
+<code>costDollars</code> on every response, so its ledger is measured. Vertex bills out of band, so this
+is ${esc(gemini.basis || "arithmetic over token counts")}. Two numbers on one page that were arrived at
+differently should not be presented as though they were not.</p>`
     : ""
 }
 
