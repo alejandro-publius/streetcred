@@ -522,6 +522,37 @@ and its log entry no longer carries watchlist counts. Reading the stored record
 there would have put another run's numbers in this run's entry, which is the
 quieter version of the same problem.
 
+## Do not propose Workers AI for imagery again
+
+Piloted and rejected 2026-08-20. Recorded here as well as in
+`docs/ARCHITECTURE_DECISIONS.md` because the idea is attractive enough to be
+proposed twice: Workers AI is free on the plan this already deploys on, needs no
+key and no card, and its Flux models accept an input image, which is the one
+capability the proposed-fix panel actually requires. With Gemini imagery blocked
+on billing it looks like the obvious way out.
+
+**It is disqualified on text, not on quality.** Every Flux render garbled the
+street name signs, mangled the speed limit sign, and reproduced the Google
+watermark as "Corcle" or "Garage". An evidence product cannot publish a
+photograph of a named intersection carrying a fabricated street sign. No prompt
+fixes that.
+
+**The affordable model is a prototyping model.** `flux-2-klein-4b` is the only
+image-conditioned model cheap enough for a fleet at 109.57 neurons an image, and
+it is a fixed 4-step distilled model. The image-conditioned model with real
+headroom, `flux-2-dev`, is 4,219 neurons an image, which is two images a day
+against the 10,000 free, and it has the same text problem.
+
+**If the hazards panel is ever rebuilt, it is not a generation task.** The site
+already knows which hazards were confirmed and from which records. A computed
+SVG overlay on the untouched Street View frame would be free, instant, correctly
+placed and able to render a legible legend. Generating it replaces a checkable
+fact with a guess.
+
+The imagery lane stays on the Gemini path in `src/imagery.js`, pending billing.
+The pilot cost 767 neurons, zero dollars, zero KV writes and no deploy; its
+tooling was reverted and the model survey lives in the decision record.
+
 ## Contrast, measured for the operator's phone pass
 
 Measured 2026-08-20 during addendum stage 7B, from the resolved CSS rather than

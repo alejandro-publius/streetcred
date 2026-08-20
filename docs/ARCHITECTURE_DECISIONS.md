@@ -528,3 +528,59 @@ under the image, in the same words the site uses elsewhere.
 Source: `853dc03` (readme: before and after hero composite), `tools/make_readme_hero.py:12-14`
 and `:117-122`,
 README.md "Sharing and the city view" for the related share-card rule.
+
+## 2026-08-20: Workers AI image generation is rejected for the imagery lane, and the survey is kept so nobody proposes it again
+
+Workers AI ships with the account this already deploys on: an `env.AI` binding, 10,000 free
+neurons a day resetting 00:00 UTC, and Flux models that accept an input image. That last part
+is what made it worth an hour, because the proposed-fix panel has to be conditioned on the
+corner's real Street View frame and a text-to-image model cannot do it at any price. Gemini
+imagery has been blocked on billing for days. Free, keyless, already-bound image generation
+looked like the way out.
+
+It was piloted properly and it was rejected. The reason is specific and it is not going to be
+fixed by a better prompt.
+
+**Flux corrupts text.** Every render garbled the street name signs, mangled the speed limit
+sign, and reproduced the Google watermark as "Corcle" or "Garage". This product's entire
+argument is that every figure on it traces to a record a reader can check. A photograph of a
+named intersection carrying a fabricated street sign is the worst possible image for it to
+show, and it is the first thing anyone looking to discredit the site would find. That is
+disqualifying on its own, independent of render quality.
+
+**The hazards panel was the wrong shape of problem.** Asking a diffusion model to overlay
+hatching on specific roadway geometry produced a smear across building facades and sky, with
+an unreliable red versus amber distinction and no legend, because the legend needs legible
+text. The site already knows deterministically which hazards were confirmed at a corner and
+from which records. Generating that overlay throws a checkable fact away and replaces it with a
+plausible-looking guess, which is the same failure the letter verifier exists to prevent, in
+pixels rather than prose. If that panel is ever rebuilt it should be a computed SVG overlay on
+the untouched frame, not a generated image.
+
+**The model survey, kept so the arithmetic does not have to be redone.** Neurons per image at
+1024x640, which is four 512x512 tiles, with a 448x280 input frame:
+
+| Model | Image input | Rate | Neurons per image | Images per free day |
+|---|---|---|---|---|
+| `flux-2-klein-4b` | yes | 5.37 per input tile, 26.05 per output tile, fixed 4 steps | 109.57 | 91 |
+| `flux-2-dev` | yes, up to 4 | 18.75 per input tile per step, 37.50 per output tile per step | 4,218 at 25 steps | 2 |
+| `flux-2-klein-9b` | yes | 1363.64 first MP, 181.82 per input MP | 1,545 | 6 |
+| `leonardo/lucid-origin` | no | 636 per tile, 12 per step | 2,544 | 3 |
+| `leonardo/phoenix-1.0` | no | 530 per tile, 10 per step | 2,120 | 4 |
+| `flux-1-schnell` | no | 4.80 per tile, 9.60 per step | 57.6 at 4 steps | 173 |
+
+The two cheap models cannot see the corner. The one that is both image-conditioned and
+affordable, `flux-2-klein-4b`, is a fixed 4-step distilled model Cloudflare markets for rapid
+prototyping, and it renders like one. The image-conditioned model with real quality headroom,
+`flux-2-dev`, costs 4,219 neurons an image because its rate is charged per step, which is two
+images a day free and could never serve a 130 corner fleet.
+
+So the trade is: affordable and not good enough, or good enough and unaffordable, on top of a
+text-corruption problem that neither rung solves. The imagery lane stays on the Gemini path in
+`src/imagery.js`, pending billing, and that remains the only route to a shipped render.
+
+Cost of finding out: 767 neurons of the 10,000 free that day, zero dollars, zero KV writes, no
+deploy. The pilot tooling was reverted; this entry is what survives of it.
+
+Source: pilot at `6970dc5`, reverted. Verdict recorded 2026-08-20 by the operator after
+reviewing the six renders.
