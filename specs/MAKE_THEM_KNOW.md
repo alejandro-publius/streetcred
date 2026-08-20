@@ -49,6 +49,11 @@ rejected and why, which is the more interesting half.
 And it runs itself overnight: one corner audited every morning, and it
 commissions its own resident-voice scrapes while nobody is watching.
 
+The drafted letters are deliberately empty right now. I tightened the letter
+checker this week, nothing the site was serving could pass it, and every corner
+shows a pending state until real drafts are regenerated. The check that emptied
+the site is the same one that guarantees no letter can contradict its own page.
+
 If you think it deserves a vote, I would really appreciate yours. Genuinely
 curious what grade your corner gets.
 
@@ -64,18 +69,18 @@ https://streetcred.thealexschroeder.workers.dev/watchlist, not the hit list.
 
 ---
 
-My discovery pipeline read 104 San Francisco news articles this week and put
-four corners on a street-safety watchlist. The interesting half is the seven it
+My discovery pipeline read 101 San Francisco news articles this week and put
+five corners on a street-safety watchlist. The interesting half is the seven it
 threw away.
 
-"3rd and New Montgomery" is a real pair of San Francisco streets with no graded
+"Greenwich and Lombard" is a real pair of San Francisco streets with no graded
 crossing between them. "16th and 24th" are two streets that never meet.
 "Church and Market" was named in an article that turned out not to be about
 safety there. Each rejection is published with its reason, because a discovery
 pipeline that shows only its hits is indistinguishable from a search box that
 got lucky.
 
-A further 24 candidates were discarded before that, for naming no San Francisco
+A further 27 candidates were discarded before that, for naming no San Francisco
 street at all. News pages are full of capitalized pairs joined by "and", and
 "Metro Areas and Our Cities" looks exactly like an intersection to a pattern
 match. Every candidate is checked against a 2,219-name street index and then
@@ -95,6 +100,12 @@ Valencia bike lane, for 29 cents. Every run is in a public cost ledger, because
 an autonomous system spending real credit without one is the thing nobody
 should ship.
 
+One lane is deliberately empty while I write this. The letter verifier gained
+lane consistency and addressee rules this week, nothing the site was serving
+could pass them, and every corner now shows a pending state rather than a
+draft. The verifier that emptied the site is the same one that guarantees no
+letter can contradict its own page.
+
 https://streetcred.thealexschroeder.workers.dev/watchlist
 
 ---
@@ -112,19 +123,24 @@ https://streetcred.thealexschroeder.workers.dev/watchlist
 
 ## Superseded in part
 
-The judging submission copy now lives in `specs/SUBMISSION.md`, written
-2026-08-20 and aligned to the three criteria. Two claims in the posts above
-have moved since they were written and should be checked before either is
-pasted:
+The judging submission copy lives in `specs/SUBMISSION.md`, written 2026-08-20
+and aligned to the three criteria.
 
-- **Post 2 quotes a watchlist reading of 104 articles and four corners.** The
-  stored pass now reads 101 articles and five corners, and the searches figure
-  is 29 attempted against 7 completed rather than 29 run. Re-read `/watchlist`
-  before posting.
-- **Neither post mentions the letters.** Every corner now shows a pending
-  letter state after the verifier was tightened. That is defensible and
-  `specs/SUBMISSION.md` states it plainly, but a post that implies a drafted
-  letter is on screen would not survive a click.
+Both posts above were trued up on 2026-08-20 against the same stored records
+the README sections read from: the watchlist pass built 2026-08-20T13:11Z, which
+reads 101 articles, five corners, seven rejects and 27 discarded phrases, and
+the voices summary at 2026-08-20T13:10Z. Both now carry a line about the letter
+state.
+
+Two things to re-read before either is pasted:
+
+- **The watchlist figures move every morning.** Re-read `/watchlist` and swap
+  the numbers if the pass has run again. The named rejects come from the stored
+  reject list and change with it.
+- **The searches figure is not in either post and should stay out unless it can
+  be stated in full.** The stored pass reads 29 attempted against 7 completed,
+  and a post saying "29 searches" without the completion count would be the
+  exact claim the site was corrected for making.
 
 ## One caveat that survives
 
