@@ -351,7 +351,19 @@ if (IS_MAIN) {
         );
         writeFileSync(
           join(STAGE, `${slug}.pending.json`),
-          JSON.stringify({ slug, reasons, attempts, at: new Date().toISOString() }),
+          // The rejected draft is kept beside the reasons. Without it a pending
+          // corner is a complaint with no evidence: "the figure 12 does not
+          // appear in this corner's records" is not diagnosable unless you can
+          // read the sentence that said 12. Never published; stagedLetterFiles
+          // excludes anything matching .pending.
+          JSON.stringify({
+            slug,
+            reasons,
+            attempts,
+            at: new Date().toISOString(),
+            failures: (check.failures || []).slice(0, 12),
+            draft: text,
+          }),
         );
         results.push({ slug, state: "pending", reasons, attempts, usd, ...tokens });
         console.log(`  [${n}/${slugs.length}] ${slug}: PENDING after ${attempts}, ${reasons[0]?.slice(0, 80)}`);

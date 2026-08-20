@@ -632,3 +632,45 @@ So before this is built, decide:
 
 Source: coverage layer at `204387d`, which established the no-hull rule this
 would have to live beside.
+
+## 17. The head of the audit queue has never been worked, and it is not a slug collision
+
+Investigated 2026-08-20, during the enriched promotion batch. Recorded as a
+finding, nothing changed.
+
+The next seven corners in `cotd:queue`, in the order the daily cron reads them,
+have **no stored artifacts of any kind**: no `corner:` record, no `press:`, no
+`hazards:`, no `letter:verified:`, no `img:{slug}:today`, no `score:`.
+
+```
+arleta-and-bay-shore     harriet-and-harrison     2nd-and-tehama
+london-and-persia        bay-shore-and-silver     malden-and-tehama
+charter-oak-and-silver
+```
+
+The hypothesis worth ruling out was the known slug-collision class, where
+`19th Street` and `19th Avenue` resolve to slugs that look interchangeable and
+are not, so a corner appears absent while its records sit under a variant. It
+does not hold here. Checked against all 130 `corner:` records, only two produce
+a near-miss and both are genuinely different crossings rather than variants of
+the same one:
+
+```
+harriet-and-harrison   ->  KV has harriet-and-howard
+bay-shore-and-silver   ->  KV has bay-shore-and-blanken
+```
+
+The other five have no lookalike at all.
+
+The plainer explanation fits the evidence: the queue is 7,172 entries long, the
+cron audits one corner a morning, and it has run 23 times. The head of the queue
+is simply unworked. Nothing is lost or hidden.
+
+What this does mean, and it is the part worth acting on later: promoting a corner
+from the strict head of the queue is a **from-scratch enrichment**, not a
+promotion. It needs a Street View fetch, a press pass, a visual audit, voices
+commissioning and a letter, because none of those exist yet. That is a different
+and larger job than completing a corner that is already ENRICHED, and the two
+should not be planned as though they were the same size.
+
+Source: enriched promotion batch, 2026-08-20.
