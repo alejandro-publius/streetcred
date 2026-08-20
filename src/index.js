@@ -903,14 +903,6 @@ export async function ensureMonitors(env) {
 async function ensureMonitorsInner(env) {
   if (!env.WEBHOOK_SECRET) return { created: 0, reason: "no webhook secret installed" };
   if (!env.EXA_API_KEY) return { created: 0, reason: "no exa key installed" };
-  const existing = await getMonitors(env).catch(() => null);
-  if (existing?.list?.length) return { created: 0, reason: "already created", count: existing.list.length };
-  // Two page loads arriving together would both see no monitors and both
-  // create the full set. The lock is short and self-expiring: a crash halfway
-  // costs a five minute wait, not a permanent block.
-  const held = await env.STORE?.get("radar:creating").catch(() => null);
-  if (held) return { created: 0, reason: "creation already in flight" };
-  await env.STORE?.put("radar:creating", new Date().toISOString(), { expirationTtl: 300 }).catch(() => {});
 
   const rows = [];
   for (let page = 1; page <= 12; page += 1) {
@@ -927,35 +919,61 @@ async function ensureMonitorsInner(env) {
     ...META_QUERIES.map((q) => ({ kind: "meta", corridor: "citywide", query: q })),
   ];
 
+  // Partial progress is the design, not a fallback. Twenty nine sequential
+  // POSTs did not fit in a page load's budget: the run was killed partway,
+  // wrote nothing, and left a lock behind that made every later attempt report
+  // "already in flight" while nothing was in flight at all. So the set is
+  // created in parallel batches and stored after each one, and a run that dies
+  // costs at most the batch it was in.
+  const existing = await getMonitors(env).catch(() => null);
+  const list = [...(existing?.list || [])];
+  const done = new Set(list.map((m) => m.query));
+  const todo = plan.filter((m) => !done.has(m.query));
+  if (!todo.length) return { created: 0, reason: "already created", count: list.length };
+
   const url = `https://streetcred.thealexschroeder.workers.dev/api/radar/hook/${env.WEBHOOK_SECRET}`;
-  const list = [];
   const failed = [];
-  for (const m of plan) {
-    try {
-      const r = await fetch("https://api.exa.ai/monitors", {
-        method: "POST",
-        headers: { "x-api-key": env.EXA_API_KEY, "content-type": "application/json" },
-        body: JSON.stringify({
-          name: `streetcred ${m.kind} ${m.corridor}`.slice(0, 60),
-          search: { query: m.query, numResults: 5 },
-          webhook: { url },
-          metadata: { corridor: m.corridor, kind: m.kind },
-        }),
-      });
-      const d = await r.json().catch(() => null);
-      const id = d?.id || d?.monitorId || d?.data?.id;
-      if (!r.ok || !id) {
-        failed.push({ query: m.query, status: r.status, body: JSON.stringify(d).slice(0, 220) });
-        continue;
-      }
-      list.push({ id, query: m.query, corridor: m.corridor, kind: m.kind, createdAt: new Date().toISOString() });
-    } catch (e) {
-      failed.push({ query: m.query, error: String(e.message || e).slice(0, 120) });
+  const BATCH = 6;
+  let added = 0;
+
+  for (let i = 0; i < todo.length; i += BATCH) {
+    const batch = todo.slice(i, i + BATCH);
+    const made = await Promise.all(
+      batch.map(async (m) => {
+        try {
+          const r = await fetch("https://api.exa.ai/monitors", {
+            method: "POST",
+            headers: { "x-api-key": env.EXA_API_KEY, "content-type": "application/json" },
+            body: JSON.stringify({
+              name: `streetcred ${m.kind} ${m.corridor}`.slice(0, 60),
+              search: { query: m.query, numResults: 5 },
+              webhook: { url },
+              metadata: { corridor: m.corridor, kind: m.kind },
+            }),
+          });
+          const d = await r.json().catch(() => null);
+          const id = d?.id || d?.monitorId || d?.data?.id;
+          if (!r.ok || !id) {
+            failed.push({ query: m.query, status: r.status, body: JSON.stringify(d).slice(0, 220) });
+            return null;
+          }
+          return { id, query: m.query, corridor: m.corridor, kind: m.kind, createdAt: new Date().toISOString() };
+        } catch (e) {
+          failed.push({ query: m.query, error: String(e.message || e).slice(0, 140) });
+          return null;
+        }
+      }),
+    );
+    const ok = made.filter(Boolean);
+    if (ok.length) {
+      list.push(...ok);
+      added += ok.length;
+      // Stored every batch, so the next invocation resumes rather than restarts.
+      await putMonitors(env, { version: "v1", createdAt: existing?.createdAt || new Date().toISOString(), list });
     }
   }
-  if (list.length) await putMonitors(env, { version: "v1", createdAt: new Date().toISOString(), list });
-  await env.STORE?.delete("radar:creating").catch(() => {});
-  return { created: list.length, failed: failed.slice(0, 5), failedCount: failed.length };
+
+  return { created: added, total: list.length, remaining: plan.length - list.length, failed: failed.slice(0, 4), failedCount: failed.length };
 }
 
 // ---------------------------------------------------------------- radar webhook
@@ -1963,6 +1981,12 @@ export default {
               .map((k) => [k, Boolean(env[k])]),
           ),
           envKeyCount: Object.keys(env || {}).length,
+          // A length, never a value. An empty secret is bound, listed by
+          // wrangler, and reported as a successful upload, so "missing" and
+          // "present but empty" look identical from every angle except this
+          // one. Diagnosing that as a deployment-versions problem cost six
+          // deploys and a confident wrong answer.
+          webhookSecretLength: String(env.WEBHOOK_SECRET || "").length,
           setup: await env.STORE?.get("radar:setup", "json").catch(() => null),
           burnHitRate: burnChecked ? Math.round((burn.withCoverage / burnChecked) * 1000) / 10 : null,
         };
