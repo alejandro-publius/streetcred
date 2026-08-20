@@ -892,10 +892,25 @@ ${signoff}`,
 // cron can call it every morning and it will do nothing every morning after
 // the first.
 export async function ensureMonitors(env) {
+  const out = await ensureMonitorsInner(env);
+  // Written every time, success or not. This ran three times inside
+  // waitUntil with its reason thrown away, which looks identical from the
+  // outside to it never running at all.
+  await env.STORE?.put("radar:setup", JSON.stringify({ ...out, at: new Date().toISOString() })).catch(() => {});
+  return out;
+}
+
+async function ensureMonitorsInner(env) {
   if (!env.WEBHOOK_SECRET) return { created: 0, reason: "no webhook secret installed" };
   if (!env.EXA_API_KEY) return { created: 0, reason: "no exa key installed" };
   const existing = await getMonitors(env).catch(() => null);
   if (existing?.list?.length) return { created: 0, reason: "already created", count: existing.list.length };
+  // Two page loads arriving together would both see no monitors and both
+  // create the full set. The lock is short and self-expiring: a crash halfway
+  // costs a five minute wait, not a permanent block.
+  const held = await env.STORE?.get("radar:creating").catch(() => null);
+  if (held) return { created: 0, reason: "creation already in flight" };
+  await env.STORE?.put("radar:creating", new Date().toISOString(), { expirationTtl: 300 }).catch(() => {});
 
   const rows = [];
   for (let page = 1; page <= 12; page += 1) {
@@ -930,7 +945,7 @@ export async function ensureMonitors(env) {
       const d = await r.json().catch(() => null);
       const id = d?.id || d?.monitorId || d?.data?.id;
       if (!r.ok || !id) {
-        failed.push({ query: m.query, status: r.status, body: JSON.stringify(d).slice(0, 140) });
+        failed.push({ query: m.query, status: r.status, body: JSON.stringify(d).slice(0, 220) });
         continue;
       }
       list.push({ id, query: m.query, corridor: m.corridor, kind: m.kind, createdAt: new Date().toISOString() });
@@ -939,6 +954,7 @@ export async function ensureMonitors(env) {
     }
   }
   if (list.length) await putMonitors(env, { version: "v1", createdAt: new Date().toISOString(), list });
+  await env.STORE?.delete("radar:creating").catch(() => {});
   return { created: list.length, failed: failed.slice(0, 5), failedCount: failed.length };
 }
 
@@ -1925,9 +1941,29 @@ export default {
         // The burn's hit rate is shown beside the radar's, labelled as the
         // separate question it is: the worst corners in the city against this
         // week's news is not one population.
+        // Self healing, once. The operator installing a webhook secret is the
+        // signal of intent; nothing else is needed and nobody has to hold the
+        // secret a second time to make the radar exist. Idempotent and locked,
+        // so a busy minute cannot create the set twice.
+        if (!monitors?.list?.length && env.WEBHOOK_SECRET) {
+          ctx.waitUntil(ensureMonitors(env).catch(() => null));
+        }
         const burnChecked = burn?.done || 0;
         const radar = {
           feed, monitors, budget, burnChecked,
+          // A boolean, never the value. Whether the Worker can see the secret
+          // is the difference between "the radar is broken" and "the radar is
+          // waiting", and that is worth being able to ask from outside.
+          hasWebhookSecret: Boolean(env.WEBHOOK_SECRET),
+          // Booleans only, never values. Which secrets the runtime can see
+          // separates "wrangler did not attach it" from "this code is looking
+          // in the wrong place", and guessing between those cost four deploys.
+          secretsVisible: Object.fromEntries(
+            ["EXA_API_KEY", "APIFY_TOKEN", "GEMINI_API_KEY", "GOOGLE_MAPS_API_KEY", "WATCHDOG_INGEST_TOKEN", "WEBHOOK_SECRET"]
+              .map((k) => [k, Boolean(env[k])]),
+          ),
+          envKeyCount: Object.keys(env || {}).length,
+          setup: await env.STORE?.get("radar:setup", "json").catch(() => null),
           burnHitRate: burnChecked ? Math.round((burn.withCoverage / burnChecked) * 1000) / 10 : null,
         };
         if (p === "/api/radar") return json(radar);
