@@ -47,3 +47,11 @@ Not included, deliberately:
     The official press-kit archive linked from cloudflare.com/press-kit contains
     only JPG and PNG, no SVG. The file above is the mark Cloudflare serves from
     its own root domain, and it carries a <title>Cloudflare logo</title>.
+
+datasf.svg
+  Not an official asset. DataSF publishes no logo file, so the stacked
+  wordmark is recreated as type: "Data" over "SF" in a slab stack with a
+  serif fallback, set with textLength so it keeps its proportions on a
+  system without a slab face. Source attribution for data.sfgov.org, the
+  same as every other mark in the row. Replace with an official file if one
+  is ever published.

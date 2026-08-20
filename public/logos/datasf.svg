@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 62 44" role="img" aria-label="DataSF">
+  <title>DataSF</title>
+  <!-- Recreated as type, not a screenshot. A slab stack with a serif fallback,
+       and no hotlinked font: an external SVG in an img element renders with
+       whatever the reader's system has, so textLength pins both lines to the
+       same measure and the mark keeps its proportions wherever it lands. -->
+  <g fill="#0A0A0A" font-family="Rockwell, 'Rockwell Nova', 'Museo Slab', 'Roboto Slab', 'Zilla Slab', 'Bitter', Georgia, 'Times New Roman', serif" font-weight="700">
+    <text x="0" y="19" font-size="22" textLength="62" lengthAdjust="spacingAndGlyphs">Data</text>
+    <text x="0" y="41" font-size="22" textLength="30" lengthAdjust="spacingAndGlyphs">SF</text>
+  </g>
+</svg>

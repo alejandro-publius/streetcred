@@ -852,6 +852,46 @@ export async function getPressCitations(env) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+// Audited, and audited with imagery: one source of truth.
+//
+// "23 fully audited" was one number doing two jobs. A corner whose records,
+// press, voices and hazard lanes all ran but whose two generated frames never
+// landed is audited in every sense the page means except the one the imagery
+// panel shows, and calling it the same thing as a complete corner makes the
+// homepage claim something the corner page then contradicts.
+//
+// Counted from the imagery records rather than a roster somebody maintains, so
+// when the imagery lane backfills a corner it promotes itself and the copy
+// goes back to the simpler sentence without anybody editing it.
+export const AUDIT_TIER_CACHE_S = 6 * 3600;
+
+export async function recountAuditTiers(env, roster) {
+  const slugs = Array.isArray(roster) ? roster : [];
+  let fullyAudited = 0;
+  const pending = [];
+  for (const slug of slugs) {
+    const img = await getImageryStatus(env, slug).catch(() => null);
+    const states = img?.states || [];
+    if (states.includes("hazards") && states.includes("fix")) fullyAudited += 1;
+    else pending.push(slug);
+  }
+  const rec = {
+    fullyAudited,
+    textAudited: pending.length,
+    total: slugs.length,
+    pending: pending.slice(0, 40),
+    at: new Date().toISOString(),
+  };
+  await rawPut(env, "audit:tiers", JSON.stringify(rec));
+  return rec;
+}
+
+export async function getAuditTiers(env) {
+  const raw = await rawGet(env, "audit:tiers");
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
 // ---------------------------------------------------------------- radar
 
 // The radar's own budget, deliberately separate from the burn counter. They

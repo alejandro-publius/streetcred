@@ -22,6 +22,7 @@ import {
   getPress, putPress, getPressRollup, bumpPressRollup, getBurnCheckpoint, putBurnCheckpoint,
   radarBudget, countRadarDetection, getMonitors, putMonitors, getRadarFeed, pushRadarFeed, putRadarUnknown,
   recountPressCitations, getPressCitations, CITATION_CACHE_S,
+  recountAuditTiers, getAuditTiers, AUDIT_TIER_CACHE_S,
 } from "./store.js";
 import {
   judge, resultsFrom, monitorIdFrom, RADAR_VERSION,
@@ -2118,7 +2119,7 @@ export default {
         if (legacy) {
           return Response.redirect(`${origin}/c/${canonicalSlug(legacy)}`, 301);
         }
-        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist, voicesSummary, pressSummary, pressRoll, pressCites, actorCosts] = await Promise.all([
+        const [corners, cotdLog, suggestion, meta, rank0, queue, watchlist, voicesSummary, pressSummary, pressRoll, pressCites, auditTiers, actorCosts] = await Promise.all([
           getHinList(env),
           getCotdLog(env).catch(() => []),
           // Read only. The homepage must never wait on a findSimilar call, so
@@ -2134,6 +2135,7 @@ export default {
           env.STORE?.get("press:summary", "json").catch(() => null) ?? null,
           getPressRollup(env).catch(() => null),
           getPressCitations(env).catch(() => null),
+          getAuditTiers(env).catch(() => null),
           getActorCosts(env).catch(() => []),
         ]);
         const city = meta
@@ -2192,6 +2194,12 @@ export default {
         // what happened after it was added. Recounted in the background when
         // the cache ages out, so a page load never waits on a scan and never
         // shows a figure it cannot date.
+        // Same pattern as the citation count: refreshed in the background when
+        // it ages out, so a page load never waits on a scan of the roster and
+        // never shows a split it cannot date.
+        const tiersFresh =
+          auditTiers && Date.now() - Date.parse(auditTiers.at || 0) < AUDIT_TIER_CACHE_S * 1000;
+        if (!tiersFresh) ctx.waitUntil(recountAuditTiers(env, meta?.audited || []).catch(() => {}));
         const citesFresh =
           pressCites && Date.now() - Date.parse(pressCites.at || 0) < CITATION_CACHE_S * 1000;
         if (!citesFresh) ctx.waitUntil(recountPressCitations(env).catch(() => {}));
@@ -2200,7 +2208,7 @@ export default {
           checkCitations: pressCites?.citations || 0,
           asOf: fmtAsOf(pressCites?.at || pressRoll?.updated || pressSummary?.at),
         };
-        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressTile, spendUsd, embed), {
+        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressTile, spendUsd, embed, auditTiers), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }

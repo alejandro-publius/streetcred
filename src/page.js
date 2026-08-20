@@ -292,10 +292,19 @@ export const HERO_CORNER = (e) => {
       : `Most recent audit, ${esc(e.date)}`
   }${e.partial ? ", with some lanes degraded" : ""}</p>
   ${stage}
-  <!-- Non negotiable and never behind a tooltip: the render is AI generated and
-       says so, in the same sentence the footer uses, directly under the image
-       rather than after the controls, so a phone shows it without a scroll. -->
-  <p class="hcdisclaim">${AI_DISCLAIMER}</p>
+  ${
+    // The sentence is about the proposed fix, so it appears when the proposed
+    // fix does and not otherwise. On a corner whose render was never generated
+    // it disclaimed an image that is not on the page, which reads as a site
+    // hedging by reflex rather than telling you something about what you are
+    // looking at. Still never behind a tooltip, still directly under the image
+    // so a phone shows it without a scroll, and it follows the view: hidden on
+    // the unedited photograph and on the hazard overlay, both of which have
+    // their own honest captions.
+    frames.fix
+      ? `<p class="hcdisclaim" id="hcdisc"${compare === "fix" ? "" : " hidden"}>${AI_DISCLAIMER}</p>`
+      : ""
+  }
   ${
     // Audited from the records with no visual audit generated. The photograph
     // is real and stays; the page says what is missing rather than letting the
@@ -328,6 +337,8 @@ ${SLIDER_JS}
   btns.forEach(function(b){
     b.addEventListener("click",function(){
       var st=b.getAttribute("data-state");
+      var disc=root.querySelector("#hcdisc");
+      if(disc) disc.hidden = st!=="fix";
       if(st==="today"){ stage.classList.add("single"); }
       else{
         stage.classList.remove("single");
@@ -1495,7 +1506,7 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
     <div><span class="lg"><img src="/logos/apify.svg" alt="Apify" width="87" height="24" loading="lazy"><b>Apify</b></span>Scrapes what residents say on Reddit and Google Maps</div>
     <div><span class="lg"><img src="/logos/googlemaps.svg" alt="Google Maps" width="24" height="24" loading="lazy"><b>Google Maps</b></span>Street View frames, the corner thumbnail, and the city map</div>
     <div><span class="lg"><img src="/logos/cloudflare.svg" alt="Cloudflare" width="52" height="24" loading="lazy"><b>Cloudflare</b></span>Workers serve the page, KV holds corners, imagery and grades</div>
-    <div><span class="lg"><b>DataSF</b></span>Collisions and 311, queried by radius around the corner</div>
+    <div><span class="lg"><img src="/logos/datasf.svg" alt="DataSF" width="34" height="24" loading="lazy"><b>DataSF</b></span>Collisions and 311, queried by radius around the corner</div>
   </div>
   </div>
 </div>

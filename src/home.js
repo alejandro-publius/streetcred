@@ -100,7 +100,7 @@ function severityLine(c) {
   return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
 
-export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null, press = null, spendUsd = null, embed = null) => {
+export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null, press = null, spendUsd = null, embed = null, tiers = null) => {
   // A corner without finite geometry poisons every pin: fitView produces a NaN
   // center and every overlay lands at left:NaN%. One bad row on the board must
   // cost that row its pin, not the whole map its anchors. It happened: a board
@@ -119,10 +119,19 @@ export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview
   // its own contents drifts the moment a layer fails to load.
   const scored = city?.meta?.totalScored ?? 0;
   const auditedCount = city?.meta?.totalAudited ?? ranked.length;
+  // One source of truth for the two audited numbers, used by the subtitle, the
+  // stat tile, the ticker and the map alt text. A corner counts as fully
+  // audited only when both generated frames are stored; the rest are audited
+  // from the records with imagery pending. When the imagery lane backfills,
+  // textAudited falls to zero and every sentence below degrades back to the
+  // simpler one without an edit.
+  const fullyAudited = typeof tiers?.fullyAudited === "number" ? tiers.fullyAudited : auditedCount;
+  const textAudited = typeof tiers?.textAudited === "number" ? tiers.textAudited : 0;
   const n = (v) => Number(v).toLocaleString("en-US");
+  const pendingClause = textAudited ? `${n(textAudited)} more with imagery pending, ` : "";
   const scopeLine = scored
-    ? `${n(scored)} intersections graded citywide, ${n(auditedCount)} fully audited, one more every morning.`
-    : `${ranked.length} intersections fully audited, one more every morning.`;
+    ? `${n(scored)} intersections graded citywide, ${n(fullyAudited)} fully audited, ${pendingClause}one attempted every morning.`
+    : `${n(fullyAudited)} intersections fully audited, ${pendingClause}one attempted every morning.`;
   const board = city?.top?.length ? city.top : ranked;
   const boardIsCity = Boolean(city?.top?.length);
   // Built from the same live count the page prints, never a second copy of it.
@@ -283,7 +292,7 @@ ${HERO_CORNER(embed)}
 </div>
 ${STATBAND({
   scored,
-  audited: auditedCount,
+  audited: fullyAudited,
   headlines: (press?.headlines || 0) + (press?.checkCitations || 0),
   headlinesAsOf: press?.asOf || null,
   spendUsd,
@@ -305,7 +314,9 @@ ${
           (e) =>
             `<a class="cotdi" href="/c/${esc(e.slug)}" title="${esc(e.name || e.slug)}, ${esc(e.date)}"><i class="g${esc(e.grade || "A")}"></i><span>${esc(String(e.date).slice(5))}</span></a>`,
         )
-        .join("")}<span class="cotdc">${runs.length} audited without a human so far</span></div>`
+        .join("")}<span class="cotdc">${runs.length} audited without a human so far${
+          textAudited ? `, ${n(textAudited)} still waiting on imagery` : ""
+        }</span></div>`
     : ""
 }`
     : ""
@@ -321,7 +332,9 @@ ${
   ranked.length
     ? `<div class="hero-map" id="map">
   <img src="/citymap.jpg" width="${MAP_W}" height="${MAP_H}"
-    alt="Map of San Francisco with ${ranked.length} graded intersections marked">
+    alt="Map of San Francisco with ${n(scored || ranked.length)} graded intersections marked, ${n(fullyAudited)} fully audited${
+      textAudited ? ` and ${n(textAudited)} with imagery pending` : ""
+    }">
   ${ranked
     .map((c) => {
       const p = pinPosition(c, view);
