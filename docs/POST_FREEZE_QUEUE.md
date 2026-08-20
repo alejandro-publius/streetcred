@@ -674,3 +674,45 @@ and larger job than completing a corner that is already ENRICHED, and the two
 should not be planned as though they were the same size.
 
 Source: enriched promotion batch, 2026-08-20.
+
+## 18. The local render tool cannot publish, and the enriched label has nowhere to live
+
+`tools/promote_corners.mjs --publish` is documented in the tool's own header and
+does nothing. `DO_PUBLISH` is read once, to decide whether the run is plan-only,
+and there is no publish phase after it. A render that passes the legibility gate
+is written to `scratch/imagery/{slug}.fix.jpg` and stops there.
+
+Nothing is wrong on the site today, because every render attempted on
+2026-08-20 was held and none was eligible to publish. It becomes blocking the
+moment one passes, which is what tomorrow's retry is for.
+
+What a render publish actually needs, from `src/store.js`:
+
+```
+img:{slug}:fix     the JPEG bytes, via putImage(env, slug, "fix", bytes)
+imgstatus:{slug}   JSON whose `states` array includes "fix", MERGED with the
+                   corner's existing states rather than replacing them
+```
+
+Two writes per corner, so the daily KV allowance is the constraint on a batch,
+not the model.
+
+The second half is the part that needs a decision rather than code. The ruling of
+2026-08-20 was that the seven corners promoted out of the enriched pool keep the
+ENRICHED tier and carry a render **labeled honestly as promoted from enriched**.
+`promote_corners.mjs` writes `promotedFrom: "enriched"` into a local
+`{slug}.meta.json`, and nothing in `src/` reads that file, that key, or that
+field. The `imgstatus` schema has no room for it. So the label exists only on the
+maintainer's disk, and a promoted render published through the plumbing above
+would appear on the corner page indistinguishable from one of the 23 audited
+corners' renders, which is the exact confusion the ruling was written to prevent.
+
+Sequence matters here: the label needs a home in `imgstatus` and a rendering on
+the corner page BEFORE the first promoted render publishes, not after. Publishing
+first and labelling second means a window in which the site overstates what it
+audited.
+
+Coverage is unaffected either way and stays 23 discs. A promoted render does not
+make a corner audited, which is the whole point of ruling 1.
+
+Source: publish close-out, 2026-08-20.
