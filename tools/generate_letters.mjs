@@ -181,7 +181,10 @@ async function laneData(slugs) {
     keys.push(`corner:${s}`, `score:${s}`, `press:${s}`, `voices:${s}`, `timeline:${s}`, `hazards:${s}`);
   }
   const rec = {};
-  const CHUNK = 300;
+  // The bulk get endpoint refuses more than 100 keys per request, which it
+  // reports as code 10029 rather than by truncating. 132 corners at six records
+  // each is 792 keys, so this is eight calls and not one.
+  const CHUNK = 100;
   for (let i = 0; i < keys.length; i += CHUNK) {
     Object.assign(rec, bulkGet(keys.slice(i, i + CHUNK)));
   }
