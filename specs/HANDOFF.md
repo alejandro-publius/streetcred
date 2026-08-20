@@ -498,6 +498,25 @@ each query's last-run date, rather than silently truncating. That guard exists
 because the set grew from 7 to 29 once already and nothing followed it; the
 whole failure was that growth was invisible.
 
+**A second ceiling, found while verifying this one.** The KV daily write cap is
+account-wide and separate from anything above: Cloudflare free tier allows 1,000
+KV writes a day, resetting at 00:00 UTC. On 2026-08-20 it was exhausted by
+roughly 17:00 UTC and the first manual watchlist run refused with `KV put()
+limit exceeded for the day`, from `reserveExa`, before a single Exa search was
+made. Nothing was spent and nothing was written, which is the lane degrading
+exactly as it should, but it is a real limit on when this can run.
+
+The 13:20 UTC cron fires 13 hours 20 minutes into the UTC day rather than at the
+end of it, so it has the day's allowance largely ahead of it. That is the reason
+to leave it where it is. Check the headroom before triggering a run by hand:
+
+```
+npx wrangler kv key put "diag:kvprobe" ok --binding STORE --remote
+```
+
+A `code: 10048` back means the cap is gone for the day and the watchlist run
+will refuse. It is not a reason to retry: wait for 00:00 UTC.
+
 **What the audit no longer does.** `cornerOfTheDay` does not build the watchlist
 and its log entry no longer carries watchlist counts. Reading the stored record
 there would have put another run's numbers in this run's entry, which is the
