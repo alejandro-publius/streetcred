@@ -418,6 +418,32 @@ deliberately, so it reads exactly what production reads; that also means the
 lanes that write to KV write to the real store, which is why verification on it
 reads pages and never touches the imagery lane.
 
+## Polish pass 2 rollback (addendum stages 7B, 7C, 7D)
+
+Addendum pass of 2026-08-20: visual and copy layer, plus deterministic verifier
+rules. No scoring, data, API behaviour, cron or cap changed. Zero model calls,
+zero billable calls. Built on branch `polish/pass-2` from main, verified on the
+preview Worker before main was touched.
+
+**Production deployment live before this pass:**
+`a044a0af-cdaa-46ab-86ca-e52bffc3fd36`, deployed 2026-08-20T04:19:47Z.
+
+**Path A, instant:**
+
+```
+npx wrangler rollback a044a0af-cdaa-46ab-86ca-e52bffc3fd36
+```
+
+**Path B, from source:**
+
+```
+git checkout pre-polish-aug18 && npx wrangler deploy
+```
+
+The tag `pre-polish-aug18` is permanent. Do not delete it. Note that Path B
+reverts all the way to the pre-polish-1 state, not to this pass's predecessor;
+Path A is the correct rollback for this pass, and Path B is the floor.
+
 ## Deferred from polish pass
 
 - **`score:24th-and-valencia` is stored at v1** while the scoring code is at v3,
