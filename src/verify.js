@@ -34,7 +34,7 @@ const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").tr
 // Everything the letter is permitted to assert, assembled from the same objects
 // the prompt was built from. If a fact is not in here, the letter may not state
 // it, which is the entire contract.
-export function buildInputSet({ corner, stats, score, news, timeline, supervisor, voices, district }) {
+export function buildInputSet({ corner, stats, score, news, timeline, supervisor, voices, district, hazards }) {
   const numbers = new Set();
   const addNum = (n) => {
     const v = typeof n === "number" ? n : parseInt(n, 10);
@@ -63,6 +63,31 @@ export function buildInputSet({ corner, stats, score, news, timeline, supervisor
   addNum(5);
   addNum(150);
   addNum(80);
+  // The hazard lane counts 311 over twelve months where the stats tiles count
+  // three years, and it says so in h.detail: "3 street-condition 311 reports in
+  // 12 months". The window travels with the number, so the window is a sourced
+  // constant too.
+  addNum(12);
+
+  // The hazard lane's own evidence figures.
+  //
+  // The prompt does not merely mention these, it hands them to the model inside
+  // h.detail and instructs it to "present this as documented": "3
+  // street-condition 311 reports in 12 months", "5 pedestrian crossing
+  // collisions in 5 years". They were never in the sourced set, so a draft that
+  // did exactly what the prompt asked was rejected for citing an unsupported
+  // figure. Sixteen of the first fleet run's twenty-one number failures traced
+  // here. Same class as the missing 80 above, and larger.
+  for (const h of hazards?.items || []) {
+    addNum(h?.reports311);
+    addNum(h?.crossingCollisions);
+  }
+
+  // The district the letter states, from whichever source resolved it. stats
+  // .district was listed; a corner whose district comes off its own record was
+  // not, so "in District 4" failed at exactly those corners.
+  addNum(district);
+  addNum(corner?.district);
 
   addNum(timeline?.firstReportedYear);
   addNum(timeline?.yearsReported);

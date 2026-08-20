@@ -68,6 +68,9 @@ const DO_PLAN = has("--plan") || args.length === 0;
 const DO_GENERATE = has("--generate");
 const DO_PUBLISH = has("--publish");
 const LIMIT = Number(argOf("limit", "0")) || 0;
+// A named subset, for re-running exactly the corners a fix should have
+// unblocked without paying for the ones that already passed.
+const ONLY = (argOf("only", "") || "").split(",").map((x) => x.trim()).filter(Boolean);
 
 // The Workers free plan allows 1,000 KV writes a day, account wide, resetting
 // 00:00 UTC. The site spends some of that on its own crons, so the run reserves
@@ -168,7 +171,8 @@ function fleet() {
   const meta = bulkGet(["city:meta"])["city:meta"];
   if (!meta) throw new Error("city:meta is missing, so there is no authoritative roster to read");
   const slugs = [...new Set([...(meta.audited || []), ...(meta.enriched || [])])].sort();
-  return { meta, slugs: LIMIT ? slugs.slice(0, LIMIT) : slugs };
+  const chosen = ONLY.length ? slugs.filter((s) => ONLY.includes(s)) : slugs;
+  return { meta, slugs: LIMIT ? chosen.slice(0, LIMIT) : chosen };
 }
 
 // Everything the prompt and the verifier need, read from the records the Worker
@@ -288,6 +292,7 @@ if (IS_MAIN) {
         news: ctx.news,
         timeline: ctx.timeline,
         voices: ctx.voices,
+        hazards: ctx.hazards,
         district,
         supervisor: district ? built.supervisor : null,
       });

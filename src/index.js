@@ -724,6 +724,9 @@ async function getLetter(c, env, ctx) {
     // it here is what lets the verifier refuse a letter that describes what
     // residents said at a corner where nobody said anything.
     voices: ctx.voices,
+    // The prompt quotes h.detail and tells the model to present it as
+    // documented, so the figures inside it have to be sourced.
+    hazards: ctx.hazards,
   });
 
   let text = await draft();

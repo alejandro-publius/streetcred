@@ -83,24 +83,24 @@ export function compareRegion(inputText, renderText, expect) {
       : { verdict: "degraded", why: `source reads ${expect}, render reads ${JSON.stringify(renderText.slice(0, 40))}` };
   }
 
-  if (a.length < 4) return { verdict: "unchecked", why: "the source frame yields no text here" };
-  // Token overlap rather than string equality: OCR noise moves characters
-  // around, and requiring an exact match would fail on undamaged renders.
-  const at = new Set(String(inputText).toLowerCase().match(/[a-z]{3,}/g) || []);
-  const bt = new Set(String(renderText).toLowerCase().match(/[a-z]{3,}/g) || []);
-  if (!at.size) return { verdict: "unchecked", why: "no word-shaped tokens in the source" };
-  const kept = [...at].filter((t) => bt.has(t));
-  return kept.length
-    ? { verdict: "ok", why: `${kept.length} of ${at.size} source tokens survived` }
-    : { verdict: "degraded", why: `none of ${at.size} source tokens survived` };
+  return { verdict: "unchecked", why: "no expected text supplied for this region" };
 }
 
 // Run both regions over a pair of image buffers. `readRegion` is injected so the
 // caller owns image decoding and this module stays testable without pixels.
-export async function checkLegibility({ inputRead, renderRead }) {
+export async function checkLegibility({ inputRead, renderRead, expectStreets = [] }) {
   const out = {};
   out.watermark = compareRegion(inputRead.watermark, renderRead.watermark, "Google");
-  out.signage = compareRegion(inputRead.signage, renderRead.signage, null);
+  // Signage is checked ONLY against text we independently know belongs there:
+  // this corner's own street names. The first version compared any three-letter
+  // run in the source OCR against the render's, and on a 640x400 frame the
+  // source "text" is mostly noise. It read 'N', 'as.', 'Ce', '"rst', 'aa' off a
+  // clean photograph, called those six tokens, and then held the render for not
+  // reproducing them. Comparing noise to noise and calling the difference
+  // corruption is worse than not checking: it manufactures findings.
+  out.signage = expectStreets && expectStreets.length
+    ? compareRegion(inputRead.signage, renderRead.signage, expectStreets[0])
+    : { verdict: "unchecked", why: "no street name legible in the source frame to check against" };
 
   const degraded = Object.entries(out).filter(([, v]) => v.verdict === "degraded");
   const checked = Object.entries(out).filter(([, v]) => v.verdict !== "unchecked");

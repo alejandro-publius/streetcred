@@ -216,6 +216,9 @@ export async function handleAgentReport(request, env, deps) {
     // agent submits that describes resident accounts is describing a lane it
     // never ran.
     voices: null,
+    // The agent posts no hazards lane either, so any audit figure it cites is
+    // unsourced by the same argument.
+    hazards: null,
     supervisor: stats?.district ? supervisorFor(stats.district) : null,
   });
   const check = verifyLetter(record.text, inputSet);
