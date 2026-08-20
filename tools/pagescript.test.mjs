@@ -265,3 +265,33 @@ test("the hero embed never renders imagery it does not have", () => {
   assert.ok(!/id="hchero"/.test(html), "no stage without a photograph");
   assert.match(html, /class="hcnone"/, "the designed pending card instead");
 });
+
+// The hero must always be able to show the slider, and the site must always be
+// able to say it ran this morning. When those are two different corners, both
+// facts belong on the page; when they are the same corner, the second line has
+// to disappear on its own.
+test("the date line drops the morning claim when the corner is not today's", () => {
+  const F = { today: "/t.jpg", hazards: "/h.jpg", fix: "/f.jpg" };
+  const today = homeWith({ ...EMBED, frames: F, auditedToday: true, date: "2026-08-20" });
+  assert.match(today, /Audited autonomously this morning, 2026-08-20/);
+  const older = homeWith({ ...EMBED, frames: F, auditedToday: false, date: "2026-08-18" });
+  assert.match(older, /Audited autonomously 2026-08-18/);
+  assert.ok(!/this morning, 2026-08-18/.test(older), "an older audit may not claim this morning");
+  // Never the old wording, which read as a hedge rather than a date.
+  assert.ok(!/Most recent audit/.test(older));
+});
+
+test("the drumbeat names today's corner only while it is not the featured one", () => {
+  const F = { today: "/t.jpg", hazards: "/h.jpg", fix: "/f.jpg" };
+  const split = homeWith({
+    ...EMBED, frames: F, auditedToday: false, date: "2026-08-18",
+    alsoToday: { slug: "6th-and-jessie", name: "6th and Jessie" },
+  });
+  assert.match(split, /This morning the machine audited <a href="\/c\/6th-and-jessie">6th and Jessie<\/a>, imagery pending\./);
+  // The collapse is the absence of configuration: no alsoToday, no line.
+  const merged = homeWith({ ...EMBED, frames: F, auditedToday: true, date: "2026-08-20" });
+  // Matched on the markup, not the class name: the stylesheet also contains
+  // the string, so a bare /hcalso/ was asserting against BASE_CSS.
+  assert.ok(!/class="hcalso"/.test(merged), "one corner means one claim and no extra line");
+  assert.match(merged, /class="shdl"/, "and the slider is still there");
+});

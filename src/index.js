@@ -2152,35 +2152,78 @@ export default {
         // KV that the audit pipeline already wrote: no provider call happens
         // here, and the frames are stored bytes served by /gen.
         const embed = await (async () => {
-          const latest = [...(cotdLog || [])].filter((e) => e && e.slug).pop();
-          if (!latest) return null;
-          const [ec, escore, ecred, eimg] = await Promise.all([
-            cornerBySlug(env, latest.slug).catch(() => null),
-            getScore(env, latest.slug, SCORE_VERSION).catch(() => null),
-            getCredCached(env, latest.slug, CRED_VERSION).catch(() => null),
-            getImageryStatus(env, latest.slug).catch(() => null),
+          const log = [...(cotdLog || [])].filter((e) => e && e.slug);
+          if (!log.length) return null;
+          const newest = log[log.length - 1];
+
+          // The hero features the newest corner that actually has both frames,
+          // not simply the newest corner. The embed's whole point is the drag
+          // slider, and a slider needs two panes: featuring a corner whose
+          // imagery lane has not returned puts a pending card where the product
+          // demonstration should be. Bounded walk backwards, because the log is
+          // long and this runs on every homepage load.
+          const WALK = 20;
+          let featured = null;
+          let fimg = null;
+          for (let i = log.length - 1; i >= 0 && i >= log.length - WALK; i -= 1) {
+            const img = await getImageryStatus(env, log[i].slug).catch(() => null);
+            const st = img?.states || [];
+            if (st.includes("hazards") && st.includes("fix")) {
+              featured = log[i];
+              fimg = img;
+              break;
+            }
+          }
+          // Nothing in living memory has both frames. Fall back to the newest
+          // rather than showing nothing: a text-only hero is worse than a
+          // slider and better than a hole.
+          if (!featured) {
+            featured = newest;
+            fimg = await getImageryStatus(env, newest.slug).catch(() => null);
+          }
+
+          const [ec, escore, ecred] = await Promise.all([
+            cornerBySlug(env, featured.slug).catch(() => null),
+            getScore(env, featured.slug, SCORE_VERSION).catch(() => null),
+            getCredCached(env, featured.slug, CRED_VERSION).catch(() => null),
           ]);
-          const states = eimg?.states || [];
-          const base = `/gen/${latest.slug}`;
+          const states = fimg?.states || [];
+          const base = `/gen/${featured.slug}`;
           // A frame is only offered if it is actually stored. The embed never
           // borrows another corner's imagery and never re-shows yesterday's.
           const frames = {
-            today: eimg && eimg.status !== "nocoverage" ? `${base}/today.jpg` : null,
+            today: fimg && fimg.status !== "nocoverage" ? `${base}/today.jpg` : null,
             hazards: states.includes("hazards") ? `${base}/hazards.jpg` : null,
             fix: states.includes("fix") ? `${base}/fix.jpg` : null,
           };
           const hasGenerated = Boolean(frames.hazards || frames.fix);
+
+          // The drumbeat. If the machine ran this morning and produced a corner
+          // the hero is not showing, both facts belong on screen: the slider
+          // that shows what the product does, and the proof it ran today. When
+          // the imagery lane returns and the newest audit has frames again,
+          // featured and newest are the same corner and this disappears with no
+          // configuration anywhere.
+          const today = pacificDay();
+          const alsoToday =
+            newest.slug !== featured.slug && newest.date === today
+              ? { slug: newest.slug, name: newest.name || newest.slug }
+              : null;
+
           return {
-            slug: latest.slug,
-            name: ec?.name || latest.name || latest.slug,
-            date: latest.date,
-            // "This morning" is only true if the audit ran this morning in
-            // Pacific, which is the timezone the claim is about.
-            auditedToday: latest.date === pacificDay(),
-            partial: latest.status === "partial",
-            grade: escore?.grade || latest.grade || null,
+            slug: featured.slug,
+            name: ec?.name || featured.name || featured.slug,
+            date: featured.date,
+            // "This morning" is only true if this audit ran this morning in
+            // Pacific, which is the timezone the claim is about. An older
+            // featured corner states its real date and drops the claim rather
+            // than softening it.
+            auditedToday: featured.date === today,
+            partial: featured.status === "partial",
+            grade: escore?.grade || featured.grade || null,
             evidence: evidenceLine(ecred, ec?.district),
             frames,
+            alsoToday,
             state: hasGenerated ? "full" : frames.today ? "text-only" : "none",
           };
         })();

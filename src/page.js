@@ -287,9 +287,12 @@ export const HERO_CORNER = (e) => {
     ${e.grade ? `<span class="hcgrade g${esc(e.grade)}">${esc(e.grade)}</span>` : ""}
   </div>
   <p class="hcwhen">${
+    // "This morning" is a claim about today and is only made when it is true.
+    // An older corner states its real date and drops the claim rather than
+    // softening it into something that still sounds like today.
     e.auditedToday
       ? `Audited autonomously this morning, ${esc(e.date)}`
-      : `Most recent audit, ${esc(e.date)}`
+      : `Audited autonomously ${esc(e.date)}`
   }${e.partial ? ", with some lanes degraded" : ""}</p>
   ${stage}
   ${
@@ -319,6 +322,16 @@ export const HERO_CORNER = (e) => {
     <a class="hcgo" href="/c/${esc(e.slug)}">See the full audit</a>
     <a class="hcletter" href="/c/${esc(e.slug)}#letterpanel">Get the letter</a>
   </div>
+  ${
+    // The drumbeat, when the corner shown is not the corner audited today.
+    // The hero has to show the slider, and the site has to be able to say it
+    // ran this morning; when those are two different corners, both are said.
+    e.alsoToday
+      ? `<p class="hcalso">This morning the machine audited <a href="/c/${esc(e.alsoToday.slug)}">${esc(
+          e.alsoToday.name,
+        )}</a>, imagery pending.</p>`
+      : ""
+  }
 </section>
 <script>
 (function(){
@@ -1191,6 +1204,12 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
   padding-left:10px;border-left:2px solid var(--accent)}
 .hcpending{margin:8px 0 0;font-size:11.5px;color:var(--dim);line-height:1.5}
 .hcev{margin:12px 0 0;font-size:12.5px;color:var(--dim);line-height:1.55}
+/* Shown only while the corner audited today is not the corner on display, and
+   it removes itself when the imagery lane catches up. */
+.hcalso{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--dim);line-height:1.5}
+.hcalso a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line2)}
+.hcalso a:hover{border-color:var(--ink)}
 .hcact{display:flex;align-items:center;gap:16px;margin:16px 0 0;flex-wrap:wrap}
 .hcgo{font-size:13px;font-weight:600;color:#fff;background:var(--ink);border-radius:999px;
   padding:9px 18px;text-decoration:none}
