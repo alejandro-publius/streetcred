@@ -184,6 +184,28 @@ export function supervisorFor(district) {
   return SUPERVISORS[d] || FALLBACK_OFFICIAL;
 }
 
+// One answer to "which district is this corner in", for every path that goes on
+// to name an official.
+//
+// There were three. getStats resolves `c.district ?? crash-data majority` and
+// the ordinary letter path read that; a second path read the raw `c.district`,
+// which is absent for any corner resolved from a city shard rather than the
+// registry. So the same corner got a Supervisor down one path and the citywide
+// fallback down the other, and the fillmore-and-lombard letter opened with the
+// Mayor while the page beside it said District 2. Two ways to answer one
+// question is the bug; this is the answer.
+export function resolvedDistrict(corner, stats) {
+  const d = parseInt(stats?.district ?? corner?.district, 10);
+  return Number.isFinite(d) ? d : null;
+}
+
+// The official a letter for this district must be addressed to, with their
+// title, exactly as the letter should write it.
+export function addresseeFor(district) {
+  const who = supervisorFor(district);
+  return hasSupervisor(district) ? `Supervisor ${who}` : who;
+}
+
 // Whether the district resolved to an actual Supervisor, as opposed to the
 // citywide fallback. Callers need this because prefixing the fallback with a
 // title produces "Dear Supervisor Mayor Daniel Lurie", which appeared on every

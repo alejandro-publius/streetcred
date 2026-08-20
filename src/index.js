@@ -1,5 +1,6 @@
 import {
-  CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, hasSupervisor, canonicalSlug, makeCorner, SERVICE_NAMES,
+  CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, canonicalSlug, makeCorner, SERVICE_NAMES,
+  resolvedDistrict, addresseeFor,
   pacificToday as pacificTodayShared,
   COTD_SEED,
 } from "./data.js";
@@ -443,7 +444,7 @@ async function runManifest(c, env, origin, trigger, refresh) {
     hazards,
     score,
     letterRun,
-    supervisor: supervisorFor(stats?.district ?? c.district),
+    supervisor: supervisorFor(resolvedDistrict(c, stats)),
   });
   await putRun(env, c.slug, manifest);
   return manifest;
@@ -647,7 +648,7 @@ async function mapImage(c, env, ctx) {
 
 // ---------------------------------------------------------------- letter
 async function getLetter(c, env, ctx) {
-  const supervisor = supervisorFor(ctx.stats?.district);
+  const supervisor = supervisorFor(resolvedDistrict(c, ctx.stats));
   const headlines = (ctx.news?.items || [])
     .slice(0, 2)
     .map((n) => `"${n.title}" (${n.domain}${n.date ? ", " + n.date : ""})`)
@@ -658,13 +659,15 @@ async function getLetter(c, env, ctx) {
   const ONTOPIC = /crosswalk|crossing|pedestrian|sidewalk|driver|traffic|curb|intersection|corner/i;
   const quote = (ctx.voices?.items || []).map((v) => v.text).find((t) => t && ONTOPIC.test(t));
   // With no clear district majority the addressee is the citywide official, and
-  // the letter must not invent a district number to sound authoritative.
-  const dist = ctx.stats?.district;
-  // Title only when the district actually maps to a Supervisor. Otherwise the
-  // addressee is the citywide official under their own title, never "Supervisor
-  // Mayor Daniel Lurie".
-  const titled = hasSupervisor(dist);
-  const addressee = titled ? `Supervisor ${supervisor}` : supervisor;
+  // the letter must not invent a district number to sound authoritative. One
+  // resolver, shared with every other path that names an official, because two
+  // paths answering this differently is exactly how a District 2 corner got a
+  // letter addressed to the Mayor.
+  const dist = resolvedDistrict(c, ctx.stats);
+  // addresseeFor carries the title rule: "Supervisor {name}" only when the
+  // district maps to a real Supervisor, and the citywide official under their
+  // own title otherwise, never "Supervisor Mayor Daniel Lurie".
+  const addressee = addresseeFor(dist);
   const where = dist ? ` in District ${dist}` : " in San Francisco";
   const signoff = dist ? `A resident of District ${dist}` : "A resident of San Francisco";
   // The index only enters the letter when it actually computed. A letter that
@@ -918,9 +921,10 @@ function storedLetterServes(stored) {
 // used to say and leave nothing pinning the rule to the letter that broke it.
 export function sampleLetter(c, district) {
   const supervisor = supervisorFor(district);
-  // Same rule as the live path: title only when the district maps to a real
-  // Supervisor, never "Dear Supervisor Mayor Daniel Lurie".
-  const salutation = hasSupervisor(district) ? `Dear Supervisor ${supervisor}` : `Dear ${supervisor}`;
+  // Same rule as the live path, through the same helper: title only when the
+  // district maps to a real Supervisor, never "Dear Supervisor Mayor Daniel
+  // Lurie".
+  const salutation = `Dear ${addresseeFor(district)}`;
   const where = district ? `, in District ${district}` : ", in San Francisco";
   const signoff = district ? `A resident of District ${district}` : "A resident of San Francisco";
   return {

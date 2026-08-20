@@ -96,13 +96,14 @@ Generator-dependent, hence queued: the corpus needs live drafts to freeze.
 
 ## 5. The letter fleet, after the v2 letter check
 
-Added 2026-08-20 by the addendum's stage 7C. The three lane-consistency rules
-(resident accounts, press coverage, magnitude words) and the addressee rule are
-in `src/verify.js` at `VERIFY_VERSION` v2 and are enforced at serve time. This
-section records what re-running them found, so the regeneration pass in item 1
-knows exactly what it is regenerating and why.
+Added 2026-08-20 by the addendum's stages 7C and 7D. Four new rules are in
+`src/verify.js` at `VERIFY_VERSION` v2 and are enforced at serve time: three
+lane-consistency rules (resident accounts, press coverage, magnitude words) and
+the addressee rule. This section records what re-running all four found, so the
+regeneration pass in item 1 knows exactly what it is regenerating and why.
 
-- **Stored letters re-checked: 0 pass, 0 fail, 0 checked.** Not a pass rate,
+- **Stored letters re-checked: 0 pass, 0 fail, 0 checked**, broken out by rule:
+  consistency 0 fail, addressee 0 fail. Not a pass rate,
   an empty population: `letter:verified:*` holds **zero keys**. Confirmed with
   `wrangler kv key list --binding STORE --remote` against the 2,148-key
   namespace, and by `node tools/reverify_letters.mjs`. Twenty-three
@@ -124,6 +125,11 @@ knows exactly what it is regenerating and why.
   exported purely as the exhibit: `tools/verify.test.mjs` runs it through the
   check and asserts it fails, so routing it back to a reader breaks a test by
   name.
+- **The addressee rule found nothing to fail because there was nothing to
+  check**, but the defect it exists for was real and is fixed at its root:
+  `resolvedDistrict` in `src/data.js` is now the single answer to which district
+  a corner is in, and `addresseeFor` the single answer to who that district's
+  representative is. Every regenerated letter is checked against both.
 - **Regenerate with a lane-conditioned prompt.** The prompt must be told which
   lanes came back empty for that corner and forbidden to describe them, rather
   than told in general not to invent. The reasons the check emits are written

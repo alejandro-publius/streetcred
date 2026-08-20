@@ -17,6 +17,7 @@
 // not a rail, and two verifiers that drift apart are worse than one.
 
 import { isStreetQuote } from "./cred.js";
+import { resolvedDistrict, addresseeFor } from "./data.js";
 
 export const VERIFY_VERSION = "v2";
 
@@ -33,7 +34,7 @@ const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").tr
 // Everything the letter is permitted to assert, assembled from the same objects
 // the prompt was built from. If a fact is not in here, the letter may not state
 // it, which is the entire contract.
-export function buildInputSet({ corner, stats, score, news, timeline, supervisor, voices }) {
+export function buildInputSet({ corner, stats, score, news, timeline, supervisor, voices, district }) {
   const numbers = new Set();
   const addNum = (n) => {
     const v = typeof n === "number" ? n : parseInt(n, 10);
@@ -129,10 +130,24 @@ export function buildInputSet({ corner, stats, score, news, timeline, supervisor
   show("voices", voicesCount, "resident accounts about the street");
   show("press", citedPressCount, "cited press items");
 
+  // The district this corner actually resolves to, and the official that
+  // entails, from the site's own table. Passed in when the caller knows it,
+  // derived the same way the rest of the site derives it when not, so a caller
+  // that forgets cannot silently disable the rule.
+  const dist = district ?? resolvedDistrict(corner, stats);
+
   return {
     numbers,
     streets,
     domains,
+    district: dist,
+    // What the salutation has to say, title included. Always present: a corner
+    // with no resolved district is addressed to the citywide official, which is
+    // a real expectation and not an absent one.
+    addressee: addresseeFor(dist),
+    // Unchanged. Rule 2 checks "Supervisor X" mentions anywhere in the body and
+    // is only armed when the caller supplies a name; deriving one here would
+    // arm it on the agent path, which passes what it knows and nothing more.
     supervisor: supervisor || null,
     grant: corner?.fix?.grant || null,
     voicesCount,
@@ -151,6 +166,30 @@ const STREET_MENTION =
   /\b([A-Z][a-zA-Z]+|\d{1,3}(?:st|nd|rd|th))\s+(Street|Avenue|Boulevard|Road|Way|Drive)\b/g;
 
 const SUPERVISOR_MENTION = /\bSupervisor\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+)?)/g;
+
+// The salutation, and only the salutation.
+//
+// Rule 2 above catches a misspelled or swapped Supervisor surname. It cannot
+// catch a letter that names the right person under the wrong office, or the
+// citywide fallback at a corner that resolves to a district with a sitting
+// Supervisor: the fillmore-and-lombard letter opened "Dear Mayor Daniel Lurie"
+// while the page beside it said District 2, and no rule here had an opinion,
+// because nothing was misspelled and nothing was invented.
+//
+// Scoped to the opening line on purpose. A letter may legitimately mention the
+// Mayor in passing, and flagging that would be a false failure; who it is
+// addressed TO is a different claim and the one a reader acts on.
+const SALUTATION = /^\s*Dear\s+([^,\n]+?)\s*[,:]/m;
+
+// An addressee split into the office and the person, so the two can be checked
+// on their own terms. "Supervisor Mahmood" and "Supervisor Bilal Mahmood" are
+// the same addressee; "Mayor Bilal Mahmood" is not.
+function splitAddressee(raw) {
+  const t = norm(raw);
+  const title = /^supervisor\b/.test(t) ? "supervisor" : /^mayor\b/.test(t) ? "mayor" : "";
+  const name = t.replace(/^(supervisor|mayor)\s+/, "");
+  return { title, name, last: name.split(" ").slice(-1)[0] || "" };
+}
 
 const DOMAIN_MENTION = /\b([a-z0-9-]+\.(?:org|com|net|gov|edu))\b/gi;
 
@@ -303,6 +342,35 @@ export function verifyLetter(text, inputs) {
         kind: "source",
         reason: `${d} was not among the sources fetched for this corner`,
       });
+    }
+  }
+
+  // 4b. The addressee. Who the letter is addressed TO, against the sitting
+  // representative of the district this corner resolves to, per the site's own
+  // table. Compared on the whole salutation, title included, because "Mayor
+  // Daniel Lurie" and "Supervisor Stephen Sherrill" are two different people
+  // and "Supervisor Daniel Lurie" is neither.
+  if (inputs.addressee) {
+    const m = body.match(SALUTATION);
+    if (m) {
+      // Title and name are checked separately, because they fail differently.
+      // "Dear Supervisor Mahmood" is correct and ordinary English, so a whole
+      // string comparison against "Supervisor Bilal Mahmood" would reject the
+      // right addressee. What must not vary is the office, and which person.
+      const got = splitAddressee(m[1]);
+      const want = splitAddressee(inputs.addressee);
+      const titleWrong = got.title !== want.title;
+      const personWrong = got.last !== want.last && got.name !== want.name;
+      if (titleWrong || personWrong) {
+        failures.push({
+          token: m[1],
+          kind: "addressee",
+          reason:
+            `addressed to ${m[1]}, but this corner resolves to ` +
+            `${inputs.district === null ? "no district" : `District ${inputs.district}`}` +
+            `, whose representative is ${inputs.addressee}`,
+        });
+      }
     }
   }
 
