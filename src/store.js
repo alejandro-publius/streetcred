@@ -1010,6 +1010,27 @@ export async function getWatchlist(env, version) {
   }
 }
 
+// The last watchlist run, as a record of the run rather than of its output.
+//
+// The watchlist blob says what the pass found. This says what the pass did:
+// when it fired, how many searches it attempted, how many completed, and why
+// any of them did not. Kept separate because the two answer different
+// questions, and because a run that failed before writing a blob still has to
+// leave a trace. One key, last run only; the page needs "did the last one
+// finish", not a history.
+export async function getWatchlistRun(env) {
+  const raw = await rawGet(env, "press:watchlistrun");
+  try {
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putWatchlistRun(env, record) {
+  await rawPut(env, "press:watchlistrun", JSON.stringify(record));
+}
+
 export async function putWatchlist(env, w) {
   await rawPut(env, "press:watchlist", JSON.stringify(w));
 }

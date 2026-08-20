@@ -7,20 +7,38 @@
 
 import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 import { pacificDay } from "./data.js";
-import { runCounts } from "./press.js";
+import { runCounts, WATCHLIST_QUERIES, WATCHLIST_PER_RUN } from "./press.js";
 
 const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 
 // The build stamp is this site's own clock, so it renders in this site's city.
 const when = (iso) => pacificDay(iso);
 
-export const WATCHLIST_PAGE = (w, origin = "", hub = null, preview = false, scored = 0, press = null) => {
+export const WATCHLIST_PAGE = (w, origin = "", hub = null, preview = false, scored = 0, press = null, lastRun = null) => {
   const entries = w?.entries || [];
   const rejects = w?.rejects || [];
   // Attempted, completed, failed. This page's whole thesis is that a discovery
   // pipeline showing only its hits is indistinguishable from a search box that
   // got lucky, and it was printing its own attempt as if it were work done.
   const run = runCounts(w);
+  // The whole query list against what one run may attempt. With 29 under a
+  // ceiling of 40 every query runs every morning and the cycle is one run long.
+  const cycle = w?.cycle || {
+    size: WATCHLIST_QUERIES.length,
+    perRun: WATCHLIST_PER_RUN,
+    rotating: WATCHLIST_QUERIES.length > WATCHLIST_PER_RUN,
+    runsPerCycle: Math.max(1, Math.ceil(WATCHLIST_QUERIES.length / WATCHLIST_PER_RUN)),
+  };
+  const coverage = w?.coverage || {};
+  // Every query in the set, with the last date it actually reached Exa. A query
+  // that has never run says so rather than being left out of the list, which is
+  // how twenty-two of them stayed invisible for as long as they did.
+  const allQueries = WATCHLIST_QUERIES.map((q) => ({
+    query: q.query,
+    local: Boolean(q.includeDomains),
+    lastRun: coverage[q.query] || null,
+  }));
+  const neverRun = allQueries.filter((q) => !q.lastRun).length;
   const title = "Press watchlist \u00b7 StreetCred";
   const desc = entries.length
     ? `${entries.length} San Francisco corners named in current news coverage, each one verified against the graded city index before it appears here, with every rejected candidate published and its reason given.`
@@ -122,10 +140,25 @@ ${entries
     : `<p class="wlnote">Nothing on the watchlist right now. ${run.completed} of ${run.attempted} searches ran and no crossing named in the results survived verification, which is the honest state most weeks: San Francisco coverage is overwhelmingly corridor level and citywide, and this page only shows corners the city index can confirm.</p>`
 }
 
-<div class="eyebrow"><span>Never ran</span><span class="tag">and why</span></div>
+<div class="eyebrow"><span>Every search</span><span class="tag">and when it last ran</span></div>
+<p class="wlnote">All ${cycle.size} queries in the set, each with the date it last reached Exa. A query that has never run says so. This list exists because for a long time twenty-two of these were cut off every morning, stored with their failure reason, and rendered nowhere: a discovery pipeline that publishes only what it found, and quietly drops what it never looked for, is making a claim about the city it has not earned.${
+  neverRun
+    ? ` <b>${neverRun} of them have never run.</b>`
+    : " Every one of them has now run at least once."
+}</p>
+<div class="rj">
+${allQueries
+  .map(
+    (q) =>
+      `  <div class="rjrow"><span class="rjn">${esc(q.query)}${q.local ? ' <span class="tag">SF outlets only</span>' : ""}</span><span class="rjr">${
+        q.lastRun ? `last ran ${esc(q.lastRun)}` : "never run"
+      }</span></div>`,
+  )
+  .join("\n")}
+</div>
 ${
   run.failed
-    ? `<p class="wlnote">These ${run.failed} searches were issued and cut off before they reached Exa. They are listed for the same reason the rejects below are: a discovery pipeline that publishes only what it found, and quietly drops what it never looked for, is making a claim about the city it has not earned. Note what is in this list. The neighbourhood-anchored queries sit at the tail of the set, so they are the ones that never run, and the watchlist has a geographic blind spot that is systematic rather than random.</p>
+    ? `<div class="eyebrow"><span>Cut off in the last run</span><span class="tag">and why</span></div>
 <div class="rj">
 ${run.failures
   .map(
@@ -133,7 +166,7 @@ ${run.failures
   )
   .join("\n")}
 </div>`
-    : `<p class="wlnote">Every search in the last pass reached Exa. Nothing was cut off.</p>`
+    : ""
 }
 
 <div class="eyebrow"><span>Rejected</span><span class="tag">and why</span></div>
@@ -154,8 +187,17 @@ ${rejects
 <p class="wlnote">${run.attempted} citywide semantic searches are attempted over the last ${w?.windowDays ?? 90} days, run through Exa with the news category, a published-date window, and lead-generation domains excluded at the API rather than filtered afterwards. Each result's text is scanned for crossing names, and every name is checked against the same index the site grades from. It runs again every morning with the daily audit.</p>
 ${
   run.failed
-    ? `<p class="wlnote"><b>${run.completed} of the ${run.attempted} completed.</b> This lane runs inside the daily audit's single Worker invocation, near the end of it, and Cloudflare allows fifty subrequests per invocation. The audit has spent most of them by the time the watchlist starts, so the remaining ${run.failed} are cut off before they reach Exa. They cost nothing, and they also found nothing, so the pass costs ${run.completed} searches rather than ${run.attempted}. Every one of them is listed below. The fix is a change to how the lane is scheduled and is recorded in <code>docs/WATCHLIST_SUBREQUEST_FINDING.md</code>, not made quietly here.</p>`
-    : `<p class="wlnote">All ${run.attempted} completed, so the pass costs ${run.attempted} searches.</p>`
+    ? `<p class="wlnote"><b>${run.completed} of the ${run.attempted} completed.</b> A Worker invocation may make fifty external requests and this lane costs one per query, so a run of this size is supposed to fit with room to spare. The remaining ${run.failed} were cut off before they reached Exa, which means something else spent the budget first. They cost nothing and found nothing, so the pass costs ${run.completed} searches rather than ${run.attempted}. Every one of them is listed below.</p>`
+    : `<p class="wlnote"><b>All ${run.attempted} completed.</b> The pass costs ${run.attempted} searches. This lane has its own cron trigger at 13:20 UTC and therefore its own subrequest budget: it used to run as the last lane of the daily audit, sharing that invocation's fifty external requests, and arrived with about seven of them left. Twenty-two searches were cut off every morning and the page reported twenty-nine.</p>`
+}
+${
+  cycle.rotating
+    ? `<p class="wlnote"><b>The set is larger than one run.</b> ${cycle.size} queries against a ceiling of ${cycle.perRun} per run, so full coverage takes ${cycle.runsPerCycle} runs and each query carries the date it last reached Exa below.</p>`
+    : `<p class="wlnote">${cycle.size} queries against a ceiling of ${cycle.perRun} per run, so every query runs every morning and a cycle is one run. If the set ever grows past the ceiling the lane rotates through it rather than truncating, and this line will say so.</p>`
+}${
+  lastRun
+    ? `<p class="wlnote">Last run ${esc(when(lastRun.at))}${lastRun.ok ? ", complete" : `, incomplete: ${esc(lastRun.reason || "some searches did not run")}`}.</p>`
+    : ""
 }
 <p class="wlnote">This is an entity-discovery workflow of the shape Exa's Websets product is built for: find candidate entities, verify each against hard criteria, keep the ones that survive. It is implemented directly on the search API, which is what the event credits cover.</p>
 
