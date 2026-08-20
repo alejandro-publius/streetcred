@@ -196,12 +196,37 @@ in ${esc(gemini.via || "")} under Application Default Credentials. The Worker ho
 of any kind and never has: it serves the letters that pass the check and the honest pending state for
 the ones that do not. ${esc(gemini.letters ?? 0)} letters from ${esc(gemini.calls ?? 0)} model calls,
 ${(gemini.promptTokens ?? 0).toLocaleString("en-US")} tokens in and
-${(gemini.outputTokens ?? 0).toLocaleString("en-US")} out.</p>
+${(gemini.outputTokens ?? 0).toLocaleString("en-US")} out${
+        gemini.tokensCover && !/^(\d+) of \1 /.test(gemini.tokensCover)
+          ? `, counted over ${esc(gemini.tokensCover)}. The calls and the dollars cover every run; the token
+figure covers only the runs that recorded per corner counts, and a partial total should not be read as a
+whole one`
+          : ""
+      }.</p>
 <div class="wlstat">
   <span><b>${esc(gemini.letters ?? 0)}</b>letters</span>
   <span><b>${esc(gemini.calls ?? 0)}</b>model calls</span>
   <span><b>$${(gemini.estUsd ?? 0).toFixed(4)}</b>estimated</span>
 </div>
+${
+  gemini.imagery
+    ? `<p class="note"><b>Proposed-fix renders</b> come from ${esc(gemini.imagery.model)} on the same
+Vertex path. ${esc(gemini.imagery.published)} published of ${esc(gemini.imagery.attempted)} attempted,
+$${(gemini.imagery.estUsd ?? 0).toFixed(4)} estimated.${
+        gemini.imagery.held
+          ? ` ${esc(gemini.imagery.held)} held and not published${
+              gemini.imagery.heldOnGate != null && gemini.imagery.heldOnApi != null
+                ? `, ${esc(gemini.imagery.heldOnGate)} by the text-legibility check and
+${esc(gemini.imagery.heldOnApi)} because the model never returned an image`
+                : " by the text-legibility check"
+            }. A render that corrupts a street name plate or the Street View watermark is a photograph of a
+named intersection carrying a fabricated sign, and this site does not publish those whichever model made
+them. Held renders are billed and counted here: the check is not free, and reporting only the published
+ones would make it look like it was.`
+          : ""
+      }</p>`
+    : ""
+}
 <p class="note"><b>That dollar figure is an estimate and the Exa one is not.</b> Exa returns
 <code>costDollars</code> on every response, so its ledger is measured. Vertex bills out of band, so this
 is ${esc(gemini.basis || "arithmetic over token counts")}. Two numbers on one page that were arrived at
