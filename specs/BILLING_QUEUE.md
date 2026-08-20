@@ -150,6 +150,109 @@ regeneration pass in item 1 knows exactly what it is regenerating and why.
 - Cost: zero. Nothing in this section spends; it is the accounting that tells
   item 1 what to spend on.
 
+## Sizing this queue against the KV write cap
+
+Added 2026-08-20, after the cap stopped a run mid-verification. Analysis only:
+nothing here was executed and nothing here writes.
+
+The Workers Free plan allows **1,000 KV writes per day per account**, resetting
+at 00:00 UTC, alongside 100,000 reads and 1,000 list requests. Workers Paid
+replaces the daily cap with **1,000,000 writes a month** plus $5.00 per million.
+Exceeding the free cap does not slow anything down, it fails the operation: on
+2026-08-20 the cap was gone before 17:10 UTC and a manual watchlist run refused
+at `reserveExa` with `KV put() limit exceeded for the day`, before a single Exa
+search was made.
+
+### Writes per stage, counted from the code
+
+**Item 1, letter regeneration.** Per corner, on the ordinary path:
+`putLetterRun` and `putVerifiedLetter`, so **2 writes**. A draft that fails
+verification twice adds `appendTrustIncident`, so **3**. A corner whose score or
+hazards are not already stored adds `putScore` and `putHazards`, one each. The
+audited fleet is warm, so 2 is the figure to plan with.
+
+- item 1's own scope, the flagships plus the audited fleet, about 25 corners: **50 writes**
+- every corner that currently serves the pending state, 130: **260 writes**
+
+**Item 2, the golden corpus.** Fixtures are written to `tools/fixtures/golden/`
+on disk. **0 KV writes.**
+
+**Item 3a, imagery warming.** Per corner: `reserveGeneration`,
+`putImageryStatus("pending")`, `putImage("hazards")`, `putImage("fix")`,
+`putImageryStatus("ready")`, so **5 writes**, or 6 where the Street View frame
+is not already stored. Top 30: **150 to 180 writes**.
+
+This stage has a harder ceiling than KV, and it is not the one anybody expects.
+`reserveGeneration` increments once per corner against
+`DAILY_GENERATION_CAP = 25`, so **at most 25 corners can be warmed in a day
+whatever KV allows**. A top 30 pass takes two days on the generation cap alone.
+
+**Item 3b, OG composites.** `putShareCard`, **1 write per corner**, so **30**
+for a top 30 pass.
+
+**The multiplier nobody costs in.** Every successful Exa call writes **two**
+keys, not zero: `recordExaSpend` writes `exa:spend` and then `budget:exa`. Each
+reservation writes `budget:exa` once more. So a full 29 query watchlist run
+costs 1 reservation plus 58 spend writes plus `putWatchlist` and
+`putWatchlistRun`, which is **61 KV writes for one run**. Any queue stage that
+touches the press lane carries this and it is invisible at the call site.
+
+### The verdict
+
+**The queue does not fit in one day, and KV is only the second reason.**
+
+| Stage | Writes | Blocking limit |
+|---|---|---|
+| Letters, 25 corners | 50 | fits |
+| Letters, 130 corners | 260 | fits alone |
+| Imagery, 30 corners | 150 to 180 | **generation cap, 25 corners a day** |
+| OG cards, 30 corners | 30 | fits |
+| **Full queue at 130 letters** | **440 to 470** | see below |
+
+440 against a 1,000 cap looks comfortable and is not, because the cap is
+account wide and shared with everything the site does anyway. The recurring
+baseline is **estimated, not counted**: the quarter hourly press tick writes one
+checkpoint plus one `putPress` per corner it works, the morning audit writes
+several dozen, and the Exa spend multiplier above rides on all of it. The
+stored counters put the press lane alone somewhere in the low hundreds of
+writes a day. The one hard measurement is that on 2026-08-20 the cap was
+exhausted before 17:10 UTC.
+
+**Recommended, on the free plan: split across days**, in this order.
+
+1. **Day one, letters only.** 260 writes at the full 130 corner scope, or 50 at
+   item 1's scope. Run it early in the UTC day, since the allowance resets at
+   00:00 UTC and the press lane spends it steadily from there.
+2. **Day two, imagery for 25 corners.** 125 writes, and 25 is the generation cap
+   rather than a choice.
+3. **Day three, the remaining imagery plus all OG cards.** 25 plus 30, about 55
+   writes.
+
+Check the headroom before starting any of them:
+
+```
+npx wrangler kv key put "diag:kvprobe" ok --binding STORE --remote
+```
+
+`code: 10048` means the day is spent and the stage will fail partway, which for
+letter regeneration means paying a model for drafts that are never stored.
+
+**What the paid plan changes**, for $5 a month:
+
+- The daily write cap becomes 1,000,000 a month. At the current baseline the
+  site would use somewhere near 1 to 2 percent of it, and the whole queue could
+  run in a single afternoon.
+- External subrequests per invocation go from 50 to 10,000, configurable higher.
+  That is the limit that cut the watchlist to 7 of 29 searches and forced it
+  onto its own cron, and it is the limit that keeps `PRESS_BATCH_PER_TICK` at 6.
+  Both could be raised rather than worked around.
+- The generation cap of 25 is ours, not Cloudflare's, and would still apply.
+
+The honest summary: the queue is affordable in model and scraper credit and is
+gated by a free tier write allowance that costs $5 a month to remove. If the
+regeneration is going to happen under time pressure, upgrading first is cheaper
+than sequencing around a cap that fails operations rather than slowing them.
+
 ## Standing rules for the whole queue
 
 The daily public generation cap stays enforced; operator budgets are separate
