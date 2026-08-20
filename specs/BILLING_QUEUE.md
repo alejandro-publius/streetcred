@@ -94,6 +94,56 @@ Generator-dependent, hence queued: the corpus needs live drafts to freeze.
   rate and rule adherence (word count, no em dashes, addressee). Swap only on
   a measured win; latency budget 30s per draft (Pro-high measured 14-28s).
 
+## 5. The letter fleet, after the v2 letter check
+
+Added 2026-08-20 by the addendum's stage 7C. The three lane-consistency rules
+(resident accounts, press coverage, magnitude words) and the addressee rule are
+in `src/verify.js` at `VERIFY_VERSION` v2 and are enforced at serve time. This
+section records what re-running them found, so the regeneration pass in item 1
+knows exactly what it is regenerating and why.
+
+- **Stored letters re-checked: 0 pass, 0 fail, 0 checked.** Not a pass rate,
+  an empty population: `letter:verified:*` holds **zero keys**. Confirmed with
+  `wrangler kv key list --binding STORE --remote` against the 2,148-key
+  namespace, and by `node tools/reverify_letters.mjs`. Twenty-three
+  `letterrun:{slug}` provenance records exist, so twenty-three letters were
+  drafted and verified at some point, but none of their text was ever stored.
+  Nothing on disk can be re-verified because nothing on disk is a letter.
+- **What was actually being served was the sample**, at every corner that has a
+  letter lane. `letter:backoff` is set (Gemini 429), there is no stored letter
+  to fall back to, and the fallback was `sampleLetter`. That is one fixed
+  paragraph asserting resident accounts, press coverage and "hundreds of
+  collisions" regardless of the corner it is served for. On
+  `16th-and-potrero` it failed all three new rules at once: hundreds against a
+  displayed 65, press against zero citations, residents against a voices lane
+  reading NONE FOUND.
+- **The sample no longer serves anywhere.** Every corner without a letter
+  verified under v2 now shows the honest pending state, "A verified letter for
+  this corner is queued behind generation." That is **all 130 corners with a
+  `corner:{slug}` record**, plus the two flagships. `sampleLetter` is kept and
+  exported purely as the exhibit: `tools/verify.test.mjs` runs it through the
+  check and asserts it fails, so routing it back to a reader breaks a test by
+  name.
+- **Regenerate with a lane-conditioned prompt.** The prompt must be told which
+  lanes came back empty for that corner and forbidden to describe them, rather
+  than told in general not to invent. The reasons the check emits are written
+  for exactly this: they name the lane, the claim and the displayed figure.
+- **The twenty-three corners with prior provenance**, worth regenerating first
+  because they already have the records that justified a letter:
+  `12th-and-moraga`, `16th-and-potrero`, `16th-mission`, `19th-and-dolores`,
+  `19th-and-mission`, `31st-and-lawton`, `3rd-and-palou`, `40th-and-cabrillo`,
+  `6th-market`, `9th-and-judah`, `alemany-and-ocean`, `broadway-and-columbus`,
+  `eddy-and-leavenworth`, `fulton-and-masonic`, `geary-and-polk`,
+  `geary-and-webster`, `geneva-and-mission`, `golden-gate-and-hyde`,
+  `market-and-octavia`, `market-and-van-ness`, `mission-and-silver`,
+  `oak-and-octavia`, `taylor-and-turk`.
+- **Re-run the audit after any regeneration** with
+  `node tools/reverify_letters.mjs --queue`, which rewrites the generated block
+  below in place. It imports the verifier directly and reads KV read-only, so
+  it costs nothing and can run on the free tier.
+- Cost: zero. Nothing in this section spends; it is the accounting that tells
+  item 1 what to spend on.
+
 ## Standing rules for the whole queue
 
 The daily public generation cap stays enforced; operator budgets are separate

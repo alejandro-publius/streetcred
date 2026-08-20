@@ -212,6 +212,10 @@ export async function handleAgentReport(request, env, deps) {
     // The agent posts no press lane of its own, so any domain it cites is
     // unsourced by definition and the verifier will say so.
     news: null,
+    // Same argument, and it now has teeth: with no voices lane, a letter the
+    // agent submits that describes resident accounts is describing a lane it
+    // never ran.
+    voices: null,
     supervisor: stats?.district ? supervisorFor(stats.district) : null,
   });
   const check = verifyLetter(record.text, inputSet);

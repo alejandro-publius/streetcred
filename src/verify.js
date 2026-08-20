@@ -16,7 +16,9 @@
 // agent.js. Deliberately one function: a verifier the agent can route around is
 // not a rail, and two verifiers that drift apart are worse than one.
 
-export const VERIFY_VERSION = "v1";
+import { isStreetQuote } from "./cred.js";
+
+export const VERIFY_VERSION = "v2";
 
 // Numbers below this are prose, not claims. "one page", "two of them", "a
 // three year window" get spelled out by the model often enough that digits
@@ -31,7 +33,7 @@ const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").tr
 // Everything the letter is permitted to assert, assembled from the same objects
 // the prompt was built from. If a fact is not in here, the letter may not state
 // it, which is the entire contract.
-export function buildInputSet({ corner, stats, score, news, timeline, supervisor }) {
+export function buildInputSet({ corner, stats, score, news, timeline, supervisor, voices }) {
   const numbers = new Set();
   const addNum = (n) => {
     const v = typeof n === "number" ? n : parseInt(n, 10);
@@ -84,12 +86,59 @@ export function buildInputSet({ corner, stats, score, news, timeline, supervisor
     for (const w of norm(item?.title).split(" ")) if (w.length > 1) streets.add(w);
   }
 
+  // ---------------------------------------------------------------- lanes
+  //
+  // What the page's other lanes actually found, so the letter cannot describe a
+  // lane that came back empty. The counting rules are borrowed from the Cred
+  // Check rather than reinvented: if the verifier and the panel beside it
+  // disagreed about whether this corner has resident accounts, one of them
+  // would be lying to the same reader on the same screen.
+
+  // A scraped account that is about the street. Same filter the Cred Check's
+  // resident lane counts with, from src/cred.js.
+  const quotes = (voices?.items || []).filter((v) => isStreetQuote(v?.text));
+  const voicesCount = quotes.length;
+
+  // Coverage, not records. An agency bulletin is the record; reporting on it is
+  // the coverage. Same exclusion the Cred Check's press lane makes.
+  const items = news?.items || news || [];
+  const citedPressCount = items.filter((i) => !i?.official && i?.corroborates).length;
+
+  // ------------------------------------------------------------- displayed
+  //
+  // The numbers a reader can actually see on this corner's page, kept apart
+  // from `numbers` on purpose. `numbers` is everything the prompt was allowed
+  // to mention, and it holds 311, 3, 5 and 150 as bare constants; a magnitude
+  // word checked against that set would find 150 and conclude "hundreds" was
+  // supported at a corner displaying 65 collisions. This is counts of harm
+  // only: no district number, no percentile, no radius, no dataset name.
+  // Keyed by what the figure counts, not by the figure. "Hundreds of
+  // collisions" is a claim about collisions, and a corner displaying 41
+  // collisions beside 214 street-condition reports does not support it: a
+  // magnitude rule that only asked "is any displayed number at least 100" would
+  // have found the 214 and waved it through.
+  const displayed = new Map();
+  const show = (key, v, label) => {
+    const num = typeof v === "number" ? v : parseInt(v, 10);
+    if (Number.isFinite(num) && num > 0) displayed.set(key, { value: num, label });
+  };
+  show("crashes", stats?.crashes, "injury collisions in 5 years");
+  show("fatal", stats?.fatal, "fatal collisions");
+  show("reports311", stats?.reports311, "street-condition 311 reports in 3 years");
+  show("yearsReported", timeline?.yearsReported, "years with reported harm");
+  show("voices", voicesCount, "resident accounts about the street");
+  show("press", citedPressCount, "cited press items");
+
   return {
     numbers,
     streets,
     domains,
     supervisor: supervisor || null,
     grant: corner?.fix?.grant || null,
+    voicesCount,
+    pressCount: items.length,
+    citedPressCount,
+    displayed,
   };
 }
 
@@ -107,6 +156,90 @@ const DOMAIN_MENTION = /\b([a-z0-9-]+\.(?:org|com|net|gov|edu))\b/gi;
 
 // Words that pass the street shape but are structural, not place names.
 const NOT_A_PLACE = new Set(["the", "this", "that", "a", "an", "one", "main", "our", "your"]);
+
+// -------------------------------------------------------- lane consistency
+//
+// The number checker cannot see any of what follows, because none of these
+// claims contains a checkable digit. That is how a served letter came to say
+// residents describe the problem on a page whose voices lane reads NONE FOUND,
+// and "hundreds of collisions" on a page displaying 65. Both sentences were
+// true-shaped and unfalsifiable by arithmetic, so arithmetic passed them.
+//
+// These rules are sentence-scoped rather than document-scoped: the unit a
+// reader believes is the sentence, and naming the whole letter back to a retry
+// tells it nothing about which claim to drop.
+
+// Sentences, roughly. Good enough for prose that has no abbreviations in it,
+// and the letter prompt forbids the ones that would break this.
+const sentencesOf = (body) =>
+  String(body || "")
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+// Referring to what people who live there said. Both halves have to be present:
+// "residents" alone is a noun the letter may legitimately use ("residents
+// deserve a safe crossing"), and it is only an evidentiary claim once it is
+// attached to an act of speaking.
+// "locals" only in the plural noun form. The adjective is a different word
+// doing a different job: "Local reporting has covered this corridor" is a press
+// claim, and an optional-s here made it read as a resident claim as well, which
+// is the sort of double failure that teaches a reader to ignore the verifier.
+const RESIDENT_WHO =
+  /\b(residents?|neighbou?rs?|locals|people who live|those who live|community members?)\b/i;
+const RESIDENT_SAID =
+  /\b(describ\w+|say|says|said|report\w*|tell|tells|told|complain\w*|recount\w*|testif\w+|account|accounts|testimony|in their own words|write|writes|wrote)\b/i;
+
+// Referring to journalism. Deliberately not "reported", which the records lane
+// also uses ("311 reports"); the tokens here can only mean a newsroom.
+const PRESS_MENTION =
+  /\b(local reporting|news coverage|press coverage|media coverage|newspapers?|journalists?|reporters?|the press|the media|has been covered|been covered by|covered by (?:local )?(?:news|press|media)|coverage of this (?:corner|intersection|corridor))\b/i;
+
+// Magnitude words, and the smallest displayed count that would justify each.
+//
+// Conservative by design. Frequency words like "repeatedly" and "continuously"
+// are left out: they are claims about pattern rather than about quantity, and
+// flagging them produces the kind of false failure that gets a verifier
+// switched off. A word here has to be one whose whole job is to assert a size.
+const MAGNITUDES = [
+  { re: /\bhundreds of thousands\b/i, word: "hundreds of thousands", min: 100000 },
+  { re: /\btens of thousands\b/i, word: "tens of thousands", min: 10000 },
+  { re: /\bthousands\b/i, word: "thousands", min: 1000 },
+  { re: /\bhundreds\b/i, word: "hundreds", min: 100 },
+  { re: /\bscores of\b/i, word: "scores of", min: 40 },
+  { re: /\bdozens\b/i, word: "dozens", min: 24 },
+  // No floor of their own: they assert "too many to count", so they need some
+  // displayed count to be about at all.
+  { re: /\bcountless\b/i, word: "countless", min: null },
+  { re: /\binnumerable\b/i, word: "innumerable", min: null },
+  { re: /\buntold\b/i, word: "untold", min: null },
+  { re: /\bmyriad\b/i, word: "myriad", min: null },
+];
+
+// What a magnitude word is counting. Matched inside the same sentence, so the
+// claim is checked against the figure it is actually about.
+const SUBJECTS = [
+  { key: "crashes", re: /\b(collisions?|crashes|wrecks?|casualt\w+)\b/i },
+  { key: "fatal", re: /\b(fatal\w*|deaths?|killed|fatalities)\b/i },
+  { key: "reports311", re: /\b(311 reports?|reports? to 311|service requests?|complaints?)\b/i },
+  { key: "yearsReported", re: /\byears?\b/i },
+  { key: "voices", re: /\b(residents?|neighbou?rs?|accounts?|testimon\w+)\b/i },
+  { key: "press", re: /\b(articles?|stories|headlines?|outlets?)\b/i },
+];
+
+// The failure message names what the page does show, because "hundreds is not
+// supported" sends a retry looking for a bigger number, and "the page displays
+// 65 injury collisions in 5 years" sends it looking for a different sentence.
+const describeDisplayed = (displayed, subject) => {
+  if (subject && displayed?.has(subject.key)) {
+    const d = displayed.get(subject.key);
+    return `this page displays ${d.value} ${d.label}`;
+  }
+  if (subject) return `this page displays no count of that at all`;
+  if (!displayed || displayed.size === 0) return "this page displays no counts at all";
+  const best = [...displayed.values()].sort((a, b) => b.value - a.value)[0];
+  return `the largest figure this page displays is ${best.value} ${best.label}`;
+};
 
 export function verifyLetter(text, inputs) {
   const body = String(text || "");
@@ -173,6 +306,73 @@ export function verifyLetter(text, inputs) {
     }
   }
 
+  // 5, 6 and 7. Lane consistency. One pass over the sentences, because all
+  // three rules ask about a sentence's relationship to a lane rather than about
+  // a token, and re-splitting the letter three times to ask three questions of
+  // the same sentence is the slower way to the same answer.
+  const sentences = sentencesOf(body);
+  let magnitudesChecked = 0;
+
+  for (const sentence of sentences) {
+    // 5. Resident accounts. The lane either found something or it did not, and
+    // a letter may not describe what an empty lane heard.
+    if (RESIDENT_WHO.test(sentence) && RESIDENT_SAID.test(sentence) && !(inputs.voicesCount > 0)) {
+      failures.push({
+        token: sentence,
+        kind: "voices",
+        reason:
+          "this sentence describes what residents said, and no scraped account at this corner is about the street, so the voices lane reads NONE FOUND",
+      });
+    }
+
+    // 6. Press coverage. The same argument, one lane over. The domain rule
+    // above catches an invented source; this catches an asserted one that was
+    // never named, which is the version with no digits in it to check.
+    if (PRESS_MENTION.test(sentence) && !(inputs.citedPressCount > 0)) {
+      failures.push({
+        token: sentence,
+        kind: "press",
+        reason:
+          "this sentence cites press coverage, and no coverage naming this corner was found, so the letter has nothing to cite",
+      });
+    }
+
+    // 7. Magnitude words. A size claim with no digits in it is still a size
+    // claim, and the number checker is blind to it by construction.
+    for (const m of MAGNITUDES) {
+      if (!m.re.test(sentence)) continue;
+      magnitudesChecked += 1;
+
+      // What is being counted, if the sentence says. When it does, the claim is
+      // checked against that figure alone. When it does not, fall back to the
+      // whole set: a rule that fires on a sentence it cannot understand is how
+      // false failures get in.
+      const subject = SUBJECTS.find((sub) => sub.re.test(sentence)) || null;
+      const entry = subject ? inputs.displayed?.get(subject.key) : null;
+      const values = subject
+        ? entry
+          ? [entry.value]
+          : []
+        : [...(inputs.displayed?.values() || [])].map((d) => d.value);
+      const supported = m.min === null ? values.length > 0 : values.some((v) => v >= m.min);
+
+      if (!supported) {
+        failures.push({
+          token: m.word,
+          kind: "magnitude",
+          reason:
+            m.min === null
+              ? `"${m.word}" claims a quantity too large to count, and ${describeDisplayed(inputs.displayed, subject)}`
+              : `"${m.word}" claims at least ${m.min}, and ${describeDisplayed(inputs.displayed, subject)}`,
+        });
+      }
+      // One magnitude verdict per sentence. "hundreds of thousands" also
+      // matches "thousands" and "hundreds", and three failures for one phrase
+      // crowds the retry prompt with the same complaint said three ways.
+      break;
+    }
+  }
+
   return {
     version: VERIFY_VERSION,
     ok: failures.length === 0,
@@ -180,6 +380,10 @@ export function verifyLetter(text, inputs) {
     checked: {
       numbers: new Set(claimedNumbers).size,
       supervisor: Boolean(inputs.supervisor),
+      sentences: sentences.length,
+      magnitudes: magnitudesChecked,
+      voices: inputs.voicesCount ?? null,
+      press: inputs.citedPressCount ?? null,
     },
   };
 }

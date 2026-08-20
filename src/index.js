@@ -45,7 +45,7 @@ import { buildManifest, PUBLIC_TRIGGERS } from "./manifest.js";
 import { classify, streetTokens, domainOf, searchQuery } from "./newsfilter.js";
 import { buildTimeline, TIMELINE_VERSION } from "./timeline.js";
 import { buildSuggestion, SUGGEST_VERSION } from "./suggest.js";
-import { buildInputSet, verifyLetter, retryInstruction } from "./verify.js";
+import { buildInputSet, verifyLetter, retryInstruction, VERIFY_VERSION } from "./verify.js";
 import { handleAgentReport, journalStats, JOURNAL_CAP } from "./agent.js";
 import { WATCHDOG } from "./watchdog.js";
 import { projectImpact } from "./impact.js";
@@ -777,6 +777,10 @@ Rules: plain civic English. Under 220 words. Address only ${addressee}. Distingu
     news: ctx.news,
     timeline: ctx.timeline,
     supervisor: dist ? supervisor : null,
+    // The voices lane was already fetched to pick the prompt's quote. Passing
+    // it here is what lets the verifier refuse a letter that describes what
+    // residents said at a corner where nobody said anything.
+    voices: ctx.voices,
   });
 
   let text = await draft();
@@ -846,12 +850,73 @@ Rules: plain civic English. Under 220 words. Address only ${addressee}. Distingu
     fix: c.fix.name,
     cost: c.fix.cost,
     grant: c.fix.grant,
+    // Which rules this passed, on the record itself. Without it, a stored
+    // letter is a claim to have been verified with no way to ask verified
+    // against what, and a rule added later cannot tell an already-checked
+    // letter from one that predates the check.
+    verifyVersion: check.version,
+    checkedAt: generatedAt,
   };
   await putVerifiedLetter(env, c.slug, record).catch(() => {});
   return record;
 }
 
-function sampleLetter(c, district) {
+// ------------------------------------------------------- the serving gate
+//
+// A letter reaches a reader by four routes: a fresh draft, a stored letter that
+// passed verification, the sample, and the score-tier "not drafted yet" state.
+// Only the first is checked at the moment it is written. The other three were
+// trusted, and one of them was lying.
+//
+// The sample is the one that shipped. Its text asserts resident accounts, press
+// coverage and "hundreds of collisions" at every corner it is served for,
+// because it is one fixed paragraph written to look like a letter, not a claim
+// about any particular intersection. On 16th and Potrero that put "residents
+// describe the problem" beside a voices lane reading NONE FOUND and "hundreds
+// of collisions" beside a displayed 65. Nothing caught it, because none of
+// those sentences contains a digit to check.
+//
+// So a letter now has to earn its way out of here. Failing closed is the point:
+// an unchecked letter is exactly what this gate exists to stop, and the honest
+// pending state below is always available and always true.
+export const LETTER_PENDING_NOTE =
+  "A verified letter for this corner is queued behind generation.";
+
+function pendingLetter(c, reasons = []) {
+  return {
+    source: "pending-verification",
+    supervisor: null,
+    verified: false,
+    gated: true,
+    text: "",
+    note: LETTER_PENDING_NOTE,
+    // Named rather than summarised. A reader who wants to know why this corner
+    // has no letter can read the reasons the check gave, in the same words the
+    // regeneration prompt will be conditioned on.
+    gatedReason: reasons.length
+      ? `The last draft for this corner failed the letter check: ${reasons.join("; ")}.`
+      : "No letter for this corner has passed the current letter check.",
+    fix: c.fix.name,
+    cost: c.fix.cost,
+    grant: c.fix.grant,
+  };
+}
+
+// A stored letter may serve only if it was checked by the rules in force now.
+// A letter verified under an older, weaker verifier has not been checked for
+// the thing that went wrong, and "it passed once" is not the same claim as "it
+// passes". This costs nothing: the version is on the record.
+function storedLetterServes(stored) {
+  return Boolean(stored?.text) && stored?.verifyVersion === VERIFY_VERSION;
+}
+
+// Kept, exported and no longer served anywhere.
+//
+// It is the exhibit: tools/verify.test.mjs runs it through the check and
+// asserts it fails, so if a future change ever routes it back to a reader the
+// test says so by name. Deleting it would remove the evidence of what the site
+// used to say and leave nothing pinning the rule to the letter that broke it.
+export function sampleLetter(c, district) {
   const supervisor = supervisorFor(district);
   // Same rule as the live path: title only when the district maps to a real
   // Supervisor, never "Dear Supervisor Mayor Daniel Lurie".
@@ -1461,7 +1526,17 @@ async function ogFor(c, env) {
   // Whether this corner actually has a generated fix image. The page's own
   // subtitle promises "a picture of the fix", and it must not promise one it
   // is not showing. It comes back by itself when generation does.
-  return { score, cred, letter, tier: tierOf(c, imagery), showsFix: Boolean(imagery?.states?.includes("fix")) };
+  return {
+    score,
+    cred,
+    // Same gate as the API path. This one writes the letter straight into the
+    // server HTML, so a letter that may not be served over the API must not
+    // arrive by the shorter route either; that is how a rail becomes a
+    // suggestion.
+    letter: storedLetterServes(letter) ? letter : null,
+    tier: tierOf(c, imagery),
+    showsFix: Boolean(imagery?.states?.includes("fix")),
+  };
 }
 
 // ---------------------------------------------------------------- generated imagery
@@ -2418,7 +2493,7 @@ export default {
             : await getLetterBackoff(env).catch(() => null);
         if (backoff) {
           const stored = await getVerifiedLetter(env, c.slug).catch(() => null);
-          if (stored?.text) {
+          if (storedLetterServes(stored)) {
             return json({
               ...stored,
               source: "verified-cache",
@@ -2426,7 +2501,15 @@ export default {
               note: "Letter drafting is paused while the generator has no allowance left. This is the last draft that passed verification at this corner.",
             });
           }
-          return json({ ...sampleLetter(c, c.district), backoff });
+          // No letter here has passed the current check, so there is nothing
+          // true to serve. The sample used to fill this gap and that is the
+          // hole this closes: one fixed paragraph asserting resident accounts,
+          // press coverage and hundreds of collisions, at whichever corner
+          // happened to ask.
+          return json({
+            ...pendingLetter(c, stored?.text ? ["it was verified under an earlier version of the letter check"] : []),
+            backoff,
+          });
         }
         // The slowest lane by far, and the one worth caching hardest: a fresh
         // draft costs several seconds of Gemini time.
@@ -2450,7 +2533,7 @@ export default {
                 quotaBackoffUntil = Date.now() + 3600 * 1000;
                 await setLetterBackoff(env, e.message).catch(() => {});
                 const stored = await getVerifiedLetter(env, c.slug).catch(() => null);
-                if (stored?.text) {
+                if (storedLetterServes(stored)) {
                   return {
                     ...stored,
                     source: "verified-cache",
@@ -2461,8 +2544,11 @@ export default {
               // A letter quietly becoming a sample is the failure a reader is
               // least likely to notice and most likely to be misled by, so it
               // leaves a trace with the reason attached rather than vanishing.
-              console.log(`letter fell back to sample at ${c.slug}: ${String(e?.message || e)}`);
-              return sampleLetter(c, stats.district);
+              // It no longer becomes a sample: the sample asserts three lanes
+              // it cannot possibly have checked, so the honest pending state is
+              // what a corner with no verified letter gets.
+              console.log(`letter went pending at ${c.slug}: ${String(e?.message || e)}`);
+              return pendingLetter(c);
             },
             );
           }),

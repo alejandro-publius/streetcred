@@ -60,6 +60,203 @@ if (!retry.includes('"412"')) {
   console.log("pass  retry instruction names the failing token");
 }
 
+// ------------------------------------------------- lane consistency cases
+//
+// Every case below is a sentence with no checkable digit in it. That is the
+// whole point: the number checker read all three of these and passed them,
+// because there is nothing in them to count. A letter served on 16th and
+// Potrero told a reader that residents described the problem, on a page whose
+// voices lane said NONE FOUND, and claimed hundreds of collisions beside a
+// displayed 65.
+
+// The same corner as `inputs` above, with every lane empty. 41 collisions is
+// the largest figure it can display, which is what makes "hundreds" a lie here
+// and would make it true somewhere else.
+const emptyLanes = buildInputSet({
+  corner: {
+    name: "Taylor Street and Turk Street",
+    short: "Taylor & Turk",
+    fix: { cost: "$265,000 estimated", grant: "Caltrans HSIP" },
+  },
+  stats: { crashes: 41, fatal: 1, reports311: 214, district: 5 },
+  score: { index: 88 },
+  news: { items: [] },
+  voices: { items: [] },
+  timeline: null,
+  supervisor: "Bilal Mahmood",
+});
+
+// The same corner with all three lanes carrying something real.
+const fullLanes = buildInputSet({
+  corner: {
+    name: "Taylor Street and Turk Street",
+    short: "Taylor & Turk",
+    fix: { cost: "$265,000 estimated", grant: "Caltrans HSIP" },
+  },
+  stats: { crashes: 412, fatal: 1, reports311: 214, district: 5 },
+  score: { index: 88 },
+  news: {
+    items: [
+      {
+        domain: "sfstandard.com",
+        title: "Pedestrian struck at Taylor and Turk",
+        date: "2026-03-04",
+        corroborates: true,
+        official: false,
+      },
+    ],
+  },
+  voices: {
+    items: [{ text: "drivers turn through the crosswalk while people are still crossing", source: "reddit" }],
+  },
+  timeline: null,
+  supervisor: "Bilal Mahmood",
+});
+
+const laneCases = [
+  // (a) resident accounts
+  [
+    "resident accounts asserted with an empty voices lane",
+    "Residents describe the same problem in their own words.",
+    emptyLanes,
+    false,
+    "voices",
+  ],
+  [
+    "resident accounts asserted when the lane found one",
+    "Residents describe the same problem in their own words.",
+    fullLanes,
+    true,
+    null,
+  ],
+  [
+    "residents as a plain noun is not an evidentiary claim",
+    "Residents deserve a crossing they can use safely.",
+    emptyLanes,
+    true,
+    null,
+  ],
+  // (b) press coverage
+  [
+    "press coverage asserted with no citations found",
+    "Local reporting has covered pedestrian safety on this corridor.",
+    emptyLanes,
+    false,
+    "press",
+  ],
+  [
+    "press coverage asserted when a citation exists",
+    "Local reporting has covered pedestrian safety on this corridor.",
+    fullLanes,
+    true,
+    null,
+  ],
+  [
+    "an agency bulletin is the record, not coverage of it",
+    "Local reporting has covered pedestrian safety on this corridor.",
+    buildInputSet({
+      corner: { name: "Taylor Street and Turk Street", short: "Taylor & Turk", fix: {} },
+      stats: { crashes: 41, district: 5 },
+      news: { items: [{ domain: "sfmta.com", official: true, corroborates: true }] },
+      voices: { items: [] },
+      supervisor: "Bilal Mahmood",
+    }),
+    false,
+    "press",
+  ],
+  // (c) magnitude words
+  [
+    "hundreds claimed where the page displays 41",
+    "City records show hundreds of collisions at this corner.",
+    emptyLanes,
+    false,
+    "hundreds",
+  ],
+  [
+    "hundreds claimed where the page displays 412",
+    "City records show hundreds of collisions at this corner.",
+    fullLanes,
+    true,
+    null,
+  ],
+  [
+    "dozens claimed where the page displays 41",
+    "City records show dozens of collisions at this corner.",
+    emptyLanes,
+    true,
+    null,
+  ],
+  [
+    "countless needs some displayed count to be about",
+    "Countless people cross here every day.",
+    buildInputSet({
+      corner: { name: "Taylor Street and Turk Street", short: "Taylor & Turk", fix: {} },
+      stats: {},
+      news: { items: [] },
+      voices: { items: [] },
+      supervisor: null,
+    }),
+    false,
+    "countless",
+  ],
+  [
+    "one magnitude verdict per sentence, not three for one phrase",
+    "The city logged hundreds of thousands of them.",
+    emptyLanes,
+    false,
+    "hundreds of thousands",
+  ],
+  // A frequency word is a claim about pattern, not size, and flagging it would
+  // produce the kind of false failure that gets a verifier switched off.
+  [
+    "repeatedly is not a magnitude claim",
+    "The city has repeatedly declined to fund this crossing.",
+    emptyLanes,
+    true,
+    null,
+  ],
+];
+
+for (const [label, text, set, expectOk, expectKindOrToken] of laneCases) {
+  const r = verifyLetter(text, set);
+  const okMatch = r.ok === expectOk;
+  const named =
+    expectOk ||
+    r.failures.some((f) => f.kind === expectKindOrToken || f.token === expectKindOrToken);
+  const pass = okMatch && named;
+  if (!pass) failed++;
+  console.log(
+    `${pass ? "pass" : "FAIL"}  ${label}` +
+      (expectOk
+        ? r.ok
+          ? ""
+          : `  (unexpectedly failed: ${r.failures.map((f) => f.kind).join(", ")})`
+        : `  (named: ${r.failures.map((f) => f.kind).join(", ") || "nothing"})`),
+  );
+}
+
+// The exhibit. sampleLetter is one fixed paragraph asserting resident accounts,
+// press coverage and hundreds of collisions, and it was served at whichever
+// corner happened to ask. It is no longer routed to a reader anywhere; this
+// asserts that if it ever is again, the check refuses it.
+const { sampleLetter } = await import("../src/index.js");
+const sample = sampleLetter(
+  { name: "16th Street and Potrero Avenue", short: "16th & Potrero", slug: "16th-and-potrero", fix: { name: "Continental crosswalks", cost: "$250,000", grant: "Caltrans HSIP" } },
+  9,
+);
+const sampleCheck = verifyLetter(sample.text, emptyLanes);
+const sampleKinds = new Set(sampleCheck.failures.map((f) => f.kind));
+const sampleWanted = ["voices", "press", "magnitude"];
+const sampleMissing = sampleWanted.filter((k) => !sampleKinds.has(k));
+if (sampleCheck.ok || sampleMissing.length) {
+  failed++;
+  console.log(
+    `FAIL  the sample letter must fail every lane rule (missing: ${sampleMissing.join(", ") || "none, but it passed"})`,
+  );
+} else {
+  console.log("pass  the sample letter fails all three lane rules and cannot be served");
+}
+
 if (failed) {
   console.error(`\n${failed} verifier case(s) failed`);
   process.exit(1);

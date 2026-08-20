@@ -2566,7 +2566,7 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
     tag.textContent = "none on topic"; tag.classList.add("pending");
     el("voices").innerHTML =
       '<p class="empty">The scrapers ran here and found no account that describes the street itself.</p>' +
-      '<p class="pcauto">Commissioned autonomously on ' + esc(String(d.commissionedAt || "").slice(0,10)) +
+      '<p class="pcauto">Commissioned autonomously on ' + esc(ptDay(d.commissionedAt)) +
       ', ' + esc(d.candidates || 0) + ' accounts read. An empty lane that actually ran is worth more than a full one that guessed.</p>';
     return;
   }
@@ -2616,7 +2616,7 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
     // scrape and nobody was present when it ran.
     (d.commissioned
       ? '<p class="pcauto">Resident voices commissioned autonomously: the morning run started both scrapers for this corner on ' +
-        esc(String(d.commissionedAt || "").slice(0,10)) + ' and the next run ingested ' +
+        esc(ptDay(d.commissionedAt)) + ' and the next run ingested ' +
         esc(d.candidates || 0) + ' accounts, of which these survived the relevance filter.</p>'
       : '');
 });
@@ -2657,8 +2657,14 @@ LANE_LOADERS.letter = () => fetch("/api/letter" + X).then(r => r.json()).then(d 
   // Not drafted, and not pretending otherwise. A sample letter is the one
   // artifact on this site somebody might actually send, so a corner without a
   // real draft shows the offer and the reason it cannot run right now.
-  if(d.source === "ondemand"){
-    const t = el("lettertag"); t.textContent = "not drafted"; t.classList.add("pending");
+  // Two ways to have no letter, and they are different facts about the corner.
+  // "ondemand" means nobody has asked for one yet. "pending-verification"
+  // means one was written and the check refused it, which is a stronger
+  // statement and the reader is entitled to the reason.
+  if(d.source === "ondemand" || d.source === "pending-verification"){
+    const t = el("lettertag");
+    t.textContent = d.source === "ondemand" ? "not drafted" : "not verified";
+    t.classList.add("pending");
     el("letter").innerHTML = '<p class="empty">' + esc(d.note || "") + '</p>' +
       '<p class="gated"><button class="offer" type="button" disabled>Draft the letter for this corner</button><br>' +
       '<b>Drafting is paused.</b> ' + esc(d.gatedReason || "") + '</p>';
