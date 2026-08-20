@@ -19,7 +19,7 @@ import {
   getLetterBackoff, setLetterBackoff,
   getVoicesStored, exaBudget, actorRunBudget, getActorCosts, getVoicesSummary,
   recordExaSpend, recordExaProbe, getExaProbe,
-  getPress, putPress, getPressRollup, bumpPressRollup, getBurnCheckpoint,
+  getPress, putPress, getPressRollup, bumpPressRollup, getBurnCheckpoint, putBurnCheckpoint,
   radarBudget, countRadarDetection, getMonitors, putMonitors, getRadarFeed, pushRadarFeed, putRadarUnknown,
   recountPressCitations, getPressCitations, CITATION_CACHE_S,
 } from "./store.js";
@@ -1081,6 +1081,12 @@ async function queueRadarRecheck(env, slugs) {
 // Audited corners are excluded. Their press lane ran with their audit, and
 // re-running it here would spend the balance re-reading what the site knows.
 export const PRESS_BATCH_PER_NIGHT = 100;
+// A quarter-hourly run is bounded by the platform, not by taste: a Worker
+// invocation may make 50 subrequests, and a corner costs up to six calls to
+// Exa. Six corners is 36, which leaves room for the searches a warm segment
+// does not save. Overnight that is roughly 190 corners, at a cost the cap
+// still governs.
+export const PRESS_BATCH_PER_TICK = 6;
 const PRESS_FRESH_DAYS = 30;
 const PRESS_LANES = 4;
 
@@ -1099,7 +1105,15 @@ export async function pressBatch(env, limit = PRESS_BATCH_PER_NIGHT) {
   const meta = await getCityMeta(env).catch(() => null);
   const fresh = Date.now() - PRESS_FRESH_DAYS * 24 * 3600 * 1000;
   const targets = [];
-  for (let page = 1; targets.length < limit && page <= 80; page += 1) {
+  // Resume where the last run stopped rather than rescanning the rank from the
+  // top. Without this every tick re-reads several hundred already-checked
+  // corners to find six new ones, which is the same work the checkpoint exists
+  // to avoid.
+  const checkpoint = await getBurnCheckpoint(env).catch(() => null);
+  const startPage = Math.max(1, Number(checkpoint?.nextPage) || 1);
+  let lastPage = startPage;
+  for (let page = startPage; targets.length < limit && page <= 80; page += 1) {
+    lastPage = page;
     const rank = await getRankPage(env, page).catch(() => null);
     if (!rank?.rows?.length) break;
     for (const row of tagTiers(rank.rows, meta)) {
@@ -1138,7 +1152,21 @@ export async function pressBatch(env, limit = PRESS_BATCH_PER_NIGHT) {
     }
   };
   await Promise.all(Array.from({ length: Math.min(PRESS_LANES, targets.length) }, worker));
-  return { ...out, queued: targets.length };
+  // The stored press records are what make this resumable corner by corner.
+  // The checkpoint only carries the reader's place in the rank and the running
+  // totals the status card reads.
+  await putBurnCheckpoint(env, {
+    startedAt: checkpoint?.startedAt || new Date().toISOString(),
+    nextPage: targets.length < limit ? 1 : lastPage,
+    done: (checkpoint?.done || 0) + out.checked,
+    withCoverage: (checkpoint?.withCoverage || 0) + out.withCoverage,
+    empty: (checkpoint?.empty || 0) + out.empty,
+    spentUsd: Math.round(((checkpoint?.spentUsd || 0) + out.spentUsd) * 1e6) / 1e6,
+    chunks: (checkpoint?.chunks || 0) + 1,
+    source: "worker",
+    stopReason: out.deferred ? "budget cap reached" : null,
+  }).catch(() => {});
+  return { ...out, queued: targets.length, fromPage: startPage };
 }
 
 // ---------------------------------------------------------------- health
@@ -1738,15 +1766,20 @@ export default {
   // be cut off when the handler returns.
   async scheduled(event, env, ctx) {
     const origin = "https://streetcred.thealexschroeder.workers.dev";
-    // The audit first, always. It is the claim the site makes about itself and
-    // it must not be starved by a batch that runs beside it.
-    ctx.waitUntil(
-      cornerOfTheDay(env, ctx, origin)
-        // Creates the monitors the first morning a webhook secret exists, and
-        // does nothing every morning after that.
-        .then(() => ensureMonitors(env).catch(() => null))
-        .then(() => pressBatch(env, PRESS_BATCH_PER_NIGHT)),
-    );
+    // Two schedules, two jobs. The morning one is the claim the site makes
+    // about itself and it runs alone: the audit first, then the monitors if
+    // they do not exist, then a full press batch. The quarter-hourly one only
+    // presses on with the batch, in ticks small enough to fit a single
+    // invocation's subrequest budget.
+    if (event.cron === "10 13 * * *") {
+      ctx.waitUntil(
+        cornerOfTheDay(env, ctx, origin)
+          .then(() => ensureMonitors(env).catch(() => null))
+          .then(() => pressBatch(env, PRESS_BATCH_PER_NIGHT)),
+      );
+      return;
+    }
+    ctx.waitUntil(pressBatch(env, PRESS_BATCH_PER_TICK).catch(() => null));
   },
 
   async fetch(request, env, ctx) {
