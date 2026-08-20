@@ -592,3 +592,43 @@ blocked on engineering.
 - A schedule. The freeze lifts on 2026-08-25 and judging is on 2026-08-24, so
   nothing on this list is available before judging, which is the point of a
   freeze.
+
+## 16. Supervisor district outlines as a second context layer, candidate only
+
+Recorded 2026-08-20 alongside the coverage layer. Not built, and deliberately
+not built in that pass.
+
+The argument for it is real and specific: letters route by district. The
+addressee rule in `src/verify.js` checks the official named in a letter against
+the sitting representative of the corner's resolved district, and `/methodology`
+explains the 150 metre district resolution. A reader looking at the map has no
+way to see the boundary that decides who their letter goes to. San Francisco
+publishes the supervisor district boundaries as official GeoJSON, so this would
+be a second honest context layer drawn from the city's own data rather than
+from anything inferred.
+
+The reason it is a candidate and not a task: it is a **boundary** layer, and the
+coverage layer that just shipped exists precisely because a boundary around the
+audited set would be a lie. These two are not the same kind of object and the
+map has to make that obvious. A district outline is an administrative fact with
+a real edge; a coverage hull would be a claim about work that was not done.
+Shipping them together without settling the visual grammar risks teaching a
+reader that both outlines mean the same thing.
+
+So before this is built, decide:
+
+- How a district outline reads as jurisdiction rather than as coverage. Almost
+  certainly a thin stroke with no fill, against coverage's fill with no
+  meaningful stroke.
+- Whether it is on by default. Probably not: the map already carries grade dots,
+  the heat layer, and coverage.
+- The payload cost. The official GeoJSON is not small, and the map already
+  fetches `dots.json` for the heat layer. It should be simplified server side
+  and served from the asset directory rather than fetched from the city on a
+  page load.
+- What it says when a corner's resolved district and the polygon it falls inside
+  disagree. That will happen at edges, and the honest answer is probably to show
+  it rather than to hide it.
+
+Source: coverage layer at `204387d`, which established the no-hull rule this
+would have to live beside.

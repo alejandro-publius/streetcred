@@ -522,6 +522,42 @@ and its log entry no longer carries watchlist counts. Reading the stored record
 there would have put another run's numbers in this run's entry, which is the
 quieter version of the same problem.
 
+## Coverage layer rollback
+
+The audited coverage layer of 2026-08-20 adds a map layer and reads that the
+homepage route already made. No scoring, data, cron, cap or KV write changed.
+Built on `coverage/pass-1`, verified on preview, then merged.
+
+**Production deployment live before this layer:**
+`d62127ba-8eed-418e-a64c-811e224c3393`, deployed 2026-08-20T17:08:56Z.
+
+**Production deployment after:**
+`c97aeb24-a3ac-4db1-839e-5d1480fbca13`. **Preview:**
+`0bf46538-ac36-4e33-8964-b4ccacca59fd`.
+
+```
+npx wrangler rollback d62127ba-8eed-418e-a64c-811e224c3393
+```
+
+**The rule the layer holds, so nobody softens it later.** Coverage is drawn per
+corner as its 80 metre scoring core and never as one boundary around the audited
+set. A hull around 23 corners in a city of 7,355 graded ones would enclose
+thousands of crossings nobody has looked at. The union of discs is the zone and
+the gaps are the truth: the layer covers 0.46 km2, which is about 0.38 percent
+of San Francisco, and it should look like that.
+
+**The outlined state is currently unreachable and that is correct.** The split
+is 23 rendered, 0 pending, because the cron only admits a corner to the audited
+roster once both generated states exist, so an audited corner without a render
+cannot exist. `tools/tiers.test.mjs` already pins that as a known gap. The
+outlined branch is waiting on a fix somewhere else, not dead.
+
+**Do not rebuild the layer from `hin:list`.** The board list carries 25 rows and
+is missing three audited corners outright, so a layer built from what the page
+already had client-side draws 20 discs for a 23 corner roster and under-claims
+silently. The builder reads the roster in `city:meta` and falls back to the city
+shard for corners the board does not carry.
+
 ## Do not propose Workers AI for imagery again
 
 Piloted and rejected 2026-08-20. Recorded here as well as in
