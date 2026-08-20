@@ -449,12 +449,16 @@ test("every cut-off query is a visible entry with its reason", () => {
   assert.doesNotMatch(html, /refer to https:/);
 });
 
-test("the neighbourhood queries lost in the tail are named, not summarised", () => {
+test("every query in the set is listed with the date it last reached Exa", () => {
   const html = WATCHLIST_PAGE(wlRecord, "https://example.test", null);
-  assert.ok(html.includes("Tenderloin"), "the Tenderloin query never runs and must be visible");
-  assert.ok(html.includes("Excelsior"), "the Excelsior query never runs and must be visible");
+  // The whole set, not just the ones that ran. The neighbourhood queries were
+  // the ones cut off every morning, so they are the ones that must be visible.
+  for (const hood of ["Tenderloin", "Excelsior", "Bayview", "Visitacion"]) {
+    assert.ok(html.includes(hood), `${hood} is missing from the coverage list`);
+  }
   const txt = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-  assert.match(txt, /geographic blind spot/, "say that the gap is systematic, not random");
+  assert.match(txt, /and when it last ran/, "the list has to carry its dates");
+  assert.match(txt, /never run/, "a query that has never run must say so");
 });
 
 test("the empty state does not claim searches ran that did not", () => {
@@ -467,15 +471,66 @@ test("the empty state does not claim searches ran that did not", () => {
 test("a pass with nothing cut off says so plainly", () => {
   const clean = { ...wlRecord, queries: wlRecord.queries.map(({ failed, ...q }) => ({ ...q, results: 15 })) };
   const txt = WATCHLIST_PAGE(clean, "https://example.test", null).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-  assert.match(txt, /All 5 completed/);
-  assert.match(txt, /Every search in the last pass reached Exa/);
-  // The stat chip is the claim; the sentence "Nothing was cut off" is not.
+  assert.match(txt, /The last pass completed all 5/);
+  assert.match(txt, /The pass costs 5 searches/);
+  // The stat chip is the claim; a sentence about being cut off is not.
   assert.doesNotMatch(txt, /\d+ cut off/);
 });
 
-// The scheduling fix is the operator's call and must not arrive as a side
-// effect of a copy pass.
-test("the page names the finding doc rather than fixing the cron quietly", () => {
-  const html = WATCHLIST_PAGE(wlRecord, "https://example.test", null);
-  assert.match(html, /WATCHLIST_SUBREQUEST_FINDING\.md/);
+// The lane has its own cron now, so the page states that rather than pointing
+// at a finding doc for a decision that has been made.
+test("the page states that the lane runs on its own invocation", () => {
+  // Unconditionally. The lane having its own trigger is true whether or not the
+  // last pass finished, and burying it in the success branch meant the page
+  // stopped explaining its own schedule on exactly the days a reader would want
+  // to know it.
+  const clean = { ...wlRecord, queries: wlRecord.queries.map(({ failed, ...q }) => ({ ...q, results: 15 })) };
+  for (const rec of [wlRecord, clean]) {
+    const txt = WATCHLIST_PAGE(rec, "https://example.test", null).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    assert.match(txt, /own cron trigger at 13:20 UTC/);
+    assert.match(txt, /own subrequest budget/);
+  }
+});
+
+test("the page reports whether the last run finished", () => {
+  const ok = WATCHLIST_PAGE(wlRecord, "https://example.test", null, false, 0, null, {
+    at: "2026-08-20T13:20:04.000Z",
+    ok: true,
+    attempted: 29,
+    completed: 29,
+    failed: 0,
+  });
+  assert.match(ok.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "), /Last run 2026-08-20, complete/);
+
+  const bad = WATCHLIST_PAGE(wlRecord, "https://example.test", null, false, 0, null, {
+    at: "2026-08-20T13:20:04.000Z",
+    ok: false,
+    reason: "Too many subrequests by single Worker invocation.",
+  });
+  const t = bad.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(t, /incomplete: Too many subrequests/);
+});
+
+test("a set that fits the ceiling says every query runs every morning", () => {
+  const txt = WATCHLIST_PAGE(
+    { ...wlRecord, cycle: { size: 29, perRun: 40, rotating: false, runsPerCycle: 1 } },
+    "https://example.test",
+    null,
+  )
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ");
+  assert.match(txt, /29 queries against a ceiling of 40 per run/);
+  assert.match(txt, /every query runs every morning/);
+});
+
+test("a set larger than the ceiling says so and names the cycle length", () => {
+  const txt = WATCHLIST_PAGE(
+    { ...wlRecord, cycle: { size: 90, perRun: 40, rotating: true, runsPerCycle: 3 } },
+    "https://example.test",
+    null,
+  )
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ");
+  assert.match(txt, /The set is larger than one run/);
+  assert.match(txt, /full coverage takes 3 runs/);
 });

@@ -17,7 +17,7 @@ import {
   countAgentReject, getAgentRejects,
   getVerifiedLetter, putVerifiedLetter, appendTrustIncident, getTrustIncidents,
   getScoreRaw, appendChange, getChanges,
-  getWatchlist, putWatchlist, getConnections, putConnections,
+  getWatchlist, putWatchlist, getWatchlistRun, putWatchlistRun, getConnections, putConnections,
   getLetterBackoff, setLetterBackoff,
   getVoicesStored, exaBudget, actorRunBudget, getActorCosts, getVoicesSummary,
   recordExaSpend, recordExaProbe, getExaProbe,
@@ -52,7 +52,7 @@ import { WATCHDOG } from "./watchdog.js";
 import { projectImpact } from "./impact.js";
 import { METHODOLOGY } from "./methodology.js";
 import { WATCHLIST_PAGE } from "./watchlistpage.js";
-import { buildWatchlist, buildConnections, reciprocal, WATCHLIST_VERSION } from "./press.js";
+import { buildWatchlist, buildConnections, reciprocal, WATCHLIST_VERSION, runCounts } from "./press.js";
 import { commissionVoices, ingestVoices } from "./voices.js";
 import { CHANGES } from "./changes.js";
 import { STATUS } from "./status.js";
@@ -1777,19 +1777,12 @@ async function cornerOfTheDay(env, ctx, origin) {
     return conn;
   });
 
-  // The citywide watchlist, refreshed. WATCHLIST_QUERIES.length searches
-  // attempted, and the only lane here that is not about today's corner at all.
-  // It runs near the end of this invocation, after the audit has spent most of
-  // the subrequest budget, so most of them are cut off before they reach Exa.
-  // See docs/WATCHLIST_SUBREQUEST_FINDING.md; the fix is the operator's call.
-  const watchlist = await lane("press watchlist", async () => {
-    const meta = await getCityMeta(env);
-    const skip = new Set([...(meta?.audited || []), corner.slug]);
-    const w = await buildWatchlist(env, { skip });
-    if (w.source === "unavailable") return w;
-    await putWatchlist(env, w);
-    return w;
-  });
+  // The citywide watchlist used to run here, as the last lane of this
+  // invocation, and it is the one thing this function no longer does. It is not
+  // about today's corner, it never was, and sharing an invocation with the
+  // audit meant sharing the audit's spent subrequest budget: 29 searches
+  // arriving with about seven of the fifty left. It has its own cron now, and
+  // therefore its own budget. See watchlistRun below.
 
   const settled = await getImageryStatus(env, corner.slug).catch(() => null);
 
@@ -1839,10 +1832,12 @@ async function cornerOfTheDay(env, ctx, origin) {
       ingested: (ingest?.ingested || []).map((i) => ({ slug: i.slug, kept: i.kept, usd: Math.round((i.costUsd || 0) * 10000) / 10000 })),
       pending: (ingest?.stillPending || []).length,
     },
+    // Connections only. This run no longer builds the watchlist, so it does not
+    // report on one: reading the stored record here would put another run's
+    // numbers in this run's log entry, which is the quieter version of the
+    // problem this whole change is about.
     press: {
       connections: connected?.links?.length ?? 0,
-      watchlist: watchlist?.entries?.length ?? 0,
-      watchlistRejected: watchlist?.rejected ?? 0,
     },
     status: notes.length ? "partial" : "ok",
     ...(notes.length ? { reason: notes.join("; ") } : {}),
@@ -1852,17 +1847,95 @@ async function cornerOfTheDay(env, ctx, origin) {
   return { ok: true, ...entry };
 }
 
+// The cron expressions this Worker dispatches on, named once.
+//
+// These strings have to match wrangler.jsonc exactly. A schedule changed in the
+// config but not here does not fail: the firing falls through to the last
+// branch and quietly runs the press batch instead of the job it was scheduled
+// for, forever, with nothing red anywhere. tools/cron.test.mjs reads the config
+// and asserts the two agree, which is the only way that mistake gets caught.
+export const CRON_MORNING = "10 13 * * *";
+export const CRON_WATCHLIST = "20 13 * * *";
+export const CRON_PRESS_TICK = "*/15 * * * *";
+
+// ------------------------------------------------------- the watchlist run
+//
+// Its own invocation, and that is the entire point.
+//
+// This lane used to run last inside the daily audit, which by then had spent
+// most of its fifty external subrequests on DataSF, Exa press, Apify, imagery
+// and findSimilar. Twenty-nine searches arrived with about seven of the budget
+// left, so seven ran and twenty-two returned "Too many subrequests by single
+// Worker invocation" without ever reaching Exa. The number on the page said 29
+// either way.
+//
+// A separate cron trigger is a separate invocation and a fresh fifty. The lane
+// costs one external fetch per query and nothing else external, so 29 fits with
+// twenty-one unspent. The KV reads it makes come out of a different allowance
+// of a thousand and are not part of this arithmetic.
+//
+// Called by the 13:20 UTC cron and by the operator-triggered endpoint below.
+export async function watchlistRun(env) {
+  const started = new Date().toISOString();
+  const meta = await getCityMeta(env).catch(() => null);
+  // Corners already audited are leads we have already followed, so they are
+  // excluded from the watchlist exactly as they were when this ran inside the
+  // audit. The one difference: the audit's own corner for the day is not
+  // excluded any more, because this no longer knows which corner that was and
+  // guessing would be worse than including it.
+  const skip = new Set(meta?.audited || []);
+
+  try {
+    const w = await buildWatchlist(env, { skip });
+    if (w.source === "unavailable") {
+      await putWatchlistRun(env, { at: started, ok: false, reason: w.reason });
+      return { ok: false, reason: w.reason };
+    }
+    await putWatchlist(env, w);
+    const counts = runCounts(w);
+    const record = {
+      at: started,
+      ok: counts.failed === 0,
+      attempted: counts.attempted,
+      completed: counts.completed,
+      failed: counts.failed,
+      entries: w.entries.length,
+      rejected: w.rejected,
+      cycle: w.cycle,
+      ...(counts.commonReason ? { reason: counts.commonReason } : {}),
+    };
+    await putWatchlistRun(env, record);
+    // A run that did not complete every search it attempted is the exact
+    // failure this move was made to end, so it is logged loudly rather than
+    // left to be inferred from the page.
+    if (counts.failed) {
+      console.log(
+        `watchlist run incomplete: ${counts.completed} of ${counts.attempted} completed, ${counts.failed} cut off`,
+      );
+    }
+    return { ok: true, ...record };
+  } catch (e) {
+    const reason = String(e?.message || e).slice(0, 200);
+    await putWatchlistRun(env, { at: started, ok: false, reason }).catch(() => {});
+    console.log(`watchlist run failed: ${reason}`);
+    return { ok: false, reason };
+  }
+}
+
 export default {
   // The cron. Everything it does happens inside waitUntil so a slow lane cannot
   // be cut off when the handler returns.
   async scheduled(event, env, ctx) {
     const origin = "https://streetcred.thealexschroeder.workers.dev";
-    // Two schedules, two jobs. The morning one is the claim the site makes
-    // about itself and it runs alone: the audit first, then the monitors if
-    // they do not exist, then a full press batch. The quarter-hourly one only
-    // presses on with the batch, in ticks small enough to fit a single
-    // invocation's subrequest budget.
-    if (event.cron === "10 13 * * *") {
+    // Three schedules, three jobs, and the split between the first two is the
+    // whole reason this Worker has three. Each cron firing is its own
+    // invocation with its own subrequest budget; two jobs sharing one firing
+    // share one budget, and the second one gets whatever the first left.
+    //
+    // 13:10 UTC, the morning run: the audit, then the monitors if they do not
+    // exist, then a full press batch. This is the claim the site makes about
+    // itself and it runs alone.
+    if (event.cron === CRON_MORNING) {
       ctx.waitUntil(
         cornerOfTheDay(env, ctx, origin)
           .then(() => ensureMonitors(env).catch(() => null))
@@ -1870,6 +1943,16 @@ export default {
       );
       return;
     }
+    // 13:20 UTC, ten minutes later: the citywide watchlist, alone, on a fresh
+    // budget. Ten minutes is not synchronisation and is not relied on as any;
+    // the two invocations are independent whatever order they finish in. It is
+    // spaced only so the log reads in the order the work happened.
+    if (event.cron === CRON_WATCHLIST) {
+      ctx.waitUntil(watchlistRun(env).catch(() => null));
+      return;
+    }
+    // Every quarter hour: the press batch presses on, in ticks small enough to
+    // fit a single invocation's budget.
     ctx.waitUntil(pressBatch(env, PRESS_BATCH_PER_TICK).catch(() => null));
   },
 
@@ -2051,15 +2134,19 @@ export default {
       // cron, because a couple of dozen semantic searches is not something a
       // page load should start.
       if (p === "/watchlist" || p === "/watchlist/" || p === "/api/watchlist") {
-        const [w, hub] = await Promise.all([
+        const [w, hub, lastRun] = await Promise.all([
           getWatchlist(env, WATCHLIST_VERSION).catch(() => null),
           env.STORE?.get("press:hub", "json").catch(() => null) ?? null,
+          getWatchlistRun(env).catch(() => null),
         ]);
         if (p === "/api/watchlist") {
-          return json(w || { source: "empty", reason: "the watchlist has not been built yet" });
+          // The run record rides along on the API too, so anything checking
+          // this lane can ask whether the last pass finished without scraping
+          // the page for it.
+          return json(w ? { ...w, lastRun } : { source: "empty", reason: "the watchlist has not been built yet", lastRun });
         }
         const pressRollup = await getPressRollup(env).catch(() => null);
-        return new Response(WATCHLIST_PAGE(w, origin, hub, Boolean(env.PREVIEW), await mastScored(), pressRollup), {
+        return new Response(WATCHLIST_PAGE(w, origin, hub, Boolean(env.PREVIEW), await mastScored(), pressRollup, lastRun), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -2575,6 +2662,34 @@ export default {
 
       if (p.startsWith("/api/radar/hook/")) {
         return await radarHook(request, env, url);
+      }
+
+      // Run the watchlist now, on this invocation's own budget.
+      //
+      // Two reasons this exists: the operator should be able to rebuild the
+      // watchlist without waiting for tomorrow's cron, and a run reachable over
+      // HTTP is how "it completes all of them in its own invocation" gets
+      // verified against the live site rather than asserted. An HTTP invocation
+      // has the same fifty external subrequests a cron firing does, so it is
+      // the same test.
+      //
+      // Its own token, deliberately, rather than WEBHOOK_SECRET. That secret is
+      // shared with an external service that posts detections to
+      // /api/radar/hook, so it travels outside this system; this endpoint
+      // SPENDS, one Exa search per query attempted. Authorising money on a
+      // credential that was handed to a third party for a different purpose is
+      // the kind of shortcut that reads fine until it does not. Revoke or
+      // rotate this one on its own with `wrangler secret put
+      // WATCHLIST_RUN_TOKEN`, and nothing about the radar changes.
+      //
+      // NOT idempotent. It spends against the same cent counter and the same
+      // cap as every other lane, and it refuses at the cap exactly as they do.
+      if (p.startsWith("/api/watchlist/run/")) {
+        const token = p.split("/").pop();
+        if (!env.WATCHLIST_RUN_TOKEN || token !== env.WATCHLIST_RUN_TOKEN) {
+          return json({ error: "not found" }, 404);
+        }
+        return json(await watchlistRun(env));
       }
 
       // Same secret, same shape as the webhook: whoever can be told a

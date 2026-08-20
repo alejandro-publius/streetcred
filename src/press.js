@@ -21,10 +21,10 @@
 
 import { cityCornerFor, getCityStreets } from "./city.js";
 import { parseQuery } from "./resolve.js";
-import { canonicalSlug } from "./data.js";
+import { canonicalSlug, pacificDay } from "./data.js";
 import { DENY, domainOf } from "./newsfilter.js";
 import { isSafetyCoverage } from "./cred.js";
-import { reserveExa, recordExaSpend } from "./store.js";
+import { reserveExa, recordExaSpend, getWatchlist } from "./store.js";
 
 export const WATCHLIST_VERSION = "v1";
 export const CONNECTIONS_VERSION = "v1";
@@ -288,6 +288,53 @@ const publicArticle = ({ title, url, domain, date }) => ({ title, url, domain, d
 // partway, which is why runCounts below exists and why every surface that
 // reports this reports all three numbers. See
 // docs/WATCHLIST_SUBREQUEST_FINDING.md.
+// How many searches one dedicated invocation may attempt.
+//
+// A Worker on the free plan gets 50 EXTERNAL subrequests per invocation, and a
+// separate 1,000 for calls to Cloudflare services, so the KV reads this lane
+// makes (the street index, one city shard per candidate, the record it writes)
+// do not come out of the same pocket. exaSearch is one fetch per query with no
+// retry and no redirect, so the external cost of a run is exactly the number of
+// queries it attempts.
+//
+// 40 leaves ten of the fifty unspent. The list is 29 today and every query runs
+// every morning; this ceiling exists so that the failure that produced it
+// cannot recur. WATCHLIST_QUERIES grew from 7 to 29 and nothing followed it,
+// and the only symptom was a page confidently reporting work it had not done.
+// Past the ceiling the lane rotates instead of truncating, and says so.
+export const WATCHLIST_PER_RUN = 40;
+
+// Which queries this run should attempt, least recently run first.
+//
+// With a list that fits the ceiling this returns all of them in their declared
+// order and the rotation never engages. Past it, the oldest coverage goes
+// first, so a query cannot be starved: every run takes the staleset slice, and
+// a full cycle is ceil(length / perRun) runs.
+export function selectQueries(all, coverage = {}, perRun = WATCHLIST_PER_RUN) {
+  if (!Array.isArray(all) || all.length === 0) return [];
+  if (all.length <= perRun) return [...all];
+  return [...all]
+    .map((q, i) => ({ q, i, last: coverage?.[q.query] || "" }))
+    // Never run beats any date, then oldest first, then declared order, so the
+    // selection is deterministic and a rerun on the same day picks the same
+    // slice rather than reshuffling.
+    .sort((a, b) => a.last.localeCompare(b.last) || a.i - b.i)
+    .slice(0, perRun)
+    .sort((a, b) => a.i - b.i)
+    .map((x) => x.q);
+}
+
+// When each query last actually reached Exa. Carried forward from the previous
+// record so a query that did not run in this slice keeps the date it earned,
+// and a query that ran but failed does not get credit for it.
+export function mergeCoverage(previous = {}, searches = [], day = "") {
+  const next = { ...(previous || {}) };
+  for (const s of searches) {
+    if (!s?.failed) next[s.query] = day;
+  }
+  return next;
+}
+
 // Attempted, completed, failed, from the stored record and nothing else.
 //
 // `calls` is the attempt. Every surface that printed it printed the attempt as
@@ -327,10 +374,21 @@ function tidyReason(reason) {
 }
 
 export async function buildWatchlist(env, opts = {}) {
-  const queries = opts.queries || WATCHLIST_QUERIES;
+  const all = opts.queries || WATCHLIST_QUERIES;
   const days = opts.days || 90;
   const skip = opts.skip || new Set();
+  const perRun = opts.perRun ?? WATCHLIST_PER_RUN;
 
+  // The previous record carries when each query last reached Exa. It is read
+  // before anything is reserved, because the selection decides what to reserve.
+  const previous = opts.previous ?? (await getWatchlist(env).catch(() => null));
+  const coverage = previous?.coverage || {};
+  const queries = selectQueries(all, coverage, perRun);
+  const rotating = all.length > perRun;
+
+  // Reserve for what will actually be attempted, not for the whole list. The
+  // old code reserved for all 29 while 22 of them never reached Exa, so the
+  // ledger charged for work the API never saw.
   if (!(await reserveExa(env, queries.length))) {
     return { source: "unavailable", version: WATCHLIST_VERSION, reason: "exa call budget exhausted" };
   }
@@ -411,8 +469,25 @@ export async function buildWatchlist(env, opts = {}) {
     version: WATCHLIST_VERSION,
     builtAt: new Date().toISOString(),
     windowDays: days,
-    queries: searches.map((s) => ({ query: s.query, results: s.results.length, local: s.local, ...(s.failed ? { failed: s.failed } : {}) })),
+    queries: searches.map((s) => ({
+      query: s.query,
+      results: s.results.length,
+      local: s.local,
+      ...(s.failed ? { failed: s.failed } : {}),
+    })),
     calls: queries.length,
+    // The whole list, what one run may attempt, and whether this run was a
+    // slice of it. With 29 queries under a ceiling of 40 this always reports
+    // one run per cycle and every query attempted.
+    cycle: {
+      size: all.length,
+      perRun,
+      rotating,
+      runsPerCycle: Math.max(1, Math.ceil(all.length / perRun)),
+    },
+    // When each query last reached Exa, carried forward for the ones this run
+    // did not attempt or could not complete.
+    coverage: mergeCoverage(coverage, searches, pacificDay(new Date())),
     articles,
     entries,
     // Kept deliberately. A discovery pass that publishes only its hits is

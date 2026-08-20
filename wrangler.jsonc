@@ -21,12 +21,32 @@
   // so 13:10 UTC is 06:10 Pacific during daylight time and 05:10 once it ends.
   // The handler records the Pacific date, because the claim is about mornings.
   "triggers": {
-    // Two schedules. 13:10 UTC is the 06:10 Pacific morning run, which audits
-    // one corner and then works the press queue. The quarter-hourly one only
-    // continues the press batch, six corners a tick, which is what a single
-    // invocation's subrequest budget allows. Both are governed by the same
-    // cent counter and both refuse past the cap.
-    "crons": ["10 13 * * *", "*/15 * * * *"]
+    // Three schedules, and the reason there are three rather than two is that
+    // each cron firing is a separate invocation with its own subrequest budget.
+    // Two jobs sharing one firing share one budget, and the second one gets
+    // whatever the first left over.
+    //
+    //   10 13 * * *   the 06:10 Pacific morning run: audit one corner, ensure
+    //                 the radar monitors, then work the press queue.
+    //   20 13 * * *   the citywide press watchlist, alone. It used to be the
+    //                 last lane of the morning run and inherited a budget that
+    //                 was nearly spent: 29 searches arrived with about 7 of the
+    //                 50 external subrequests left, so 22 were cut off before
+    //                 they reached Exa every single morning. On its own firing
+    //                 it costs one fetch per query and all 29 fit.
+    //   */15 * * * *  the press batch continues, six corners a tick, which is
+    //                 what one invocation's budget allows.
+    //
+    // The strings are duplicated in src/index.js as CRON_MORNING,
+    // CRON_WATCHLIST and CRON_PRESS_TICK, because the dispatch has to compare
+    // against them. tools/cron.test.mjs reads this file and asserts the two
+    // agree: a schedule changed here and not there does not fail, it silently
+    // routes the firing to the wrong job.
+    //
+    // All three are governed by the same cent counter and all three refuse past
+    // the cap. Cron Triggers are limited per account, 5 on Workers Free and 250
+    // on Paid; this Worker uses 3.
+    "crons": ["10 13 * * *", "20 13 * * *", "*/15 * * * *"]
   },
   "observability": {
     "enabled": true

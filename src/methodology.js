@@ -203,10 +203,14 @@ entity-discovery problem, and it is only worth anything if the entities are veri
 <p>${attempted} citywide semantic searches are attempted each morning through Exa, with the news
 category, a published date window, lead-generation domains excluded at the API, and three passes
 restricted to San Francisco outlets that write at corner resolution.${
-  wl.completed
-    ? ` ${wl.completed} currently complete within the Worker's subrequest budget; the other ${wl.failed}
-are cut off before they reach Exa, and <a href="${origin}/watchlist">the watchlist</a> lists every one
-of them with its reason rather than counting the attempt as work done.`
+  wl.failed
+    ? ` ${wl.completed} of them completed in the last pass; the other ${wl.failed} were cut off before
+they reached Exa, and <a href="${origin}/watchlist">the watchlist</a> lists every one of them with its
+reason rather than counting the attempt as work done.`
+    : wl.completed
+    ? ` All ${wl.completed} completed in the last pass. This lane has a cron trigger of its own so that
+it gets an invocation's subrequest budget to itself; it used to run as the last lane of the daily audit
+and inherited whatever that had left, which was about seven of fifty.`
     : ""
 } Every crossing name in every result is pulled out by the same
 extractor the related-corner lead and the connections pass use, and then each candidate has to clear

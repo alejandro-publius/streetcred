@@ -1,5 +1,11 @@
 # The watchlist runs 8 of its 29 searches
 
+> **Resolved 2026-08-20.** Option 2 below was chosen and implemented: the lane
+> has its own cron trigger and its own subrequest budget, and all 29 searches
+> complete in one run. This file is kept as the finding and the evidence; the
+> numbers in it describe the state before the fix. See "The watchlist runs on
+> its own cron" in `specs/HANDOFF.md` for what runs today.
+
 Found 2026-08-19, during the overnight verification pass. Not fixed, because the
 feature freeze holds until 2026-08-25 and the fix is a behavior change. This file
 is the finding, the evidence, and the options.
@@ -76,7 +82,13 @@ systematic geographic blind spot and has never run those queries at all.
 
 ## Options, for after the freeze
 
-None of these is chosen here.
+**Resolved 2026-08-20: option 2.** The lane moved onto its own cron trigger,
+`20 13 * * *`, so it no longer inherits the audit's spent budget. Option 1's
+honest accounting shipped first, on 2026-08-20, and is kept: `/watchlist` still
+reports attempted, completed and failed, and still lists every query. The four
+options are left below as the record of what was weighed.
+
+None of these was chosen when this file was written.
 
 1. **Report both numbers.** Smallest possible change, and it makes the site honest
    immediately: print attempted and completed, and list the failures with their

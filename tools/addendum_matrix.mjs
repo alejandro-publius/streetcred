@@ -251,15 +251,17 @@ test("no page states a stale watchlist search count", () => {
 
 test("methodology and watchlist counts agree with the stored completion record", () => {
   const run = runCounts(api.watchlist);
-  assert.equal(run.attempted, WATCHLIST_QUERIES.length, "attempted must be the query list length");
+  assert.ok(run.attempted > 0, "the watchlist record has no queries in it");
 
   const meth = text(page.methodology);
   assert.ok(
-    meth.includes(`${run.attempted} citywide semantic searches are attempted`),
-    `methodology does not state the live attempt (${run.attempted})`,
+    meth.includes(`${WATCHLIST_QUERIES.length} citywide semantic searches are attempted`),
+    `methodology does not state the live attempt (${WATCHLIST_QUERIES.length})`,
   );
   if (run.failed) {
-    assert.ok(meth.includes(`${run.completed} currently complete`), "methodology does not state what completed");
+    assert.ok(meth.includes(`${run.completed} of them completed`), "methodology does not state what completed");
+  } else {
+    assert.ok(meth.includes(`All ${run.completed} completed`), "methodology does not state that all completed");
   }
 
   const wl = text(page.watchlist);
@@ -267,8 +269,60 @@ test("methodology and watchlist counts agree with the stored completion record",
   assert.ok(wl.includes(`${run.completed} completed`), "watchlist does not state what completed");
   if (run.failed) {
     assert.ok(wl.includes(`${run.failed} cut off`), "watchlist does not state what was cut off");
-    assert.doesNotMatch(wl, new RegExp(`whole pass costs ${run.attempted} searches`), "still claims the attempt as cost");
   }
+  assert.doesNotMatch(wl, /whole pass costs/, "the cost claim must be what ran, not what was attempted");
+});
+
+// The decision: the lane gets its own invocation so it stops inheriting the
+// audit's spent budget. This is the cell that says whether that worked.
+test("the watchlist completes every search it attempts", () => {
+  const run = runCounts(api.watchlist);
+  assert.equal(
+    run.failed,
+    0,
+    `${run.failed} of ${run.attempted} searches were cut off: ${run.commonReason || "no reason recorded"}`,
+  );
+  assert.equal(run.completed, run.attempted);
+});
+
+test("a full cycle covers the whole query set", () => {
+  const cycle = api.watchlist?.cycle;
+  assert.ok(cycle, "the record carries no cycle information");
+  assert.equal(cycle.size, WATCHLIST_QUERIES.length);
+  assert.ok(cycle.perRun >= cycle.size || cycle.rotating, "a set larger than a run must rotate");
+  const coverage = api.watchlist?.coverage || {};
+  const never = WATCHLIST_QUERIES.filter((q) => !coverage[q.query]).map((q) => q.query);
+  assert.deepEqual(never, [], `queries that have never reached Exa: ${never.join(", ")}`);
+});
+
+test("the watchlist page lists every query with the date it last ran", () => {
+  const coverage = api.watchlist?.coverage || {};
+  for (const q of WATCHLIST_QUERIES) {
+    assert.ok(page.watchlist.includes(q.query), `the coverage list omits: ${q.query}`);
+  }
+  // The neighbourhood queries are the ones that never ran for months.
+  for (const hood of ["Tenderloin", "Excelsior", "Bayview", "Visitacion Valley"]) {
+    assert.ok(page.watchlist.includes(hood), `${hood} is missing from the page`);
+    const q = WATCHLIST_QUERIES.find((x) => x.query.includes(hood));
+    assert.ok(coverage[q.query], `${hood} still has no last-run date`);
+  }
+  assert.ok(text(page.watchlist).includes("and when it last ran"));
+});
+
+test("the last watchlist run is reported, and it finished", () => {
+  const last = api.watchlist?.lastRun;
+  assert.ok(last, "no run record: the lane has not run since the change");
+  assert.equal(last.ok, true, `last run did not finish: ${last.reason || "no reason recorded"}`);
+  assert.equal(last.failed, 0);
+  assert.equal(last.attempted, last.completed);
+  assert.ok(text(page.watchlist).includes("Last run "), "the page does not report the last run");
+});
+
+test("the scheduled crons and the dispatch agree", async () => {
+  const { CRON_MORNING, CRON_WATCHLIST, CRON_PRESS_TICK } = await import("../src/index.js");
+  assert.notEqual(CRON_WATCHLIST, CRON_MORNING, "the watchlist must not share the audit's firing");
+  assert.notEqual(Number(CRON_WATCHLIST.split(" ")[0]) % 15, 0, "collides with the quarter-hourly tick");
+  assert.equal(CRON_PRESS_TICK, "*/15 * * * *");
 });
 
 test("every cut-off watchlist query is published with its reason", () => {
@@ -280,8 +334,10 @@ test("every cut-off watchlist query is published with its reason", () => {
   assert.doesNotMatch(page.watchlist, /refer to https:/, "the truncated reason must be tidied for display");
 });
 
-test("the watchlist names the finding doc rather than changing the cron quietly", () => {
-  assert.match(page.watchlist, /WATCHLIST_SUBREQUEST_FINDING\.md/);
+test("the watchlist states that it runs on its own invocation", () => {
+  const t = text(page.watchlist);
+  assert.match(t, /own cron trigger at 13:20 UTC/);
+  assert.match(t, /own subrequest budget/);
 });
 
 test("the status spend page separates searches billed from searches reserved", () => {

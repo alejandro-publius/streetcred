@@ -453,37 +453,55 @@ The tag `pre-polish-aug18` is permanent. Do not delete it. Note that Path B
 reverts all the way to the pre-polish-1 state, not to this pass's predecessor;
 Path A is the correct rollback for this pass, and Path B is the floor.
 
-## Awaiting the operator: how the watchlist should be scheduled
+## The watchlist runs on its own cron
 
-Stage 7D of the addendum made /watchlist and /methodology tell the truth about
-this. It did NOT change the cron, the batching or the subrequest budgeting,
-because that is a behaviour change and the choice is the operator's.
+Decided and implemented 2026-08-20. `docs/WATCHLIST_SUBREQUEST_FINDING.md`
+option 2: the lane moved out of the daily audit's invocation and onto a cron
+trigger of its own.
 
-The finding, in one line: the watchlist attempts 29 searches inside the daily
-audit's single Worker invocation, near the end of it, and Cloudflare allows 50
-subrequests per invocation. 7 completed on 2026-08-20 and 8 on 2026-08-19. The
-21 or 22 that fail are the tail of the list, which is where every
-neighbourhood-scoped query sits, so the blind spot is systematic rather than
-random.
+**Why it works.** A Worker invocation on the free plan gets 50 EXTERNAL
+subrequests, and a separate 1,000 for calls to Cloudflare services, so this
+lane's KV reads are not part of the arithmetic. It costs exactly one `fetch` per
+query, no retry and no redirect. Sharing the audit's firing meant sharing what
+the audit had left, which was about seven. Its own firing is a fresh fifty and
+29 fits with twenty-one unspent.
 
-The four options in `docs/WATCHLIST_SUBREQUEST_FINDING.md`, one line each:
+**Schedule.** `20 13 * * *`, ten minutes after the morning audit. The minute is
+deliberately not a multiple of 15 so it never fires in the same minute as the
+quarter-hourly press tick. Cron Triggers are limited per account, 5 on Workers
+Free and 250 on Paid; this Worker now uses 3.
 
-1. **Report both numbers.** Print attempted and completed and list the failures
-   with their reason. Smallest change, matches the page's existing ethos, does
-   not recover the lost coverage.
-2. **Move the watchlist onto its own tick**, the way the press batch already
-   works. Recovers the coverage. Largest change.
-3. **Chunk and checkpoint it** across several quarter-hourly ticks, reusing the
-   burn checkpoint machinery already in `src/store.js`.
-4. **Cut the query list** back to what one invocation's remaining budget can
-   carry, and say so. Gives up the neighbourhood queries deliberately rather
-   than accidentally.
+**The strings are in two places** and have to agree: `wrangler.jsonc` and
+`CRON_MORNING` / `CRON_WATCHLIST` / `CRON_PRESS_TICK` in `src/index.js`.
+`tools/cron.test.mjs` reads the config and asserts they match, because a
+schedule changed in one and not the other does not fail: the firing falls
+through to the last branch and runs the press batch instead, forever, with
+nothing red.
 
-The doc's own note: option 1 is the freeze-compatible half of every other
-option and conflicts with none of them. **Option 1 is what this pass
-implemented**, on the display side only. Options 2, 3 and 4 remain open and are
-the actual decision, because option 1 alone leaves the ten neighbourhood
-queries never having run.
+**Running it by hand.** `POST`-less GET, gated on its own secret:
+
+```
+curl -s https://streetcred.thealexschroeder.workers.dev/api/watchlist/run/$WATCHLIST_RUN_TOKEN
+```
+
+`WATCHLIST_RUN_TOKEN` is a dedicated secret, not `WEBHOOK_SECRET`. The webhook
+secret is shared with the external service that posts radar detections, so it
+travels outside this system, and this endpoint spends money. Rotate it on its
+own with `wrangler secret put WATCHLIST_RUN_TOKEN`; nothing about the radar
+changes. The endpoint is not idempotent and refuses at the Exa cent cap like
+every other lane.
+
+**The ceiling, and why there is one.** `WATCHLIST_PER_RUN` is 40. The set is 29,
+so every query runs every morning and a cycle is one run. Past the ceiling the
+lane rotates through the set least-recently-run first and `/watchlist` shows
+each query's last-run date, rather than silently truncating. That guard exists
+because the set grew from 7 to 29 once already and nothing followed it; the
+whole failure was that growth was invisible.
+
+**What the audit no longer does.** `cornerOfTheDay` does not build the watchlist
+and its log entry no longer carries watchlist counts. Reading the stored record
+there would have put another run's numbers in this run's entry, which is the
+quieter version of the same problem.
 
 ## Contrast, measured for the operator's phone pass
 
