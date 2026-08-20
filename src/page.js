@@ -1034,6 +1034,34 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .stack .lg b{font-size:14px;color:var(--ink);font-weight:600;white-space:nowrap;letter-spacing:-.01em}
 @media(max-width:860px){.stack .lg{width:auto}}
 .cname{display:block;font-size:15px;color:var(--ink);font-weight:600;margin:0;letter-spacing:inherit;line-height:1.3}
+/* The corner's identity, now the imagery card's own header. The page used to
+   open on a band carrying a name and a district and little else; the card that
+   shows the corner is where its name belongs, and the top of the page is the
+   grade. The name is the dominant element here, so it is larger than the h2 it
+   replaced, and "The corner, three ways" survives above it as an eyebrow. */
+.phs-id{align-items:flex-start}
+.cardid{min-width:0;flex:1}
+/* .corner was written for the page header, where it sat on the right and was
+   right aligned and pushed by margin-left:auto. In a card header it is the
+   left hand element, so both are undone here rather than removed there: the
+   homepage and the watchlist still use the original behaviour. */
+.phs-id .corner{margin-left:0;text-align:left;flex:none}
+.cardeyebrow{display:block;font-size:10px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--dim);margin-bottom:5px}
+.phs-id .cname{font-size:22px;line-height:1.2;letter-spacing:-.01em}
+/* justify-content:flex-end is the page header's, where the block hangs off the
+   right edge. Here the name starts the row. */
+.phs-id .ctitle{justify-content:flex-start}
+.phs-id .cmeta{margin-top:4px;font-size:12.5px;color:var(--dim);line-height:1.45}
+.phs-id .ctwin{margin-top:6px;font-size:12px;color:var(--dim);line-height:1.5;max-width:60ch}
+.phs-id .auto{display:block;margin-top:6px;font-size:11px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--dim)}
+@media(max-width:600px){
+  .phs-id .cname{font-size:19px}
+}
+/* The tagline closes the page instead of opening it: it is orientation for
+   somebody who has read the evidence, not a preamble in front of it. */
+.lede-close{margin:30px 0 0;padding-top:22px;border-top:1px solid var(--line)}
 /* Projected outcome. Corroboration-chip scale, under the fix caption, shown
    only on the fix state. The not-a-promise label is the header, permanently. */
 .impact{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
@@ -1118,6 +1146,11 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 /* A lane's own count, in its header. Same numbers the lane body renders, so a
    reader can see the size of the evidence before reading it. */
 /* The placeholder that replaces an image element with nothing in it. */
+/* display:flex beats the [hidden] attribute's UA rule, so setting hidden on
+   this box set an attribute and changed nothing: the placeholder stayed under
+   the photograph it was standing in for, as a permanent empty panel. Same
+   defect class as an img with display:block ignoring hidden. */
+.imgph[hidden]{display:none}
 .imgph{display:flex;flex-direction:column;justify-content:center;gap:8px;min-height:208px;
   padding:24px;background:var(--card);border:1px dashed var(--line2);border-radius:12px}
 .imgphl{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
@@ -1326,34 +1359,9 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
     <button class="share ghost" id="watch" type="button">Watch the run</button>
     <button class="share" id="share" type="button">Share corner</button>
   </div>
-  <div class="corner">
-    <div class="ctitle">
-      <h1 class="cname">${c.name}</h1>${
-        og.tier ? `<span class="tierchip t-${og.tier}" id="tierchip" title="${esc(TIER_NOTE[og.tier] || "")}">${TIER_LABEL[og.tier]}</span>` : ""
-      }
-    </div>
-    <div class="cmeta">${c.city}${
-      c.district ? `, District ${c.district}` : ", district unresolved"
-    }</div>${
-      c.sweep?.twin
-        ? `<div class="ctwin">${
-            c.sweep.alias
-              ? `Two crossings carry this name. This page is ${esc(c.sweep.aliasName || c.name)}.`
-              : "Another crossing carries this name."
-          } The other is <a href="/c/${esc(c.sweep.twin.slug)}">${esc(c.sweep.twin.name)}</a>, ${
-            c.sweep.twin.apartM >= 1000
-              ? `${(c.sweep.twin.apartM / 1000).toFixed(1)}km`
-              : `${c.sweep.twin.apartM}m`
-          } away.</div>`
-        : ""
-    }${c.cotd ? `<span class="auto">Audited autonomously by StreetCred on ${c.cotd}</span>` : ""}
-  </div>
 </header>
 <main>
 
-<p class="lede">Every claim about a dangerous corner, graded and traced to its source, ending in ${
-  og.showsFix ? "a picture of the fix and a letter to the Supervisor" : "a letter to the Supervisor"
-}. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
 
 <!-- Rendered by the Worker, not waited for. An evidence product that shows its
      evidence only to clients that run JavaScript is showing it to fewer readers
@@ -1400,7 +1408,34 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
 </section>
 
 <div class="panel lane-imagery">
-  <div class="phs"><h2>The corner, three ways</h2><span class="tag" id="imgtag">Street View plus Gemini</span></div>
+  <div class="phs phs-id">
+    <div class="cardid">
+      <span class="cardeyebrow">The corner, three ways</span>
+      <div class="corner">
+          <div class="ctitle">
+            <h1 class="cname">${c.name}</h1>${
+              og.tier ? `<span class="tierchip t-${og.tier}" id="tierchip" title="${esc(TIER_NOTE[og.tier] || "")}">${TIER_LABEL[og.tier]}</span>` : ""
+            }
+          </div>
+          <div class="cmeta">${c.city}${
+            c.district ? `, District ${c.district}` : ", district unresolved"
+          }</div>${
+            c.sweep?.twin
+              ? `<div class="ctwin">${
+                  c.sweep.alias
+                    ? `Two crossings carry this name. This page is ${esc(c.sweep.aliasName || c.name)}.`
+                    : "Another crossing carries this name."
+                } The other is <a href="/c/${esc(c.sweep.twin.slug)}">${esc(c.sweep.twin.name)}</a>, ${
+                  c.sweep.twin.apartM >= 1000
+                    ? `${(c.sweep.twin.apartM / 1000).toFixed(1)}km`
+                    : `${c.sweep.twin.apartM}m`
+                } away.</div>`
+              : ""
+          }${c.cotd ? `<span class="auto">Audited autonomously by StreetCred on ${c.cotd}</span>` : ""}
+        </div>
+    </div>
+    <span class="tag" id="imgtag">Street View plus Gemini</span>
+  </div>
   <div class="pbody">
     <div class="toggle" role="group" aria-label="Corner view">
       <button data-state="today" aria-pressed="true">Today</button>
@@ -1560,6 +1595,9 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
 
 </main>
 </main>
+<p class="lede lede-close">Every claim about a dangerous corner, graded and traced to its source, ending in ${
+  og.showsFix ? "a picture of the fix and a letter to the Supervisor" : "a letter to the Supervisor"
+}. <button class="nudge" id="nudge" type="button">Check your own corner</button></p>
 ${og.preview ? '<div class="pvw">Preview</div>' : ''}
 ${FOOTER()}
 </div>
@@ -1968,6 +2006,16 @@ function composePress(){
 
 LANE_LOADERS.stats = () => fetch("/api/stats" + X).then(r => r.json()).then(d => {
   V.stats = d; paintVerdict();
+  // The district line under the name comes from the same payload as the tile
+  // that states it. Server side it is only known for corners carrying one on
+  // their stored record, so a shard-composed corner rendered "district
+  // unresolved" beside a tile that resolved it two panels below. It also went
+  // stale on a corner swap, which changes the name and not the line under it.
+  const meta = document.querySelector(".cmeta");
+  if(meta){
+    const city = (CORNER_GEO && CORNER_GEO.city) || "San Francisco";
+    meta.textContent = city + (d.district ? ", District " + d.district : ", district unresolved");
+  }
   // A null district means no clear majority, which prints as "n/a" rather than
   // as the 0 that Number(null) would quietly produce.
   const vals = [d.crashes, d.reports311, d.district];

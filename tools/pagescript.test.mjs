@@ -104,15 +104,23 @@ test("the tier chip is a sibling of the name, never inside the h1", () => {
   assert.match(html, /<div class="cmeta">/, "the district line needs its own element to be spaced");
 });
 
-// The header is two rows on purpose: one row cannot keep a 24px clear gap
-// between the title block and the nearest control at the longest warmed corner
-// name, measured at every width from 360 to 1600.
-test("the header separates its controls from the title block", () => {
+// The corner page's identity moved into the imagery card, so the header holds
+// controls and nothing else. The invariant that replaced the old one: the name
+// is still an h1, it is still beside its tier chip rather than inside the h1,
+// and it now lives in the card's own header row.
+test("the corner identity lives in the imagery card, not the page header", () => {
   const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
-  assert.match(html, /<div class="hctl">/, "controls need their own row");
+  assert.match(html, /<div class="hctl">/, "controls keep their row");
   const header = html.match(/<header>([\s\S]*?)<\/header>/);
   assert.ok(header, "header present");
-  assert.ok(header[1].indexOf('class="hctl"') < header[1].indexOf('class="corner"'), "controls come first");
+  assert.ok(!header[1].includes('class="corner"'), "the identity block has left the page header");
+  const card = html.match(/<div class="phs phs-id">([\s\S]*?)<div class="pbody">/);
+  assert.ok(card, "the imagery card needs an identity header row");
+  assert.match(card[1], /<h1 class="cname">/, "the name is the h1 and it is in the card");
+  assert.match(card[1], /class="tierchip/, "the tier chip travels with the name");
+  assert.match(card[1], /class="cardeyebrow">The corner, three ways/, "the card keeps its own title as an eyebrow");
+  assert.match(card[1], /id="imgtag"/, "the right side chip stays where it was");
+  assert.equal((html.match(/<h1/g) || []).length, 1, "exactly one h1 on the page");
 });
 
 // The bug this guards against shipped twice: a header text block whose lines
@@ -123,8 +131,25 @@ test("the header separates its controls from the title block", () => {
 //
 // Box metrics catch it in a browser and live outside CI. This catches the
 // shape: inside a header text block, every line must be its own element.
-const cornerBlocks = (html) =>
-  [...html.matchAll(/<div class="corner">([\s\S]*?)<\/div>\s*<\/header>/g)].map((m) => m[1]);
+// Balanced extraction, because the identity block no longer sits immediately
+// before </header> on every page and a lazy regex would silently find nothing,
+// which is how a guard stops guarding without failing.
+const cornerBlocks = (html) => {
+  const out = [];
+  const open = /<div class="corner">/g;
+  let m;
+  while ((m = open.exec(html))) {
+    let depth = 1;
+    const tag = /<div\b[^>]*>|<\/div>/g;
+    tag.lastIndex = m.index + m[0].length;
+    let t;
+    while (depth > 0 && (t = tag.exec(html))) {
+      depth += t[0] === "</div>" ? -1 : 1;
+    }
+    out.push(html.slice(m.index + m[0].length, t ? t.index : html.length));
+  }
+  return out;
+};
 
 const stripElements = (inner) => {
   let prev = null;
