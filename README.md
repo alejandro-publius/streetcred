@@ -390,7 +390,7 @@ The full timed script, with narration, lives in [`docs/demo_loom_script.md`](doc
 
 ```
 git clone https://github.com/alejandro-publius/streetcred && cd streetcred
-node --test tools/*.test.mjs          # 98 tests, 98 pass, 0 fail
+node --test tools/*.test.mjs          # 158 tests, 158 pass, 0 fail
 npx wrangler deploy --dry-run --outdir /tmp/build
 ```
 
