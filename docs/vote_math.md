@@ -298,7 +298,7 @@ trusting a value copied from any document, including this one.
 - [ ] 06:10 PT, run 2 of 5.
 - [ ] Demo video into the README placeholder. `README.md` line 4 currently reads
       "not recorded yet. The link lands in [Demo video](#demo-video) below, with
-      the shot list." The shot list is at line 370. A judge who opens the README
+      the shot list." The shot list is in the "Demo video" section. A judge who opens the README
       sees line 4 first.
 - [ ] Real-phone mobile pass, still open per `specs/HANDOFF.md`. The board and its
       pager have been checked at desktop widths only.

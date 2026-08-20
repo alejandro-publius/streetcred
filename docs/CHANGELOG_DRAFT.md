@@ -212,7 +212,8 @@ making an Exa search on every call unless the workspace is confirmed or a caller
 **Why:** a contents-free search costing $0.007 identifies a plan tier of $7 per thousand.
 Any number of workspaces bill identically on that tier. The gate was written as a price
 comparison, reported as passed, and the batch ran on it; the human then found no activity
-at all on the $70 workspace's Usage page for 2026-08-12 to 2026-08-19. The lesson is stated
+at all on the $70 workspace's Usage page, with the balance untouched. The record does not
+preserve which date range was on screen, so none is given here. The lesson is stated
 in the commit and is worth repeating: a measurement consistent with a hypothesis is not a
 confirmation of it.
 **What it cost:** the batch halted at 16 corners of that night's 100, and lost nothing,

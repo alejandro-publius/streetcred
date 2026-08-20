@@ -641,7 +641,7 @@ articles and four corners still stands at `specs/MAKE_THEM_KNOW.md:67-68`.
 | Stale claim | Where | Live truth, as of 2026-08-20T05:55Z |
 |---|---|---|
 | "Seven citywide semantic searches" | `src/methodology.js:189` | 29 searches, from `WATCHLIST_QUERIES` (`src/press.js:70-102`) and confirmed by `/api/watchlist` `calls: 29`. The README carried the same figure and no longer does. |
-| "a hard 1,500-call ceiling" | `README.md:120` as of 2026-08-20T06:03Z | The ceiling is cent-denominated: `EXA_CAP_CENTS = 6500`, that is $65.00 (`src/store.js:489`) |
+| "a hard 1,500-call ceiling" | `README.md`, "How we used Exa", before the burn 17 pass | Already corrected in the README. The ceiling is cent-denominated: `EXA_CAP_CENTS = 6500`, that is $65.00 (`src/store.js:489`) |
 
 `src/methodology.js` and `specs/` are under the feature freeze and were not edited by this document.
 The live figures above supersede them.

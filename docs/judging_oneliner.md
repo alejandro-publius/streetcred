@@ -176,7 +176,7 @@ the place the decision is written down.
 
 - **"First reported."** We say **coverage we can find**. Exa recall is not ground truth, and
   an empty year means this search found nothing, not that nothing happened. Enforced in the
-  UI at `src/page.js` line 2448 and in the run manifest at `src/manifest.js` lines 65 to 68,
+  UI at `src/page.js` line 2447 and in the run manifest at `src/manifest.js` lines 65 to 68,
   which says a manifest that hardened it into "first reported" "would be the place the
   overclaim entered the product."
 - **"Risk," "the most dangerous corner."** The Danger Index ranks **reported harm, not risk
