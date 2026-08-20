@@ -403,3 +403,79 @@ test("the bridge says nothing rather than printing a zero denominator", () => {
   const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
   assert.doesNotMatch(html, /0 with reported harm/);
 });
+
+// /watchlist printed 29 searches as if all 29 had run, on the page whose stated
+// thesis is that publishing only your hits is indistinguishable from a search
+// box that got lucky. Twenty-two of them were stored with their failure reason
+// and the page rendered none of them.
+const wlRecord = {
+  source: "live",
+  version: "v1",
+  builtAt: "2026-08-20T13:11:04.521Z",
+  windowDays: 90,
+  articles: 101,
+  rejected: 7,
+  discarded: 27,
+  entries: [],
+  rejects: [],
+  calls: 5,
+  queries: [
+    { query: "pedestrian struck in San Francisco", results: 15, local: false },
+    { query: "crosswalk collision San Francisco", results: 15, local: false },
+    { query: "sfchronicle crossing coverage", results: 0, local: true, failed: "Too many subrequests by single Worker invocation. To configure this limit, refer to https:" },
+    { query: "crosswalk at an intersection in the Tenderloin, San Francisco", results: 0, local: false, failed: "Too many subrequests by single Worker invocation. To configure this limit, refer to https:" },
+    { query: "crash at an intersection in the Excelsior, San Francisco", results: 0, local: false, failed: "Too many subrequests by single Worker invocation. To configure this limit, refer to https:" },
+  ],
+};
+
+test("the watchlist reports attempted, completed and cut off, never just the attempt", () => {
+  const html = WATCHLIST_PAGE(wlRecord, "https://example.test", null);
+  const txt = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(txt, /5 searches attempted/);
+  assert.match(txt, /2 completed/);
+  assert.match(txt, /3 cut off/);
+  // The cost claim was the worse half: the three that failed never reached Exa.
+  assert.match(txt, /the pass costs 2 searches rather than 5/);
+  assert.doesNotMatch(txt, /whole pass costs 5 searches/);
+});
+
+test("every cut-off query is a visible entry with its reason", () => {
+  const html = WATCHLIST_PAGE(wlRecord, "https://example.test", null);
+  for (const q of wlRecord.queries.filter((x) => x.failed)) {
+    assert.ok(html.includes(q.query), `the page must list the query it never ran: ${q.query}`);
+  }
+  assert.match(html, /Too many subrequests by single Worker invocation\./);
+  // The stored reason is truncated mid-URL; the page must not print that.
+  assert.doesNotMatch(html, /refer to https:/);
+});
+
+test("the neighbourhood queries lost in the tail are named, not summarised", () => {
+  const html = WATCHLIST_PAGE(wlRecord, "https://example.test", null);
+  assert.ok(html.includes("Tenderloin"), "the Tenderloin query never runs and must be visible");
+  assert.ok(html.includes("Excelsior"), "the Excelsior query never runs and must be visible");
+  const txt = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(txt, /geographic blind spot/, "say that the gap is systematic, not random");
+});
+
+test("the empty state does not claim searches ran that did not", () => {
+  const html = WATCHLIST_PAGE(wlRecord, "https://example.test", null);
+  const txt = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.doesNotMatch(txt, /Nothing on the watchlist right now\. The searches ran/);
+  assert.match(txt, /2 of 5 searches ran/);
+});
+
+test("a pass with nothing cut off says so plainly", () => {
+  const clean = { ...wlRecord, queries: wlRecord.queries.map(({ failed, ...q }) => ({ ...q, results: 15 })) };
+  const txt = WATCHLIST_PAGE(clean, "https://example.test", null).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(txt, /All 5 completed/);
+  assert.match(txt, /Every search in the last pass reached Exa/);
+  // The stat chip is the claim; the sentence "Nothing was cut off" is not.
+  assert.doesNotMatch(txt, /\d+ cut off/);
+});
+
+// The scheduling fix is the operator's call and must not arrive as a side
+// effect of a copy pass.
+test("the page names the finding doc rather than fixing the cron quietly", () => {
+  const html = WATCHLIST_PAGE(wlRecord, "https://example.test", null);
+  assert.match(html, /WATCHLIST_SUBREQUEST_FINDING\.md/);
+});

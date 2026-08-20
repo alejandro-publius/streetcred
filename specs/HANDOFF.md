@@ -444,6 +444,38 @@ The tag `pre-polish-aug18` is permanent. Do not delete it. Note that Path B
 reverts all the way to the pre-polish-1 state, not to this pass's predecessor;
 Path A is the correct rollback for this pass, and Path B is the floor.
 
+## Awaiting the operator: how the watchlist should be scheduled
+
+Stage 7D of the addendum made /watchlist and /methodology tell the truth about
+this. It did NOT change the cron, the batching or the subrequest budgeting,
+because that is a behaviour change and the choice is the operator's.
+
+The finding, in one line: the watchlist attempts 29 searches inside the daily
+audit's single Worker invocation, near the end of it, and Cloudflare allows 50
+subrequests per invocation. 7 completed on 2026-08-20 and 8 on 2026-08-19. The
+21 or 22 that fail are the tail of the list, which is where every
+neighbourhood-scoped query sits, so the blind spot is systematic rather than
+random.
+
+The four options in `docs/WATCHLIST_SUBREQUEST_FINDING.md`, one line each:
+
+1. **Report both numbers.** Print attempted and completed and list the failures
+   with their reason. Smallest change, matches the page's existing ethos, does
+   not recover the lost coverage.
+2. **Move the watchlist onto its own tick**, the way the press batch already
+   works. Recovers the coverage. Largest change.
+3. **Chunk and checkpoint it** across several quarter-hourly ticks, reusing the
+   burn checkpoint machinery already in `src/store.js`.
+4. **Cut the query list** back to what one invocation's remaining budget can
+   carry, and say so. Gives up the neighbourhood queries deliberately rather
+   than accidentally.
+
+The doc's own note: option 1 is the freeze-compatible half of every other
+option and conflicts with none of them. **Option 1 is what this pass
+implemented**, on the display side only. Options 2, 3 and 4 remain open and are
+the actual decision, because option 1 alone leaves the ten neighbourhood
+queries never having run.
+
 ## Contrast, measured for the operator's phone pass
 
 Measured 2026-08-20 during addendum stage 7B, from the resolved CSS rather than

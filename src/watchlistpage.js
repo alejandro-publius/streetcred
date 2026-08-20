@@ -7,6 +7,7 @@
 
 import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 import { pacificDay } from "./data.js";
+import { runCounts } from "./press.js";
 
 const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 
@@ -16,6 +17,10 @@ const when = (iso) => pacificDay(iso);
 export const WATCHLIST_PAGE = (w, origin = "", hub = null, preview = false, scored = 0, press = null) => {
   const entries = w?.entries || [];
   const rejects = w?.rejects || [];
+  // Attempted, completed, failed. This page's whole thesis is that a discovery
+  // pipeline showing only its hits is indistinguishable from a search box that
+  // got lucky, and it was printing its own attempt as if it were work done.
+  const run = runCounts(w);
   const title = "Press watchlist \u00b7 StreetCred";
   const desc = entries.length
     ? `${entries.length} San Francisco corners named in current news coverage, each one verified against the graded city index before it appears here, with every rejected candidate published and its reason given.`
@@ -75,7 +80,9 @@ ${
     ? `<p class="wlnote"><b>Not built.</b> ${esc(w.reason || "")}</p>`
     : `<div class="wlstat">
   <span><b>${(w?.articles ?? 0).toLocaleString("en-US")}</b>articles read</span>
-  <span><b>${w?.calls ?? 0}</b>searches</span>
+  <span><b>${run.attempted}</b>searches attempted</span>
+  <span><b>${run.completed}</b>completed</span>${run.failed ? `
+  <span><b>${run.failed}</b>cut off</span>` : ""}
   <span><b>${entries.length}</b>verified</span>
   <span><b>${w?.rejected ?? 0}</b>rejected</span>
   <span><b>${w?.discarded ?? 0}</b>phrases discarded</span>
@@ -112,7 +119,21 @@ ${entries
   )
   .join("\n")}
 </div>`
-    : `<p class="wlnote">Nothing on the watchlist right now. The searches ran and no crossing named in the results survived verification, which is the honest state most weeks: San Francisco coverage is overwhelmingly corridor level and citywide, and this page only shows corners the city index can confirm.</p>`
+    : `<p class="wlnote">Nothing on the watchlist right now. ${run.completed} of ${run.attempted} searches ran and no crossing named in the results survived verification, which is the honest state most weeks: San Francisco coverage is overwhelmingly corridor level and citywide, and this page only shows corners the city index can confirm.</p>`
+}
+
+<div class="eyebrow"><span>Never ran</span><span class="tag">and why</span></div>
+${
+  run.failed
+    ? `<p class="wlnote">These ${run.failed} searches were issued and cut off before they reached Exa. They are listed for the same reason the rejects below are: a discovery pipeline that publishes only what it found, and quietly drops what it never looked for, is making a claim about the city it has not earned. Note what is in this list. The neighbourhood-anchored queries sit at the tail of the set, so they are the ones that never run, and the watchlist has a geographic blind spot that is systematic rather than random.</p>
+<div class="rj">
+${run.failures
+  .map(
+    (q) => `  <div class="rjrow"><span class="rjn">${esc(q.query)}${q.local ? ' <span class="tag">SF outlets only</span>' : ""}</span><span class="rjr">${esc(q.failed || "cut off before it ran")}</span></div>`,
+  )
+  .join("\n")}
+</div>`
+    : `<p class="wlnote">Every search in the last pass reached Exa. Nothing was cut off.</p>`
 }
 
 <div class="eyebrow"><span>Rejected</span><span class="tag">and why</span></div>
@@ -130,7 +151,12 @@ ${rejects
 }
 
 <div class="eyebrow"><span>How it runs</span></div>
-<p class="wlnote">${(w?.queries || []).length} citywide semantic searches over the last ${w?.windowDays ?? 90} days, run through Exa with the news category, a published-date window, and lead-generation domains excluded at the API rather than filtered afterwards. Each result's text is scanned for crossing names, and every name is checked against the same index the site grades from. The whole pass costs ${w?.calls ?? 0} searches and runs again every morning with the daily audit.</p>
+<p class="wlnote">${run.attempted} citywide semantic searches are attempted over the last ${w?.windowDays ?? 90} days, run through Exa with the news category, a published-date window, and lead-generation domains excluded at the API rather than filtered afterwards. Each result's text is scanned for crossing names, and every name is checked against the same index the site grades from. It runs again every morning with the daily audit.</p>
+${
+  run.failed
+    ? `<p class="wlnote"><b>${run.completed} of the ${run.attempted} completed.</b> This lane runs inside the daily audit's single Worker invocation, near the end of it, and Cloudflare allows fifty subrequests per invocation. The audit has spent most of them by the time the watchlist starts, so the remaining ${run.failed} are cut off before they reach Exa. They cost nothing, and they also found nothing, so the pass costs ${run.completed} searches rather than ${run.attempted}. Every one of them is listed below. The fix is a change to how the lane is scheduled and is recorded in <code>docs/WATCHLIST_SUBREQUEST_FINDING.md</code>, not made quietly here.</p>`
+    : `<p class="wlnote">All ${run.attempted} completed, so the pass costs ${run.attempted} searches.</p>`
+}
 <p class="wlnote">This is an entity-discovery workflow of the shape Exa's Websets product is built for: find candidate entities, verify each against hard criteria, keep the ones that survive. It is implemented directly on the search API, which is what the event credits cover.</p>
 
 <div class="eyebrow"><span>The rest of the press lane</span></div>
