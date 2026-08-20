@@ -237,6 +237,14 @@ ${BASE_CSS}
 .cotdg{font-size:13px;font-weight:700;min-width:28px;height:28px;border-radius:8px;display:grid;
   place-items:center;color:#fff;background:var(--dim)}
 .cotdlog{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 26px}
+/* The operations band, moved from under the hero to the foot of the page. It
+   is what the machine has counted, spent, queued and audited unwatched, which
+   reads beside Powered by and interrupted the search box where it used to sit.
+   The rule is the seam: the page above it is for a visitor, below it is the
+   machine talking about itself. */
+.opsband{margin:34px 0 0;padding-top:26px;border-top:1px solid var(--line)}
+.opsband .statband{margin-bottom:20px}
+.opsband .cotdlog:last-child{margin-bottom:0}
 .cotdq{font-size:11.5px;color:var(--dim);margin:0 0 10px;padding-left:2px}
 .lpop{font-family:Poppins,system-ui,sans-serif;font-size:12.5px;line-height:1.5;color:var(--ink)}
 .lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
@@ -290,38 +298,6 @@ ${MASTHEAD({ scored, active: "" })}
 </section>
 ${HERO_CORNER(embed)}
 </div>
-${STATBAND({
-  scored,
-  audited: fullyAudited,
-  headlines: (press?.headlines || 0) + (press?.checkCitations || 0),
-  headlinesAsOf: press?.asOf || null,
-  spendUsd,
-})}
-
-${
-  today
-    ? `${city?.queueLength ? `<p class="cotdq">${n(city.queueLength)} corners in line, worst first.</p>` : ""}
-${
-  voices?.commissioned
-    ? `<p class="cotdq">Resident voices commissioned autonomously at ${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}. ${n(voices.withQuote)} produced an account that cleared the relevance filter; the rest are recorded as scraped and empty, which is a result rather than a gap.</p>`
-    : ""
-}
-${
-  runs.length
-    ? `<div class="cotdlog">${runs
-        .slice(0, 14)
-        .map(
-          (e) =>
-            `<a class="cotdi" href="/c/${esc(e.slug)}" title="${esc(e.name || e.slug)}, ${esc(e.date)}"><i class="g${esc(e.grade || "A")}"></i><span>${esc(String(e.date).slice(5))}</span></a>`,
-        )
-        .join("")}<span class="cotdc">${runs.length} audited without a human so far${
-          textAudited ? `, ${n(textAudited)} still waiting on imagery` : ""
-        }</span></div>`
-    : ""
-}`
-    : ""
-}
-
 <section class="mine" id="mine" hidden aria-label="Corners you have checked">
   <div class="mhead"><h2>Your corners</h2><span class="mnote">Saved on this device only</span>
     <button class="mclear" id="mclear" type="button">Clear</button></div>
@@ -395,6 +371,40 @@ ${
 }`
     : `<p class="emptyboard">No corners have been warmed yet. Type an intersection above and it will be graded on the spot.</p>`
 }
+
+<div class="opsband">
+${STATBAND({
+  scored,
+  audited: fullyAudited,
+  headlines: (press?.headlines || 0) + (press?.checkCitations || 0),
+  headlinesAsOf: press?.asOf || null,
+  spendUsd,
+})}
+
+${
+  today
+    ? `${city?.queueLength ? `<p class="cotdq">${n(city.queueLength)} corners in line, worst first.</p>` : ""}
+${
+  voices?.commissioned
+    ? `<p class="cotdq">Resident voices commissioned autonomously at ${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}. ${n(voices.withQuote)} produced an account that cleared the relevance filter; the rest are recorded as scraped and empty, which is a result rather than a gap.</p>`
+    : ""
+}
+${
+  runs.length
+    ? `<div class="cotdlog">${runs
+        .slice(0, 14)
+        .map(
+          (e) =>
+            `<a class="cotdi" href="/c/${esc(e.slug)}" title="${esc(e.name || e.slug)}, ${esc(e.date)}"><i class="g${esc(e.grade || "A")}"></i><span>${esc(String(e.date).slice(5))}</span></a>`,
+        )
+        .join("")}<span class="cotdc">${runs.length} audited without a human so far${
+          textAudited ? `, ${n(textAudited)} still waiting on imagery` : ""
+        }</span></div>`
+    : ""
+}`
+    : ""
+}
+</div>
 
 <div class="panel">
   <div class="phs"><h2>Powered by</h2></div>
