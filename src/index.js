@@ -2198,17 +2198,12 @@ export default {
           };
           const hasGenerated = Boolean(frames.hazards || frames.fix);
 
-          // The drumbeat. If the machine ran this morning and produced a corner
-          // the hero is not showing, both facts belong on screen: the slider
-          // that shows what the product does, and the proof it ran today. When
-          // the imagery lane returns and the newest audit has frames again,
-          // featured and newest are the same corner and this disappears with no
-          // configuration anywhere.
+          // The daily cadence is carried by the subtitle, which says one is
+          // attempted every morning, and by the ticker chips, which link every
+          // audited corner including today's. A third statement of it inside
+          // the hero card read as a stranded row under the buttons, so it is
+          // not made here. The featured corner still states its own date.
           const today = pacificDay();
-          const alsoToday =
-            newest.slug !== featured.slug && newest.date === today
-              ? { slug: newest.slug, name: newest.name || newest.slug }
-              : null;
 
           return {
             slug: featured.slug,
@@ -2223,7 +2218,6 @@ export default {
             grade: escore?.grade || featured.grade || null,
             evidence: evidenceLine(ecred, ec?.district),
             frames,
-            alsoToday,
             state: hasGenerated ? "full" : frames.today ? "text-only" : "none",
           };
         })();

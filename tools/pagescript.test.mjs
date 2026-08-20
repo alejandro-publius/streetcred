@@ -281,17 +281,18 @@ test("the date line drops the morning claim when the corner is not today's", () 
   assert.ok(!/Most recent audit/.test(older));
 });
 
-test("the drumbeat names today's corner only while it is not the featured one", () => {
+// The hero card ends at its buttons. The daily cadence is carried by the
+// subtitle and the ticker chips, and a third statement of it inside the card
+// read as a stranded row underneath them.
+test("the hero card states no second corner under its buttons", () => {
   const F = { today: "/t.jpg", hazards: "/h.jpg", fix: "/f.jpg" };
-  const split = homeWith({
+  const older = homeWith({
     ...EMBED, frames: F, auditedToday: false, date: "2026-08-18",
     alsoToday: { slug: "6th-and-jessie", name: "6th and Jessie" },
   });
-  assert.match(split, /This morning the machine audited <a href="\/c\/6th-and-jessie">6th and Jessie<\/a>, imagery pending\./);
-  // The collapse is the absence of configuration: no alsoToday, no line.
-  const merged = homeWith({ ...EMBED, frames: F, auditedToday: true, date: "2026-08-20" });
-  // Matched on the markup, not the class name: the stylesheet also contains
-  // the string, so a bare /hcalso/ was asserting against BASE_CSS.
-  assert.ok(!/class="hcalso"/.test(merged), "one corner means one claim and no extra line");
-  assert.match(merged, /class="shdl"/, "and the slider is still there");
+  // Passed the field on purpose: even given it, nothing renders.
+  assert.ok(!/This morning the machine audited/.test(older), "no drumbeat row");
+  assert.ok(!/class="hcalso"/.test(older));
+  assert.match(older, /class="shdl"/, "the slider is unaffected");
+  assert.match(older, /Audited autonomously 2026-08-18/, "the featured corner still dates itself");
 });
