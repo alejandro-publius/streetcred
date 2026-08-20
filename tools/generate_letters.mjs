@@ -27,6 +27,7 @@ import { buildLetterPrompt } from "../src/letterprompt.js";
 import { buildInputSet, verifyLetter, retryInstruction, VERIFY_VERSION } from "../src/verify.js";
 import { getStats } from "../src/index.js";
 import { CORNERS, resolvedDistrict, addresseeFor } from "../src/data.js";
+import { imagerySpend } from "./promote_corners.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const STAGE = join(ROOT, "scratch", "letters");
@@ -529,8 +530,14 @@ if (IS_MAIN) {
       imagery = imagerySpend(
         JSON.parse(readFileSync(join(ROOT, "scratch", "imagery", "_results.json"), "utf8")),
       );
-    } catch {
-      /* no render run tonight */
+    } catch (e) {
+      // Only a missing file means "no render run tonight". This catch used to
+      // be bare, and it swallowed a ReferenceError for the whole time
+      // imagerySpend was called here but defined nowhere: the render spend
+      // would have been quietly absent from the ledger rather than loudly
+      // missing, which is the failure mode this project exists to not have.
+      if (e && e.code === "ENOENT") console.log("  no render run to bill");
+      else throw e;
     }
 
     // The same function the tests exercise. It used to be a second, parallel

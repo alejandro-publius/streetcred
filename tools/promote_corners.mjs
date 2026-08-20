@@ -87,6 +87,35 @@ function accessToken() {
 
 // Eligible: enriched, has a stored Street View frame to condition on, and has
 // NO stored fix render. Worst first by the same points the board ranks on.
+// What the render stage cost, for the letter ledger to carry.
+//
+// A held render is a paid render. The model was called, the tokens were spent,
+// and the gate rejected what came back: reporting only the published ones would
+// make the gate look free. `published` is what a visitor can actually see, and
+// it is deliberately a different number from `attempted`.
+export function imagerySpend(rows) {
+  const src = rows || [];
+  if (!src.length) return null;
+  const spent = src.reduce((a, r) => a + (r.usd || 0), 0);
+  const held = src.filter((r) => r.state === "held");
+  return {
+    model: MODEL,
+    via: `vertex:${LOCATION}`,
+    attempted: src.length,
+    published: src.filter((r) => r.state === "passed").length,
+    held: held.length,
+    // Why they were held, split, because a render the gate rejected and a
+    // render the API never returned are different findings and only one of them
+    // is about the image.
+    heldOnGate: held.filter((r) => !/render error/i.test(String(r.why || ""))).length,
+    heldOnApi: held.filter((r) => /render error/i.test(String(r.why || ""))).length,
+    promptTokens: src.reduce((a, r) => a + (r.promptTokens || 0), 0),
+    outputTokens: src.reduce((a, r) => a + (r.outputTokens || 0), 0),
+    estUsd: Math.round(spent * 1e6) / 1e6,
+    basis: "estimated from token counts; held renders are counted, because they were billed",
+  };
+}
+
 export function eligible(meta, keyNames, sweepRows, limit) {
   const enr = new Set(meta.enriched || []);
   const today = new Set(keyNames.filter((n) => /^img:.+:today$/.test(n)).map((n) => n.split(":")[1]));

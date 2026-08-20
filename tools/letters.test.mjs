@@ -295,3 +295,29 @@ test("the ledger reports the letters that exist, not the rows that passed", () =
   const l = buildLedger([{ slug: "a", state: "passed", attempts: 1 }], { letters: 116 });
   assert.equal(l.letters, 116);
 });
+
+// ------------------------------------------------------ the render spend
+//
+// This was called at publish time and defined nowhere, inside a bare catch
+// that turned the ReferenceError into "no render run tonight". The ledger
+// would have shown no imagery line on a night that spent money on renders.
+
+test("a held render is still a billed render", async () => {
+  const { imagerySpend } = await import("./promote_corners.mjs");
+  const r = imagerySpend([
+    { slug: "a", state: "passed", usd: 0.006, promptTokens: 900, outputTokens: 800 },
+    { slug: "b", state: "held", why: "watermark: source reads Google, render reads \"\"", usd: 0.006, promptTokens: 900, outputTokens: 800 },
+    { slug: "c", state: "held", why: "render error: Resource has been exhausted (e.g. check quota).", usd: 0 },
+  ]);
+  assert.equal(r.attempted, 3);
+  assert.equal(r.published, 1, "published is what a visitor can see");
+  assert.equal(r.held, 2);
+  assert.equal(r.heldOnGate, 1, "the gate rejected one image");
+  assert.equal(r.heldOnApi, 1, "and one image was never returned to reject");
+  assert.equal(r.estUsd, 0.012, "the rejected render is billed, so it is counted");
+});
+
+test("no render run bills nothing rather than zero", async () => {
+  const { imagerySpend } = await import("./promote_corners.mjs");
+  assert.equal(imagerySpend([]), null, "null is absent; 0 would claim a run happened and cost nothing");
+});
