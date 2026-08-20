@@ -1,5 +1,7 @@
 import {
-  CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, hasSupervisor, canonicalSlug, makeCorner, SERVICE_NAMES,
+  CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, canonicalSlug, makeCorner, SERVICE_NAMES,
+  resolvedDistrict, addresseeFor,
+  pacificToday as pacificTodayShared,
   COTD_SEED,
 } from "./data.js";
 import { PAGE, NOT_FOUND } from "./page.js";
@@ -44,7 +46,7 @@ import { buildManifest, PUBLIC_TRIGGERS } from "./manifest.js";
 import { classify, streetTokens, domainOf, searchQuery } from "./newsfilter.js";
 import { buildTimeline, TIMELINE_VERSION } from "./timeline.js";
 import { buildSuggestion, SUGGEST_VERSION } from "./suggest.js";
-import { buildInputSet, verifyLetter, retryInstruction } from "./verify.js";
+import { buildInputSet, verifyLetter, retryInstruction, VERIFY_VERSION } from "./verify.js";
 import { handleAgentReport, journalStats, JOURNAL_CAP } from "./agent.js";
 import { WATCHDOG } from "./watchdog.js";
 import { projectImpact } from "./impact.js";
@@ -442,7 +444,7 @@ async function runManifest(c, env, origin, trigger, refresh) {
     hazards,
     score,
     letterRun,
-    supervisor: supervisorFor(stats?.district ?? c.district),
+    supervisor: supervisorFor(resolvedDistrict(c, stats)),
   });
   await putRun(env, c.slug, manifest);
   return manifest;
@@ -646,7 +648,7 @@ async function mapImage(c, env, ctx) {
 
 // ---------------------------------------------------------------- letter
 async function getLetter(c, env, ctx) {
-  const supervisor = supervisorFor(ctx.stats?.district);
+  const supervisor = supervisorFor(resolvedDistrict(c, ctx.stats));
   const headlines = (ctx.news?.items || [])
     .slice(0, 2)
     .map((n) => `"${n.title}" (${n.domain}${n.date ? ", " + n.date : ""})`)
@@ -657,13 +659,15 @@ async function getLetter(c, env, ctx) {
   const ONTOPIC = /crosswalk|crossing|pedestrian|sidewalk|driver|traffic|curb|intersection|corner/i;
   const quote = (ctx.voices?.items || []).map((v) => v.text).find((t) => t && ONTOPIC.test(t));
   // With no clear district majority the addressee is the citywide official, and
-  // the letter must not invent a district number to sound authoritative.
-  const dist = ctx.stats?.district;
-  // Title only when the district actually maps to a Supervisor. Otherwise the
-  // addressee is the citywide official under their own title, never "Supervisor
-  // Mayor Daniel Lurie".
-  const titled = hasSupervisor(dist);
-  const addressee = titled ? `Supervisor ${supervisor}` : supervisor;
+  // the letter must not invent a district number to sound authoritative. One
+  // resolver, shared with every other path that names an official, because two
+  // paths answering this differently is exactly how a District 2 corner got a
+  // letter addressed to the Mayor.
+  const dist = resolvedDistrict(c, ctx.stats);
+  // addresseeFor carries the title rule: "Supervisor {name}" only when the
+  // district maps to a real Supervisor, and the citywide official under their
+  // own title otherwise, never "Supervisor Mayor Daniel Lurie".
+  const addressee = addresseeFor(dist);
   const where = dist ? ` in District ${dist}` : " in San Francisco";
   const signoff = dist ? `A resident of District ${dist}` : "A resident of San Francisco";
   // The index only enters the letter when it actually computed. A letter that
@@ -776,6 +780,10 @@ Rules: plain civic English. Under 220 words. Address only ${addressee}. Distingu
     news: ctx.news,
     timeline: ctx.timeline,
     supervisor: dist ? supervisor : null,
+    // The voices lane was already fetched to pick the prompt's quote. Passing
+    // it here is what lets the verifier refuse a letter that describes what
+    // residents said at a corner where nobody said anything.
+    voices: ctx.voices,
   });
 
   let text = await draft();
@@ -845,16 +853,78 @@ Rules: plain civic English. Under 220 words. Address only ${addressee}. Distingu
     fix: c.fix.name,
     cost: c.fix.cost,
     grant: c.fix.grant,
+    // Which rules this passed, on the record itself. Without it, a stored
+    // letter is a claim to have been verified with no way to ask verified
+    // against what, and a rule added later cannot tell an already-checked
+    // letter from one that predates the check.
+    verifyVersion: check.version,
+    checkedAt: generatedAt,
   };
   await putVerifiedLetter(env, c.slug, record).catch(() => {});
   return record;
 }
 
-function sampleLetter(c, district) {
+// ------------------------------------------------------- the serving gate
+//
+// A letter reaches a reader by four routes: a fresh draft, a stored letter that
+// passed verification, the sample, and the score-tier "not drafted yet" state.
+// Only the first is checked at the moment it is written. The other three were
+// trusted, and one of them was lying.
+//
+// The sample is the one that shipped. Its text asserts resident accounts, press
+// coverage and "hundreds of collisions" at every corner it is served for,
+// because it is one fixed paragraph written to look like a letter, not a claim
+// about any particular intersection. On 16th and Potrero that put "residents
+// describe the problem" beside a voices lane reading NONE FOUND and "hundreds
+// of collisions" beside a displayed 65. Nothing caught it, because none of
+// those sentences contains a digit to check.
+//
+// So a letter now has to earn its way out of here. Failing closed is the point:
+// an unchecked letter is exactly what this gate exists to stop, and the honest
+// pending state below is always available and always true.
+export const LETTER_PENDING_NOTE =
+  "A verified letter for this corner is queued behind generation.";
+
+function pendingLetter(c, reasons = []) {
+  return {
+    source: "pending-verification",
+    supervisor: null,
+    verified: false,
+    gated: true,
+    text: "",
+    note: LETTER_PENDING_NOTE,
+    // Named rather than summarised. A reader who wants to know why this corner
+    // has no letter can read the reasons the check gave, in the same words the
+    // regeneration prompt will be conditioned on.
+    gatedReason: reasons.length
+      ? `The last draft for this corner failed the letter check: ${reasons.join("; ")}.`
+      : "No letter for this corner has passed the current letter check.",
+    fix: c.fix.name,
+    cost: c.fix.cost,
+    grant: c.fix.grant,
+  };
+}
+
+// A stored letter may serve only if it was checked by the rules in force now.
+// A letter verified under an older, weaker verifier has not been checked for
+// the thing that went wrong, and "it passed once" is not the same claim as "it
+// passes". This costs nothing: the version is on the record.
+function storedLetterServes(stored) {
+  return Boolean(stored?.text) && stored?.verifyVersion === VERIFY_VERSION;
+}
+
+// Kept, exported and no longer served anywhere.
+//
+// It is the exhibit: tools/verify.test.mjs runs it through the check and
+// asserts it fails, so if a future change ever routes it back to a reader the
+// test says so by name. Deleting it would remove the evidence of what the site
+// used to say and leave nothing pinning the rule to the letter that broke it.
+export function sampleLetter(c, district) {
   const supervisor = supervisorFor(district);
-  // Same rule as the live path: title only when the district maps to a real
-  // Supervisor, never "Dear Supervisor Mayor Daniel Lurie".
-  const salutation = hasSupervisor(district) ? `Dear Supervisor ${supervisor}` : `Dear ${supervisor}`;
+  // Same rule as the live path, through the same helper: title only when the
+  // district maps to a real Supervisor, never "Dear Supervisor Mayor Daniel
+  // Lurie".
+  const salutation = `Dear ${addresseeFor(district)}`;
   const where = district ? `, in District ${district}` : ", in San Francisco";
   const signoff = district ? `A resident of District ${district}` : "A resident of San Francisco";
   return {
@@ -1445,7 +1515,15 @@ async function ogFor(c, env) {
   // A scored corner already carries all of this on the shard row that resolved
   // it. Two more KV reads to confirm two records that by construction do not
   // exist would double the cost of the commonest page on the site.
-  if (isScored(c)) return { score: cityScore(c), cred: cityCred(c), tier: TIERS.SCORED };
+  // The three stat tiles, server-side, for the 7,355 corners whose figures are
+  // already on the shard row. cityStats is synchronous and reads nothing, so
+  // this costs the page nothing and puts the numbers in the raw HTML instead of
+  // leaving them to a count-up that only fires if the tiles are scrolled into
+  // view. A corner without a shard row keeps its skeleton, which says "loading"
+  // rather than claiming a figure this render does not have.
+  if (isScored(c)) {
+    return { score: cityScore(c), cred: cityCred(c), tier: TIERS.SCORED, stats: cityStats(c) };
+  }
   const [score, cred, imagery, letter] = await Promise.all([
     getScore(env, c.slug, SCORE_VERSION).catch(() => null),
     getCredCached(env, c.slug, CRED_VERSION).catch(() => null),
@@ -1460,7 +1538,17 @@ async function ogFor(c, env) {
   // Whether this corner actually has a generated fix image. The page's own
   // subtitle promises "a picture of the fix", and it must not promise one it
   // is not showing. It comes back by itself when generation does.
-  return { score, cred, letter, tier: tierOf(c, imagery), showsFix: Boolean(imagery?.states?.includes("fix")) };
+  return {
+    score,
+    cred,
+    // Same gate as the API path. This one writes the letter straight into the
+    // server HTML, so a letter that may not be served over the API must not
+    // arrive by the shorter route either; that is how a rail becomes a
+    // suggestion.
+    letter: storedLetterServes(letter) ? letter : null,
+    tier: tierOf(c, imagery),
+    showsFix: Boolean(imagery?.states?.includes("fix")),
+  };
 }
 
 // ---------------------------------------------------------------- generated imagery
@@ -1495,13 +1583,12 @@ async function generatedImage(pathname, env, ctx) {
 // wrangler.jsonc is 13:10 UTC, which is 06:10 Pacific while daylight time is in
 // force and 05:10 once it ends. Pacific is what the log records, because the
 // claim being made is "a new corner every morning" and mornings are local.
-const PT_DAY = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/Los_Angeles",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-const pacificDay = (d = new Date()) => PT_DAY.format(d);
+// One definition, in data.js, shared by every surface that prints a date. Two
+// Pacific formatters that drift apart is the same bug in a slower form. Every
+// call here means today, which the shared helper spells out rather than
+// defaulting to, so a missing timestamp elsewhere cannot render as now.
+const pacificDay = pacificTodayShared;
+
 
 // A timestamp a reader can act on: the local date and time a figure was last
 // true, in the timezone the claim is about. A number with no as-of is a
@@ -1690,8 +1777,11 @@ async function cornerOfTheDay(env, ctx, origin) {
     return conn;
   });
 
-  // The citywide watchlist, refreshed. Seven semantic searches, and the only
-  // lane here that is not about today's corner at all.
+  // The citywide watchlist, refreshed. WATCHLIST_QUERIES.length searches
+  // attempted, and the only lane here that is not about today's corner at all.
+  // It runs near the end of this invocation, after the audit has spent most of
+  // the subrequest budget, so most of them are cut off before they reach Exa.
+  // See docs/WATCHLIST_SUBREQUEST_FINDING.md; the fix is the operator's call.
   const watchlist = await lane("press watchlist", async () => {
     const meta = await getCityMeta(env);
     const skip = new Set([...(meta?.audited || []), corner.slug]);
@@ -1958,8 +2048,8 @@ export default {
       const mastScored = async () => (await getCityMeta(env).catch(() => null))?.totalScored ?? 0;
 
       // The Press Watchlist. Read only: the pass that builds it runs on the
-      // cron, because six semantic searches is not something a page load
-      // should start.
+      // cron, because a couple of dozen semantic searches is not something a
+      // page load should start.
       if (p === "/watchlist" || p === "/watchlist/" || p === "/api/watchlist") {
         const [w, hub] = await Promise.all([
           getWatchlist(env, WATCHLIST_VERSION).catch(() => null),
@@ -2031,7 +2121,10 @@ export default {
       }
 
       if (p === "/methodology" || p === "/methodology/") {
-        return new Response(METHODOLOGY(origin, Boolean(env.PREVIEW), await mastScored()), {
+        // The watchlist record rides along so the search counts on this page
+        // are the stored completion record rather than a number typed once.
+        const wlRec = await getWatchlist(env, WATCHLIST_VERSION).catch(() => null);
+        return new Response(METHODOLOGY(origin, Boolean(env.PREVIEW), await mastScored(), wlRec), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -2070,7 +2163,7 @@ export default {
               live: !burn.stopReason && Date.now() - Date.parse(burn.updatedAt || 0) < 30 * 60 * 1000,
             }
           : null;
-        return new Response(STATUS(synth, incidents, changes, origin, spend, Boolean(env.PREVIEW), await mastScored(), scan), {
+        return new Response(STATUS(synth, incidents, changes, origin, spend, Boolean(env.PREVIEW), await mastScored(), scan, await getWatchlist(env, WATCHLIST_VERSION).catch(() => null)), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -2418,7 +2511,7 @@ export default {
             : await getLetterBackoff(env).catch(() => null);
         if (backoff) {
           const stored = await getVerifiedLetter(env, c.slug).catch(() => null);
-          if (stored?.text) {
+          if (storedLetterServes(stored)) {
             return json({
               ...stored,
               source: "verified-cache",
@@ -2426,7 +2519,15 @@ export default {
               note: "Letter drafting is paused while the generator has no allowance left. This is the last draft that passed verification at this corner.",
             });
           }
-          return json({ ...sampleLetter(c, c.district), backoff });
+          // No letter here has passed the current check, so there is nothing
+          // true to serve. The sample used to fill this gap and that is the
+          // hole this closes: one fixed paragraph asserting resident accounts,
+          // press coverage and hundreds of collisions, at whichever corner
+          // happened to ask.
+          return json({
+            ...pendingLetter(c, stored?.text ? ["it was verified under an earlier version of the letter check"] : []),
+            backoff,
+          });
         }
         // The slowest lane by far, and the one worth caching hardest: a fresh
         // draft costs several seconds of Gemini time.
@@ -2450,7 +2551,7 @@ export default {
                 quotaBackoffUntil = Date.now() + 3600 * 1000;
                 await setLetterBackoff(env, e.message).catch(() => {});
                 const stored = await getVerifiedLetter(env, c.slug).catch(() => null);
-                if (stored?.text) {
+                if (storedLetterServes(stored)) {
                   return {
                     ...stored,
                     source: "verified-cache",
@@ -2461,8 +2562,11 @@ export default {
               // A letter quietly becoming a sample is the failure a reader is
               // least likely to notice and most likely to be misled by, so it
               // leaves a trace with the reason attached rather than vanishing.
-              console.log(`letter fell back to sample at ${c.slug}: ${String(e?.message || e)}`);
-              return sampleLetter(c, stats.district);
+              // It no longer becomes a sample: the sample asserts three lanes
+              // it cannot possibly have checked, so the honest pending state is
+              // what a corner with no verified letter gets.
+              console.log(`letter went pending at ${c.slug}: ${String(e?.message || e)}`);
+              return pendingLetter(c);
             },
             );
           }),

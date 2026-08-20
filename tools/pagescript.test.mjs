@@ -296,3 +296,186 @@ test("the hero card states no second corner under its buttons", () => {
   assert.match(older, /class="shdl"/, "the slider is unaffected");
   assert.match(older, /Audited autonomously 2026-08-18/, "the featured corner still dates itself");
 });
+
+// The three stat tiles printed as "0 collisions, 0 reports, 0 district" under
+// an F verdict in the operator's PDF. The values were only ever produced by a
+// count-up gated on the tiles scrolling into view, and the tiles sit below the
+// press and voices cards, so anything that does not scroll got zeros. A zero is
+// a claim; a skeleton is not. Neither may be a stand-in for a figure the render
+// already has.
+test("a scored corner's stat tiles carry their real values in the raw HTML", () => {
+  const html = PAGE(scored, {
+    origin: "https://example.test",
+    tier: TIERS.SCORED,
+    stats: {
+      source: "sweep",
+      asOf: "2026-08-18",
+      radiusM: 80,
+      crashes: 65,
+      fatal: 2,
+      reports311: 85,
+      reports311Window: "12 months",
+      district: 9,
+    },
+  });
+  const block = html.slice(html.indexOf('<div class="stats"'), html.indexOf('<p class="statcap"'));
+  assert.match(block, />65</, "the collision count should be in the HTML");
+  assert.match(block, />85</, "the 311 count should be in the HTML");
+  assert.match(block, />9</, "the district should be in the HTML");
+  assert.doesNotMatch(block, />0</, "no tile may render a literal zero it does not mean");
+  assert.doesNotMatch(block, /class="n sk"/, "no skeleton where a value is known");
+  // data-to stays, because the count-up still replays over the real number.
+  assert.match(block, /data-to="65"/);
+});
+
+// Without stats in hand the tile says nothing rather than saying zero.
+test("a corner with no stats in hand keeps the skeleton, never a zero", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  const block = html.slice(html.indexOf('<div class="stats"'), html.indexOf('<p class="statcap"'));
+  assert.match(block, /class="n sk"/, "the loading state is honest, a zero is not");
+  assert.doesNotMatch(block, />0</);
+});
+
+// There was no print stylesheet on this site at all, which is why the PDF came
+// back with the tape, the sticky bar and a half-drawn eyebrow rule.
+test("the corner page has a print stylesheet that stops mid-flight animation", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  assert.match(html, /@media print\{/, "a printable document needs print styles");
+  assert.match(html, /@media print\{[\s\S]*animation:none !important/);
+  assert.match(html, /@media print\{[\s\S]*\.sticky[^}]*display:none/);
+});
+
+// The flush is what puts data-to on screen without waiting to be scrolled to.
+test("the stats flush runs when the lane lands and again before printing", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  const src = scripts(html).join("\n");
+  assert.match(src, /function flushStats\(\)/);
+  assert.match(src, /addEventListener\("beforeprint", flushStats\)/);
+  assert.match(src, /flushStats\(\);/, "the lane must flush as soon as it lands");
+});
+
+// "3 311 reports in 12 months" renders as 3311 to a reader and runs together to
+// a screen reader whatever whitespace sits between the two numbers. The buffer
+// word is the fix, and it is the wording the rest of the site already uses.
+test("a count is never left butting straight against the literal 311", () => {
+  // detailFor is private and its caller makes network calls, so this reads the
+  // source. The pattern is what matters and it is checkable either way: an
+  // interpolated count immediately followed by the digits 311.
+  for (const f of ["hazards.js", "city.js", "cred.js", "page.js", "index.js"]) {
+    const src = readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8");
+    assert.doesNotMatch(
+      src,
+      /\$\{[^}]*\}\s*311 report/,
+      `${f}: a bare count sits against 311 and reads as one number`,
+    );
+  }
+  const hazards = readFileSync(new URL("../src/hazards.js", import.meta.url), "utf8");
+  assert.match(hazards, /street-condition 311 report/, "use the wording the rest of the site uses");
+});
+
+// The endpoint labels printed as one garbled line because three spans shared a
+// space-between row with no gap and nothing stopping the endpoints shrinking.
+test("the percentile scale endpoints are bound to the scale structurally", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  const row = html.slice(html.indexOf('<div class="distax"'), html.indexOf('<div class="sevbar"'));
+  assert.match(row, /class="dend"[^>]*>calmer</, "the calm endpoint needs its own class");
+  assert.match(row, /class="dend"[^>]*>worst</, "the worst endpoint needs its own class");
+  assert.match(row, /class="dmid"/, "the middle label needs its own class");
+  assert.match(html, /\.distax\{display:grid/, "space-between with no gap is what collapsed them");
+  assert.match(html, /\.distax \.dend\{white-space:nowrap\}/);
+});
+
+// The homepage says 7,355 graded and the corner page's scale says 8,254. Both
+// are live constants and both are right; nothing on the page said why.
+test("the two denominators are reconciled where they meet, from live constants", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED, scored: 7355 });
+  assert.match(html, /class="distbridge"/);
+  const bridge = html.slice(html.indexOf('class="distbridge"'), html.indexOf("</p>", html.indexOf('class="distbridge"')));
+  assert.match(bridge, /8,254 crossings in the census/);
+  assert.match(bridge, /7,355 with reported harm, graded/);
+  // The remainder is not all zeroes: 629 of the census sit at zero and the rest
+  // are quadrant duplicates the sweep collapses. Saying "the rest sit at zero"
+  // would be a new wrong number in place of a missing one.
+  assert.doesNotMatch(bridge, /rest sit at zero/);
+});
+
+test("the bridge says nothing rather than printing a zero denominator", () => {
+  const html = PAGE(scored, { origin: "https://example.test", tier: TIERS.SCORED });
+  assert.doesNotMatch(html, /0 with reported harm/);
+});
+
+// /watchlist printed 29 searches as if all 29 had run, on the page whose stated
+// thesis is that publishing only your hits is indistinguishable from a search
+// box that got lucky. Twenty-two of them were stored with their failure reason
+// and the page rendered none of them.
+const wlRecord = {
+  source: "live",
+  version: "v1",
+  builtAt: "2026-08-20T13:11:04.521Z",
+  windowDays: 90,
+  articles: 101,
+  rejected: 7,
+  discarded: 27,
+  entries: [],
+  rejects: [],
+  calls: 5,
+  queries: [
+    { query: "pedestrian struck in San Francisco", results: 15, local: false },
+    { query: "crosswalk collision San Francisco", results: 15, local: false },
+    { query: "sfchronicle crossing coverage", results: 0, local: true, failed: "Too many subrequests by single Worker invocation. To configure this limit, refer to https:" },
+    { query: "crosswalk at an intersection in the Tenderloin, San Francisco", results: 0, local: false, failed: "Too many subrequests by single Worker invocation. To configure this limit, refer to https:" },
+    { query: "crash at an intersection in the Excelsior, San Francisco", results: 0, local: false, failed: "Too many subrequests by single Worker invocation. To configure this limit, refer to https:" },
+  ],
+};
+
+test("the watchlist reports attempted, completed and cut off, never just the attempt", () => {
+  const html = WATCHLIST_PAGE(wlRecord, "https://example.test", null);
+  const txt = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(txt, /5 searches attempted/);
+  assert.match(txt, /2 completed/);
+  assert.match(txt, /3 cut off/);
+  // The cost claim was the worse half: the three that failed never reached Exa.
+  assert.match(txt, /the pass costs 2 searches rather than 5/);
+  assert.doesNotMatch(txt, /whole pass costs 5 searches/);
+});
+
+test("every cut-off query is a visible entry with its reason", () => {
+  const html = WATCHLIST_PAGE(wlRecord, "https://example.test", null);
+  for (const q of wlRecord.queries.filter((x) => x.failed)) {
+    assert.ok(html.includes(q.query), `the page must list the query it never ran: ${q.query}`);
+  }
+  assert.match(html, /Too many subrequests by single Worker invocation\./);
+  // The stored reason is truncated mid-URL; the page must not print that.
+  assert.doesNotMatch(html, /refer to https:/);
+});
+
+test("the neighbourhood queries lost in the tail are named, not summarised", () => {
+  const html = WATCHLIST_PAGE(wlRecord, "https://example.test", null);
+  assert.ok(html.includes("Tenderloin"), "the Tenderloin query never runs and must be visible");
+  assert.ok(html.includes("Excelsior"), "the Excelsior query never runs and must be visible");
+  const txt = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(txt, /geographic blind spot/, "say that the gap is systematic, not random");
+});
+
+test("the empty state does not claim searches ran that did not", () => {
+  const html = WATCHLIST_PAGE(wlRecord, "https://example.test", null);
+  const txt = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.doesNotMatch(txt, /Nothing on the watchlist right now\. The searches ran/);
+  assert.match(txt, /2 of 5 searches ran/);
+});
+
+test("a pass with nothing cut off says so plainly", () => {
+  const clean = { ...wlRecord, queries: wlRecord.queries.map(({ failed, ...q }) => ({ ...q, results: 15 })) };
+  const txt = WATCHLIST_PAGE(clean, "https://example.test", null).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(txt, /All 5 completed/);
+  assert.match(txt, /Every search in the last pass reached Exa/);
+  // The stat chip is the claim; the sentence "Nothing was cut off" is not.
+  assert.doesNotMatch(txt, /\d+ cut off/);
+});
+
+// The scheduling fix is the operator's call and must not arrive as a side
+// effect of a copy pass.
+test("the page names the finding doc rather than fixing the cron quietly", () => {
+  const html = WATCHLIST_PAGE(wlRecord, "https://example.test", null);
+  assert.match(html, /WATCHLIST_SUBREQUEST_FINDING\.md/);
+});

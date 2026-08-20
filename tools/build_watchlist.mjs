@@ -4,9 +4,13 @@
 //
 //   node tools/build_watchlist.mjs [--dry] [--days 45]
 //
-// Four citywide semantic searches, every crossing named in the results
-// extracted and then checked against hard criteria before it is allowed to
-// surface. Rejects are kept and published with their reasons.
+// Every query in WATCHLIST_QUERIES (twenty-nine at the time of writing, and the
+// only place that number should be read from), with every crossing named in the
+// results extracted and then checked against hard criteria before it is allowed
+// to surface. Rejects are kept and published with their reasons, and so are the
+// queries that never ran: inside the cron this lane shares one invocation's
+// subrequest budget and most of them are cut off. Run standalone, here, they all
+// get their call.
 //
 // The cron runs this same code every morning. This tool exists so it can be
 // rebuilt on demand, which is what you want after a sweep or a wording change.

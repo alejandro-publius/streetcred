@@ -5,11 +5,15 @@
 // then and now, instead of having to choose which of two numbers to distrust.
 
 import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
+import { pacificDay } from "./data.js";
 
 const esc = (t) =>
   String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 
-const day = (ts) => String(ts || "").slice(0, 10);
+// Pacific, not the UTC prefix of the stored stamp. A grade that moved at 7pm
+// Pacific was logged with tomorrow's date for as long as this sliced the ISO
+// string, which is the one thing a change log must never get wrong.
+const day = (ts) => pacificDay(ts);
 
 export const CHANGES = (changes = [], origin = "", preview = false, scored = 0) => `<!doctype html>
 <html lang="en">

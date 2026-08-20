@@ -165,6 +165,28 @@ export const SLIDER = ({
 // it, so there is exactly one implementation of the drag in the codebase.
 // Pointer drag, touch drag and arrow keys all end in the same setter, which is
 // the only reason the three input paths cannot drift apart.
+// The same Pacific-day rule as the server's, for the scripts that stamp a date
+// in the browser. A visitor's own clock is irrelevant here: the claim is about
+// San Francisco, so the render is San Francisco's date whether the reader is in
+// Berlin or in the Sunset. Inlined rather than imported because these run inside
+// the page's own <script>, and duplicated text is cheaper than a second request.
+export const PACIFIC_DAY_JS = `
+// YYYY-MM-DD in America/Los_Angeles. "" for anything unparseable.
+function ptDay(ts){
+  if(ts === null || ts === undefined || ts === "") return "";
+  var d = (ts instanceof Date) ? ts : new Date(ts);
+  if(isNaN(d.getTime())) return "";
+  try {
+    return new Intl.DateTimeFormat("en-CA", {timeZone:"America/Los_Angeles",
+      year:"numeric", month:"2-digit", day:"2-digit"}).format(d);
+  } catch(e) {
+    // No Intl timezone data is a browser old enough that a wrong date is worse
+    // than none, so this says nothing rather than saying UTC.
+    return "";
+  }
+}
+`;
+
 export const SLIDER_JS = `
 function mountSlider(root, ov, hdl, onSplit){
   if(!root || !ov || !hdl) return null;
@@ -711,8 +733,30 @@ header{display:flex;align-items:center;column-gap:14px;row-gap:24px;padding-bott
 .dmark.gC{background:var(--blue)}
 .dmark.gD{background:rgba(240,126,38,.7)}
 .dmark.gF{background:var(--accent)}
-.distax{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);
-  letter-spacing:.04em;margin:4px 0 12px}
+/* Three spans in a space-between flex row with no gap and nothing stopping the
+   endpoints shrinking. The middle label is long, so the moment the three items
+   exceed the track there is no free space left to distribute: the spans butt
+   against each other and the row reads "calmer8,254 SF intersections, the /
+   whole cityworst". A grid gives each label its own column and a real gutter,
+   and the endpoints are bound to the ends structurally rather than by whatever
+   space happens to be left, so linearized and assistive reading keeps them
+   separate and in order. */
+.distax{display:grid;grid-template-columns:auto 1fr auto;align-items:baseline;
+  gap:0 12px;font-size:10px;color:var(--dim);letter-spacing:.04em;margin:4px 0 6px}
+.distax .dend{white-space:nowrap}
+.distax .dend:first-child{justify-self:start}
+.distax .dend:last-child{justify-self:end}
+.distax .dmid{justify-self:center;text-align:center}
+@media(max-width:600px){
+  /* Too narrow for three across. The middle label takes its own line under the
+     two endpoints rather than wrapping into them. */
+  .distax{grid-template-columns:auto auto;justify-content:space-between;gap:2px 12px}
+  .distax .dmid{grid-column:1 / -1;order:2;justify-self:center}
+}
+/* The two denominators reconciled where they first meet. The scale is the whole
+   census; the masthead's count is the graded subset. Both are live constants
+   and they used to appear on the same page contradicting each other. */
+.distbridge{font-size:10.5px;color:var(--dim);line-height:1.6;margin:0 0 12px}
 .sevbar{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--card);margin-bottom:9px}
 .sevbar i{display:block;height:100%}
 .sevbar i.f{background:var(--ink)}
@@ -863,6 +907,13 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .lpop-g{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;padding:0 4px}
 .lpop-s{color:var(--dim);font-size:11.5px}
 .lpop a{color:var(--accent);font-weight:600;text-decoration:none}
+/* Leaflet pins an inline width on the popup measured with white-space:nowrap
+   and clamped to its own maxWidth, then its stylesheet adds 44px of horizontal
+   margin on top. Sizing the popup to the map element is the real fix, in
+   public/leafmap.js; this is the belt to that pair of braces, so a long
+   crossing name wraps inside the box rather than being clipped by it. */
+.leaflet-popup-content{width:auto !important;max-width:100%;margin:12px 16px}
+.lpop{overflow-wrap:anywhere}
 .leafshell{transition:opacity 300ms ease-out;z-index:1}
 
 /* Lane eyebrow: the page is one long column, so each lane gets a small label
@@ -1293,7 +1344,36 @@ a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible,
   .toggle{width:auto;flex-wrap:wrap;padding:5px}
   .toggle button{padding:9px 13px;font-size:13px}
 }
-@media(max-width:400px){.stats{grid-template-columns:1fr}}`;
+@media(max-width:400px){.stats{grid-template-columns:1fr}}
+
+/* Print. There was no print stylesheet on this site at all, which is how the
+   operator's PDF came back carrying the hazard tape, the sticky bar and three
+   stat tiles reading zero. A corner page is a document somebody may well print
+   and take to a meeting, so it should print like one.
+
+   Motion is the first thing to go: an animation mid-flight prints whatever
+   frame it had reached, which for the eyebrow rules meant a half-drawn line and
+   for the tiles meant a half-counted number. */
+@media print{
+  *{animation:none !important;transition:none !important}
+  /* Skeletons are a loading state. On paper they are grey boxes with no
+     explanation, so they take no ink. */
+  .sk{animation:none !important;background:transparent !important}
+  /* Fixed and sticky furniture either repeats on every sheet or covers the
+     text under it. */
+  .sticky,.pvw,#replay,.toggle,.share,.vgo,.offer{display:none !important}
+  /* The eyebrow rule is drawn by a scaleX transition that has not run. */
+  .eyebrow::after{transform:scaleX(1) !important}
+  /* Three tiles across, since the paper is wider than the phone breakpoint
+     that stacks them. */
+  .stats{grid-template-columns:repeat(3,1fr) !important}
+  /* A link that says "read the evaluation" is useless on paper without its
+     destination. */
+  .provenance a[href^="http"]::after,.src[href^="http"]::after{content:" (" attr(href) ")";font-size:9px;word-break:break-all}
+  body{background:#fff}
+  .panel{break-inside:avoid;box-shadow:none}
+  .stat{break-inside:avoid}
+}`;
 
 export const PAGE = (c, og = {}) => {
   const idx = og.score?.index;
@@ -1489,7 +1569,16 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
       ${DIST_SVG}
       <i class="dmark" id="dmark" hidden></i>
     </div>
-    <div class="distax"><span>calmer</span><span>${DISTRIBUTION.length.toLocaleString("en-US")} SF intersections, the whole city</span><span>worst</span></div>
+    <div class="distax">
+      <span class="dend">calmer</span>
+      <span class="dmid">${DISTRIBUTION.length.toLocaleString("en-US")} SF intersections, the whole city</span>
+      <span class="dend">worst</span>
+    </div>
+    ${
+      og.scored
+        ? `<p class="distbridge">${DISTRIBUTION.length.toLocaleString("en-US")} crossings in the census, ${og.scored.toLocaleString("en-US")} with reported harm, graded. The remainder recorded no harm at all, or are one crossing counted twice where the city splits it into quadrants and the sweep keeps the worst.</p>`
+        : ""
+    }
     <div class="sevbar" id="sevbar"></div>
     <div class="sevkey" id="sevkey"></div>
     <div class="scorecav" id="scorecav"></div>
@@ -1545,10 +1634,29 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
          screen reader announces on entering it, so moving the box did not move
          what it is part of. -->
     <section class="statgroup" role="group" aria-labelledby="recordlabel">
-<div class="stats" id="stats">
+<div class="stats" id="stats">${
+  og.stats
+    ? [
+        [og.stats.crashes, "Injury collisions, last 5 years", `within ${og.stats.radiusM || 80}m`],
+        [
+          og.stats.reports311,
+          `Street-condition 311 reports, ${og.stats.reports311Window || "3 years"}`,
+          `within ${og.stats.radiusM || 80}m`,
+        ],
+        [og.stats.district, "Supervisor district", ""],
+      ]
+        .map(
+          ([v, label, rad]) =>
+            `\n  <div class="stat"><div class="n" data-to="${v ?? ""}">${
+              v === null || v === undefined ? "n/a" : Number(v).toLocaleString("en-US")
+            }</div><div class="l">${label}${rad ? `<br><i class="rad">${rad}</i>` : ""}</div></div>`,
+        )
+        .join("")
+    : `
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Injury collisions, last 5 years<br><i class="rad">within 150m</i></div></div>
   <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Street-condition 311 reports, 3 years<br><i class="rad">within 150m</i></div></div>
-  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>
+  <div class="stat"><div class="n sk" style="width:70px;height:34px"></div><div class="l">Supervisor district</div></div>`
+}
 </div>
 <p class="statcap" id="statcap" hidden></p>
     </section>
@@ -1606,6 +1714,7 @@ ${FOOTER()}
 </div>
 
 <script>
+${PACIFIC_DAY_JS}
 const CAPS = {
   today:["Today","The corner as Street View last photographed it. Imagery: Google."],
   hazards:["Hazards","Gemini read the real photograph and marked the zones it flags as high risk: faded crosswalk markings in red, vehicle conflict zones in amber. Drag to compare."],
@@ -2036,8 +2145,15 @@ LANE_LOADERS.stats = () => fetch("/api/stats" + X).then(r => r.json()).then(d =>
   // clicks re-runs the count on data.sfgov.org; everyone else sees a number.
   const urls = [d.urls && d.urls.crashes, d.urls && d.urls.reports311, d.urls && d.urls.district];
   el("stats").innerHTML = vals.map((v,i) => {
+    // Seeded with the real figure, not with "0". Writing a zero and leaving the
+    // truth in data-to made the count-up the only thing that could produce the
+    // number, and the count-up is gated on the tiles scrolling into view. The
+    // tiles sit below the press and voices cards, so anything that never
+    // scrolls (print, a full-page screenshot, a headless capture, reader mode)
+    // showed three zeros under an F verdict. The animation is decoration now,
+    // replaying 0 to n over a number that was already correct.
     const num = '<div class="n" data-to="' + (v === null || v === undefined ? "" : v) + '">' +
-      (v === null || v === undefined ? "n/a" : "0") + '</div>';
+      (v === null || v === undefined ? "n/a" : Number(v).toLocaleString()) + '</div>';
     const linked = urls[i] && v !== null && v !== undefined
       ? '<a class="src" href="' + urls[i] + '" target="_blank" rel="noopener" ' +
         'aria-label="' + l[i].replace(/"/g, "") + ': opens source query on data.sfgov.org">' + num + '</a>'
@@ -2074,7 +2190,29 @@ LANE_LOADERS.stats = () => fetch("/api/stats" + X).then(r => r.json()).then(d =>
       if(to !== "") countUp(node, to);
     });
   });
+  flushStats();
 });
+
+// data-to is the source of truth; this puts it on screen with no animation and
+// no waiting for anything to be scrolled into view. Called when the lane lands,
+// and again before printing, because a print does not scroll and a half-played
+// count-up prints whatever number it had reached.
+function flushStats(){
+  const wrap = el("stats");
+  if(!wrap) return;
+  wrap.querySelectorAll(".n").forEach(node => {
+    const to = node.getAttribute("data-to");
+    if(to === null || to === "") return;
+    const n = Number(to);
+    node.textContent = Number.isFinite(n) ? n.toLocaleString() : to;
+  });
+}
+window.addEventListener("beforeprint", flushStats);
+// Safari and the headless capture paths do not always fire beforeprint.
+if(window.matchMedia){
+  const pq = window.matchMedia("print");
+  pq.addEventListener && pq.addEventListener("change", e => { if(e.matches) flushStats(); });
+}
 
 // Cred Check. Four lanes, lit when they agree, with the verdict beside them.
 // Detail sits in the title attribute, which is hover on a pointer and long
@@ -2219,7 +2357,7 @@ fetch("/api/changes").then(r => r.json()).then(d => {
   const mine = (d.changes || []).filter(c => c.slug === CORNER_SLUG);
   if (!mine.length) return;
   el("ghistbody").innerHTML = mine.map(c =>
-    '<div>' + esc(String(c.date||"").slice(0,10)) + ': <b>' + esc(c.old?.grade ?? "?") + " " + (c.old?.index ?? "?") +
+    '<div>' + esc(ptDay(c.date)) + ': <b>' + esc(c.old?.grade ?? "?") + " " + (c.old?.index ?? "?") +
     '</b> to <b>' + esc(c.new?.grade ?? "?") + " " + (c.new?.index ?? "?") + '</b>, ' + esc(c.reason || "") +
     ' <span style="text-transform:uppercase;font-size:9.5px;letter-spacing:.07em">' + esc(c.source || "") + '</span></div>').join("");
   el("ghist").hidden = false;
@@ -2249,7 +2387,7 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
   // distinct from when the outlet published it. d.fetchedAt is stamped by the
   // Worker at fetch time; a cached payload keeps the stamp of the fetch that
   // produced it, which is the honest reading of "retrieved".
-  const got = d.fetchedAt ? new Date(d.fetchedAt).toISOString().slice(0,10) : null;
+  const got = ptDay(d.fetchedAt) || null;
   var nn = el("newsnums");
   if(nn){
     var kept = (d.items||[]).length;
@@ -2364,7 +2502,7 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
     log.innerHTML = rows.map(r =>
       '<div class="rline ' + r.lane + (r.off ? ' off' : '') + (instant ? ' in' : '') + '">' +
       '<b></b><span>' + r.text + '</span></div>').join("");
-    el("rdate").textContent = (m.ranAt || "").slice(0, 10) || "an earlier run";
+    el("rdate").textContent = ptDay(m.ranAt) || "an earlier run";
     el("rtrig").textContent = m.trigger === "cron" ? "autonomous run"
       : m.trigger === "precompute" ? "precomputed run" : "run on a visit";
     if(instant) return;
@@ -2543,7 +2681,7 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
     tag.textContent = "none on topic"; tag.classList.add("pending");
     el("voices").innerHTML =
       '<p class="empty">The scrapers ran here and found no account that describes the street itself.</p>' +
-      '<p class="pcauto">Commissioned autonomously on ' + esc(String(d.commissionedAt || "").slice(0,10)) +
+      '<p class="pcauto">Commissioned autonomously on ' + esc(ptDay(d.commissionedAt)) +
       ', ' + esc(d.candidates || 0) + ' accounts read. An empty lane that actually ran is worth more than a full one that guessed.</p>';
     return;
   }
@@ -2593,7 +2731,7 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
     // scrape and nobody was present when it ran.
     (d.commissioned
       ? '<p class="pcauto">Resident voices commissioned autonomously: the morning run started both scrapers for this corner on ' +
-        esc(String(d.commissionedAt || "").slice(0,10)) + ' and the next run ingested ' +
+        esc(ptDay(d.commissionedAt)) + ' and the next run ingested ' +
         esc(d.candidates || 0) + ' accounts, of which these survived the relevance filter.</p>'
       : '');
 });
@@ -2634,8 +2772,14 @@ LANE_LOADERS.letter = () => fetch("/api/letter" + X).then(r => r.json()).then(d 
   // Not drafted, and not pretending otherwise. A sample letter is the one
   // artifact on this site somebody might actually send, so a corner without a
   // real draft shows the offer and the reason it cannot run right now.
-  if(d.source === "ondemand"){
-    const t = el("lettertag"); t.textContent = "not drafted"; t.classList.add("pending");
+  // Two ways to have no letter, and they are different facts about the corner.
+  // "ondemand" means nobody has asked for one yet. "pending-verification"
+  // means one was written and the check refused it, which is a stronger
+  // statement and the reader is entitled to the reason.
+  if(d.source === "ondemand" || d.source === "pending-verification"){
+    const t = el("lettertag");
+    t.textContent = d.source === "ondemand" ? "not drafted" : "not verified";
+    t.classList.add("pending");
     el("letter").innerHTML = '<p class="empty">' + esc(d.note || "") + '</p>' +
       '<p class="gated"><button class="offer" type="button" disabled>Draft the letter for this corner</button><br>' +
       '<b>Drafting is paused.</b> ' + esc(d.gatedReason || "") + '</p>';

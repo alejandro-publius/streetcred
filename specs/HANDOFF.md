@@ -418,6 +418,85 @@ deliberately, so it reads exactly what production reads; that also means the
 lanes that write to KV write to the real store, which is why verification on it
 reads pages and never touches the imagery lane.
 
+## Polish pass 2 rollback (addendum stages 7B, 7C, 7D)
+
+Addendum pass of 2026-08-20: visual and copy layer, plus deterministic verifier
+rules. No scoring, data, API behaviour, cron or cap changed. Zero model calls,
+zero billable calls. Built on branch `polish/pass-2` from main, verified on the
+preview Worker before main was touched.
+
+**Production deployment live before this pass:**
+`a044a0af-cdaa-46ab-86ca-e52bffc3fd36`, deployed 2026-08-20T04:19:47Z.
+
+**Path A, instant:**
+
+```
+npx wrangler rollback a044a0af-cdaa-46ab-86ca-e52bffc3fd36
+```
+
+**Path B, from source:**
+
+```
+git checkout pre-polish-aug18 && npx wrangler deploy
+```
+
+The tag `pre-polish-aug18` is permanent. Do not delete it. Note that Path B
+reverts all the way to the pre-polish-1 state, not to this pass's predecessor;
+Path A is the correct rollback for this pass, and Path B is the floor.
+
+## Awaiting the operator: how the watchlist should be scheduled
+
+Stage 7D of the addendum made /watchlist and /methodology tell the truth about
+this. It did NOT change the cron, the batching or the subrequest budgeting,
+because that is a behaviour change and the choice is the operator's.
+
+The finding, in one line: the watchlist attempts 29 searches inside the daily
+audit's single Worker invocation, near the end of it, and Cloudflare allows 50
+subrequests per invocation. 7 completed on 2026-08-20 and 8 on 2026-08-19. The
+21 or 22 that fail are the tail of the list, which is where every
+neighbourhood-scoped query sits, so the blind spot is systematic rather than
+random.
+
+The four options in `docs/WATCHLIST_SUBREQUEST_FINDING.md`, one line each:
+
+1. **Report both numbers.** Print attempted and completed and list the failures
+   with their reason. Smallest change, matches the page's existing ethos, does
+   not recover the lost coverage.
+2. **Move the watchlist onto its own tick**, the way the press batch already
+   works. Recovers the coverage. Largest change.
+3. **Chunk and checkpoint it** across several quarter-hourly ticks, reusing the
+   burn checkpoint machinery already in `src/store.js`.
+4. **Cut the query list** back to what one invocation's remaining budget can
+   carry, and say so. Gives up the neighbourhood queries deliberately rather
+   than accidentally.
+
+The doc's own note: option 1 is the freeze-compatible half of every other
+option and conflicts with none of them. **Option 1 is what this pass
+implemented**, on the display side only. Options 2, 3 and 4 remain open and are
+the actual decision, because option 1 alone leaves the ten neighbourhood
+queries never having run.
+
+## Contrast, measured for the operator's phone pass
+
+Measured 2026-08-20 during addendum stage 7B, from the resolved CSS rather than
+by eye. The site has one palette; there is no `prefers-color-scheme` block
+anywhere in `src/`, so these are the only values a visitor can get.
+
+| Surface | Foreground | Background | Ratio | WCAG |
+|---|---|---|---|---|
+| Check button, enabled | `#ffffff` | `--ink` `#141B2D` | **17.15:1** | passes AA 4.5:1 and AAA 7:1 |
+| Check button against the page | `--ink` `#141B2D` | `--bg` `#faf9f5` | 16.28:1 | passes AA UI 3:1 |
+| Check button, disabled | effective `#fcfcfa` | effective `#878a91` | 3.37:1 | below AA 4.5:1 |
+
+The button is 14px at weight 600, which is normal text by WCAG's measure, not
+large text, so 4.5:1 is the bar it has to clear and it clears it nearly four
+times over. No change was made to it.
+
+The disabled row is recorded rather than fixed: `.find button[disabled]` is
+`opacity:.5`, and WCAG 1.4.3 exempts inactive controls from the contrast
+minimum. It is here so the operator's phone pass knows the number was taken and
+what it means, rather than rediscovering it and wondering.
+
 ## Deferred from polish pass
 
 - **`score:24th-and-valencia` is stored at v1** while the scoring code is at v3,

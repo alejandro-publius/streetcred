@@ -182,6 +182,22 @@ export async function putCityMeta(env, meta) {
   await env.STORE.put("city:meta", JSON.stringify(meta));
 }
 
+// The city's own extent, from the corner index and nothing else.
+//
+// The homepage map used to open on center+zoom from `fitView`, which picks the
+// largest integer zoom that fits the corners inside a 640x520 static image. The
+// interactive map is not 640x520: on a wide viewport that same zoom shows about
+// two and a half times the city's width, which is how the default frame came to
+// span Sausalito to South San Francisco with the data bunched in one corner.
+// Bounds do not have that failure mode, because the map fits them to whatever
+// element it actually has.
+//
+// [south, west, north, east], the min and max of the 7,355 graded crossings in
+// `public/data/city/dots.json`. Regenerate with tools/build_city_shards.mjs;
+// tools/city.test.mjs recomputes it from the committed index and fails if this
+// drifts from it, so it cannot quietly go stale.
+export const CITY_BOUNDS = [37.707846, -122.511938, 37.829862, -122.361332];
+
 export async function getRankPage(env, n) {
   if (!env?.STORE) return null;
   return env.STORE.get(`city:rank:${n}`, "json").catch(() => null);

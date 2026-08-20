@@ -101,7 +101,7 @@
         } else {
           html = "<div class='lpop'><span class='lpop-s'>No crossing within 120m of that tap.</span></div>";
         }
-        var pop = window.L.popup().setLatLng(at).setContent(html).openOn(map);
+        var pop = window.L.popup(popupOpts(map)).setLatLng(at).setContent(html).openOn(map);
         var go = pop.getElement() && pop.getElement().querySelector(".lpop-go");
         if (!go) return;
         go.addEventListener("click", function (ev) {
@@ -119,8 +119,24 @@
       .catch(function () {});
   }
 
+  // Popup sizing. Leaflet's default maxWidth is a flat 300px and the project
+  // never overrode it, so on a container narrower than that the popup was wider
+  // than the map it sat in and the text was cut: "26m from your ta". Sized to
+  // the element instead, with a floor so a very narrow map still gets a usable
+  // box, and autoPan padding so an edge tap does not open a popup half off
+  // screen.
+  function popupOpts(map) {
+    var w = (map.getSize && map.getSize().x) || 300;
+    return {
+      maxWidth: Math.max(180, Math.min(320, w - 60)),
+      minWidth: 140,
+      autoPanPadding: [12, 12],
+    };
+  }
+
   // opts: {center:[lat,lon], zoom, audited:[], scored:[], heatUrl, focus:{lat,lon,name},
-  //        onReady(map), interactiveCaption(el->update attribution text)}
+  //        bounds:[s,w,n,e], boundsPadding, onReady(map),
+  //        interactiveCaption(el->update attribution text)}
   function mount(container, opts) {
     return lib().then(function () {
       var L = window.L;
@@ -132,6 +148,39 @@
         fadeAnimation: !REDUCED,
         markerZoomAnimation: !REDUCED,
       });
+      // Opening frame, when the caller knows the extent the data actually
+      // occupies. center+zoom is computed for a fixed-size static image and is
+      // wrong for an element of any other size; bounds are fitted to the
+      // element in front of the reader. This runs once, before any interaction,
+      // and changes nothing about how zoom or pan behave afterwards.
+      if (opts.bounds && opts.bounds.length === 4) {
+        var pad = opts.boundsPadding || 12;
+        // Re-runnable, because upgrade() calls invalidateSize() when the static
+        // image is dropped and a size change after a fit leaves the frame off
+        // by however much the container moved. Refused once the reader has
+        // touched the map, so a late resize can never yank the view back.
+        map._scFitCity = function () {
+          if (map._scMoved) return;
+          try {
+            map.fitBounds(
+              [[opts.bounds[0], opts.bounds[1]], [opts.bounds[2], opts.bounds[3]]],
+              { padding: [pad, pad], animate: false }
+            );
+          } catch (e) {
+            // A bad bounds array must not cost the reader the map; center+zoom
+            // above already put something on screen.
+          }
+        };
+        // fitBounds fires these itself, so the flag distinguishes our own fit
+        // from the reader's first gesture.
+        map.on("zoomstart movestart", function () {
+          if (map._scFitting) return;
+          map._scMoved = true;
+        });
+        map._scFitting = true;
+        map._scFitCity();
+        map._scFitting = false;
+      }
       L.tileLayer(TILES, { attribution: TILE_ATTRIB, maxZoom: 19 }).addTo(map);
 
       // audited: solid grade-colored pins
@@ -144,7 +193,7 @@
           fillOpacity: 1,
         })
           .addTo(map)
-          .bindPopup(popupHtml(c));
+          .bindPopup(popupHtml(c), popupOpts(map));
       });
 
       // scored: smaller hollow rings, audit pending
@@ -157,7 +206,7 @@
           fillOpacity: 0.85,
         })
           .addTo(map)
-          .bindPopup(popupHtml(Object.assign({ audited: false }, c)));
+          .bindPopup(popupHtml(Object.assign({ audited: false }, c)), popupOpts(map));
       });
 
       // heat: every graded crossing in the census, canvas renderer, only past
@@ -276,6 +325,13 @@
               if (ch !== shell) ch.remove();
             });
             map.invalidateSize();
+            // The container just changed size. Re-fit if the caller asked for
+            // bounds and the reader has not moved the map yet.
+            if (map._scFitCity) {
+              map._scFitting = true;
+              map._scFitCity();
+              map._scFitting = false;
+            }
             resolve(map);
           };
           map.eachLayer(function (l) {
