@@ -444,6 +444,27 @@ The tag `pre-polish-aug18` is permanent. Do not delete it. Note that Path B
 reverts all the way to the pre-polish-1 state, not to this pass's predecessor;
 Path A is the correct rollback for this pass, and Path B is the floor.
 
+## Contrast, measured for the operator's phone pass
+
+Measured 2026-08-20 during addendum stage 7B, from the resolved CSS rather than
+by eye. The site has one palette; there is no `prefers-color-scheme` block
+anywhere in `src/`, so these are the only values a visitor can get.
+
+| Surface | Foreground | Background | Ratio | WCAG |
+|---|---|---|---|---|
+| Check button, enabled | `#ffffff` | `--ink` `#141B2D` | **17.15:1** | passes AA 4.5:1 and AAA 7:1 |
+| Check button against the page | `--ink` `#141B2D` | `--bg` `#faf9f5` | 16.28:1 | passes AA UI 3:1 |
+| Check button, disabled | effective `#fcfcfa` | effective `#878a91` | 3.37:1 | below AA 4.5:1 |
+
+The button is 14px at weight 600, which is normal text by WCAG's measure, not
+large text, so 4.5:1 is the bar it has to clear and it clears it nearly four
+times over. No change was made to it.
+
+The disabled row is recorded rather than fixed: `.find button[disabled]` is
+`opacity:.5`, and WCAG 1.4.3 exempts inactive controls from the contrast
+minimum. It is here so the operator's phone pass knows the number was taken and
+what it means, rather than rediscovering it and wondering.
+
 ## Deferred from polish pass
 
 - **`score:24th-and-valencia` is stored at v1** while the scoring code is at v3,

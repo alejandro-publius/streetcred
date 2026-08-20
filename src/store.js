@@ -13,6 +13,8 @@
 // calls, so 25 corners is 50 billed generations. Picked to keep a bad day cheap
 // while leaving room for real traffic; raise it once there is a billing alert
 // worth trusting.
+import { pacificDay } from "./data.js";
+
 export const DAILY_GENERATION_CAP = 25;
 
 // Street View frames fetched per day for corners that are only scored.
@@ -600,7 +602,7 @@ export async function exaBudget(env) {
       ? round4((m.attributedFromCents ?? m.spentCents) / 100 + m.priorSpendUsd)
       : null,
     reconciliation: m.accountVerified
-      ? `observed on ${m.account}${m.verifiedAt ? ` at ${m.verifiedAt.slice(0, 10)}` : ""}`
+      ? `observed on ${m.account}${m.verifiedAt ? ` at ${pacificDay(m.verifiedAt)}` : ""}`
       : "unverified: no dashboard observation has attributed this spend to a workspace",
   };
 }

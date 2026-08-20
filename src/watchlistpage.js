@@ -6,10 +6,12 @@
 // phrases that named no street at all is here too.
 
 import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
+import { pacificDay } from "./data.js";
 
 const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 
-const when = (iso) => String(iso || "").slice(0, 10);
+// The build stamp is this site's own clock, so it renders in this site's city.
+const when = (iso) => pacificDay(iso);
 
 export const WATCHLIST_PAGE = (w, origin = "", hub = null, preview = false, scored = 0, press = null) => {
   const entries = w?.entries || [];

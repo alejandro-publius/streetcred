@@ -1,5 +1,6 @@
 import {
   CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, hasSupervisor, canonicalSlug, makeCorner, SERVICE_NAMES,
+  pacificToday as pacificTodayShared,
   COTD_SEED,
 } from "./data.js";
 import { PAGE, NOT_FOUND } from "./page.js";
@@ -1495,13 +1496,12 @@ async function generatedImage(pathname, env, ctx) {
 // wrangler.jsonc is 13:10 UTC, which is 06:10 Pacific while daylight time is in
 // force and 05:10 once it ends. Pacific is what the log records, because the
 // claim being made is "a new corner every morning" and mornings are local.
-const PT_DAY = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/Los_Angeles",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-const pacificDay = (d = new Date()) => PT_DAY.format(d);
+// One definition, in data.js, shared by every surface that prints a date. Two
+// Pacific formatters that drift apart is the same bug in a slower form. Every
+// call here means today, which the shared helper spells out rather than
+// defaulting to, so a missing timestamp elsewhere cannot render as now.
+const pacificDay = pacificTodayShared;
+
 
 // A timestamp a reader can act on: the local date and time a figure was last
 // true, in the timezone the claim is about. A number with no as-of is a

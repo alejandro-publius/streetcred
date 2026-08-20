@@ -6,8 +6,8 @@
 // corner's page. Getting that math right is what buys a clickable map for the
 // cost of a single image request.
 
-import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER, STATBAND, HERO_CORNER } from "./page.js";
-import { TIER_LABEL, TIER_NOTE } from "./city.js";
+import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER, STATBAND, HERO_CORNER, PACIFIC_DAY_JS } from "./page.js";
+import { TIER_LABEL, TIER_NOTE, CITY_BOUNDS } from "./city.js";
 
 const MAP_W = 640;
 const MAP_H = 520;
@@ -128,6 +128,13 @@ export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview
   const fullyAudited = typeof tiers?.fullyAudited === "number" ? tiers.fullyAudited : auditedCount;
   const textAudited = typeof tiers?.textAudited === "number" ? tiers.textAudited : 0;
   const n = (v) => Number(v).toLocaleString("en-US");
+  // The Danger Index, which is what the board is sorted by and what actually
+  // differs between rows. The percentile that used to sit here is 99 for every
+  // corner on the first page, so it ranked nothing and said nothing; it now sits
+  // in the list header once, where a shared fact belongs. Display only: this
+  // reads the same stored `points` the sort already used.
+  const idx = (c) =>
+    typeof c?.points === "number" ? String(Math.round(c.points * 10) / 10) : String(c?.index ?? "");
   const pendingClause = textAudited ? `${n(textAudited)} more with imagery pending, ` : "";
   const scopeLine = scored
     ? `${n(scored)} intersections graded citywide, ${n(fullyAudited)} fully audited, ${pendingClause}one attempted every morning.`
@@ -220,6 +227,12 @@ ${BASE_CSS}
 .mapfoot{font-size:11.5px;color:var(--dim);margin:0 0 30px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
 .key{display:inline-flex;align-items:center;gap:5px}
 .key i{width:9px;height:9px;border-radius:50%;display:block}
+/* The A..F row under the map used to be five tiny dots beside five dim
+   letters, which read as plain text at a glance. The letter itself is now the
+   swatch, in the same .gA..gF colours the board rows and the corner pages use,
+   so there is one source of grade colour on the site. */
+.gk{font-size:11px;font-weight:700;min-width:19px;height:19px;border-radius:5px;
+  display:inline-grid;place-items:center;color:#fff;letter-spacing:0}
 .board{border-top:1px solid var(--line2)}
 .row{display:grid;grid-template-columns:34px 1fr auto auto;gap:14px;align-items:center;
   padding:13px 4px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit;
@@ -299,9 +312,14 @@ ${BASE_CSS}
 .lead a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line2)}
 .lead a.leadgo{color:var(--accent);border-color:var(--accent);font-weight:600;white-space:nowrap}
 .emptyboard{font-size:13.5px;color:var(--dim);line-height:1.6;padding:22px 0}
+.boardkey{font-size:11.5px;color:var(--dim);line-height:1.6;margin:-4px 0 12px;padding-left:2px;max-width:640px}
+.boardkey b{color:var(--ink);font-weight:600}
 @media(max-width:600px){
-  .row{grid-template-columns:26px 1fr auto;gap:10px}
-  .ridx{display:none}
+  .row{grid-template-columns:26px 1fr auto auto;gap:9px}
+  /* The index used to be hidden here, which left every phone row reading the
+     same F with nothing to tell them apart. It is the column that ranks, so it
+     shrinks instead of vanishing. */
+  .ridx{font-size:15px}
 }
 </style>
 </head>
@@ -400,11 +418,11 @@ ${
   <span>Past zoom 15 the scored dots are tappable. Unmarked crossings had no reported harm in the record.</span>
 </p>
 <p class="mapfoot">
-  <span class="key"><i style="background:var(--green)"></i>A</span>
-  <span class="key"><i style="background:rgba(120,140,93,.62)"></i>B</span>
-  <span class="key"><i style="background:var(--blue)"></i>C</span>
-  <span class="key"><i style="background:rgba(240,126,38,.7)"></i>D</span>
-  <span class="key"><i style="background:var(--accent)"></i>F</span>
+  <span class="key"><b class="gk gA">A</b></span>
+  <span class="key"><b class="gk gB">B</b></span>
+  <span class="key"><b class="gk gC">C</b></span>
+  <span class="key"><b class="gk gD">D</b></span>
+  <span class="key"><b class="gk gF">F</b></span>
   <span id="mapdata">Map data: Google. Danger Index ranks reported harm, not risk per crossing.</span>
 </p>`
     : ""
@@ -418,6 +436,7 @@ ${
     : ""
 }
 <div class="eyebrow"><span>The scoreboard</span><span class="tag">Danger Index, worst first</span></div>
+<p class="boardkey">Ranked by <b>Danger Index</b>, the number beside each corner. The grade is a percentile against the whole census: every corner on this first page sits in the <b>99th percentile</b>, which is why they all read F. The index is what separates them.</p>
 ${
   board.length
     ? `<div class="board" id="board">
@@ -426,7 +445,7 @@ ${board
     (c, i) => `  <a class="row" href="/c/${esc(c.slug)}">
     <span class="rank">${i + 1}</span>
     <span><span class="rname">${esc(c.name)}${c.tier ? `<span class="rt t-${esc(c.tier)}" title="${esc(TIER_NOTE[c.tier] || "")}">${esc(TIER_LABEL[c.tier])}</span>` : ""}</span><span class="rsev">${esc(severityLine(c))}${c.verdict ? ` &middot; ${esc(c.verdict)}` : ""}</span></span>
-    <span class="ridx">${c.index}</span>
+    <span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">${idx(c)}</span>
     <span class="rg g${esc(c.grade)}" title="Worse than ${c.index}% of San Francisco intersections">${esc(c.grade)}</span>
   </a>`,
   )
@@ -458,7 +477,7 @@ ${STATBAND({
 
 ${
   today
-    ? `${city?.queueLength ? `<p class="cotdq">${n(city.queueLength)} corners in line, worst first.</p>` : ""}
+    ? `${city?.queueLength ? `<p class="cotdq">${n(city.queueLength)} corners in the audit queue, worst first.</p>` : ""}
 ${
   voices?.commissioned
     ? `<p class="cotdq">Resident voices commissioned autonomously at ${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}. ${n(voices.withQuote)} produced an account that cleared the relevance filter; the rest are recorded as scraped and empty, which is a result rather than a gap.</p>`
@@ -501,6 +520,7 @@ ${FOOTER()}
 </div>
 
 <script>
+${PACIFIC_DAY_JS}
 const el = id => document.getElementById(id);
 document.querySelectorAll(".eyebrow").forEach(e => e.classList.add("drawn"));
 
@@ -524,6 +544,10 @@ document.querySelectorAll(".eyebrow").forEach(e => e.classList.add("drawn"));
 })();
 
 var VIEW = {lat: ${view.center.lat}, lon: ${view.center.lon}, zoom: ${view.zoom}};
+// [south, west, north, east] from the corner index. The static image keeps
+// VIEW, because that frame was computed for its exact pixel size; the
+// interactive map fits these instead, for its own.
+var CITY_BOUNDS = ${JSON.stringify(CITY_BOUNDS)};
 var AUDITED = ${JSON.stringify(
     ranked.map((c) => ({ slug: c.slug, name: c.name, lat: c.lat, lon: c.lon, grade: c.grade, index: c.index })),
   )};
@@ -553,6 +577,11 @@ var AUDITED = ${JSON.stringify(
     if(k.pain) bits.push(k.pain + " complaint of pain");
     return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
   }
+  // Same rule as the server's idx(): the Danger Index, one decimal, falling
+  // back to the percentile only if a row somehow has no points.
+  function cidx(c){
+    return (typeof c.points === "number") ? String(Math.round(c.points * 10) / 10) : String(c.index);
+  }
   function draw(d){
     var start = (d.page - 1) * d.size;
     board.innerHTML = d.rows.map(function(c, i){
@@ -561,7 +590,7 @@ var AUDITED = ${JSON.stringify(
         '<span><span class="rname">' + esc(c.name) +
         '<span class="rt t-' + esc(c.tier) + '">' + esc(String(c.tier).toUpperCase()) + '</span></span>' +
         '<span class="rsev">' + esc(severity(c)) + '</span></span>' +
-        '<span class="ridx">' + c.index + '</span>' +
+        '<span class="ridx" title="Danger Index: reported harm within the scoring radius, weighted by severity">' + cidx(c) + '</span>' +
         '<span class="rg g' + esc(c.grade) + '" title="' + GRADE_TITLE + c.index +
         '% of San Francisco intersections">' + esc(c.grade) + '</span></a>';
     }).join("");
@@ -604,7 +633,10 @@ var AUDITED = ${JSON.stringify(
     row.innerHTML = visits.slice(0, 12).map(function(v){
       var now = current[v.slug] || v.gradeSeen;
       var changed = current[v.slug] && v.gradeSeen && current[v.slug] !== v.gradeSeen;
-      var when = v.at ? new Date(v.at).toISOString().slice(0,10) : "";
+      // Pacific, not UTC. toISOString here stamped tomorrow's date on every
+      // corner checked after 5pm Pacific, so a chip and the Corner of the Day
+      // block disagreed by a day on the same screen.
+      var when = ptDay(v.at);
       return '<a class="mcard" href="/c/' + v.slug + '"><span class="mg g' + now + '">' + now + '</span><b>' +
         (v.name || v.slug) + '</b>' +
         (changed ? '<span class="mdot" title="Grade changed since you last looked: was ' + v.gradeSeen + '"></span>' : '') +
@@ -634,6 +666,10 @@ var AUDITED = ${JSON.stringify(
         var scored = (tier.corners||[]).filter(function(c){return !auditedSlugs.has(c.slug);});
         StreetMap.upgrade(mapEl, {
           center: [VIEW.lat, VIEW.lon], zoom: VIEW.zoom,
+          // First paint only. Everything after it is the reader's: fitBounds
+          // sets the opening frame and then zoom and pan behave exactly as
+          // they did before.
+          bounds: CITY_BOUNDS, boundsPadding: 14,
           audited: AUDITED, scored: scored, heatUrl: "/data/city/dots.json",
           tapAnywhere: true,
           onReady: function(map){

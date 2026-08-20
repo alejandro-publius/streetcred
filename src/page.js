@@ -165,6 +165,28 @@ export const SLIDER = ({
 // it, so there is exactly one implementation of the drag in the codebase.
 // Pointer drag, touch drag and arrow keys all end in the same setter, which is
 // the only reason the three input paths cannot drift apart.
+// The same Pacific-day rule as the server's, for the scripts that stamp a date
+// in the browser. A visitor's own clock is irrelevant here: the claim is about
+// San Francisco, so the render is San Francisco's date whether the reader is in
+// Berlin or in the Sunset. Inlined rather than imported because these run inside
+// the page's own <script>, and duplicated text is cheaper than a second request.
+export const PACIFIC_DAY_JS = `
+// YYYY-MM-DD in America/Los_Angeles. "" for anything unparseable.
+function ptDay(ts){
+  if(ts === null || ts === undefined || ts === "") return "";
+  var d = (ts instanceof Date) ? ts : new Date(ts);
+  if(isNaN(d.getTime())) return "";
+  try {
+    return new Intl.DateTimeFormat("en-CA", {timeZone:"America/Los_Angeles",
+      year:"numeric", month:"2-digit", day:"2-digit"}).format(d);
+  } catch(e) {
+    // No Intl timezone data is a browser old enough that a wrong date is worse
+    // than none, so this says nothing rather than saying UTC.
+    return "";
+  }
+}
+`;
+
 export const SLIDER_JS = `
 function mountSlider(root, ov, hdl, onSplit){
   if(!root || !ov || !hdl) return null;
@@ -1606,6 +1628,7 @@ ${FOOTER()}
 </div>
 
 <script>
+${PACIFIC_DAY_JS}
 const CAPS = {
   today:["Today","The corner as Street View last photographed it. Imagery: Google."],
   hazards:["Hazards","Gemini read the real photograph and marked the zones it flags as high risk: faded crosswalk markings in red, vehicle conflict zones in amber. Drag to compare."],
@@ -2219,7 +2242,7 @@ fetch("/api/changes").then(r => r.json()).then(d => {
   const mine = (d.changes || []).filter(c => c.slug === CORNER_SLUG);
   if (!mine.length) return;
   el("ghistbody").innerHTML = mine.map(c =>
-    '<div>' + esc(String(c.date||"").slice(0,10)) + ': <b>' + esc(c.old?.grade ?? "?") + " " + (c.old?.index ?? "?") +
+    '<div>' + esc(ptDay(c.date)) + ': <b>' + esc(c.old?.grade ?? "?") + " " + (c.old?.index ?? "?") +
     '</b> to <b>' + esc(c.new?.grade ?? "?") + " " + (c.new?.index ?? "?") + '</b>, ' + esc(c.reason || "") +
     ' <span style="text-transform:uppercase;font-size:9.5px;letter-spacing:.07em">' + esc(c.source || "") + '</span></div>').join("");
   el("ghist").hidden = false;
@@ -2249,7 +2272,7 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
   // distinct from when the outlet published it. d.fetchedAt is stamped by the
   // Worker at fetch time; a cached payload keeps the stamp of the fetch that
   // produced it, which is the honest reading of "retrieved".
-  const got = d.fetchedAt ? new Date(d.fetchedAt).toISOString().slice(0,10) : null;
+  const got = ptDay(d.fetchedAt) || null;
   var nn = el("newsnums");
   if(nn){
     var kept = (d.items||[]).length;
@@ -2364,7 +2387,7 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
     log.innerHTML = rows.map(r =>
       '<div class="rline ' + r.lane + (r.off ? ' off' : '') + (instant ? ' in' : '') + '">' +
       '<b></b><span>' + r.text + '</span></div>').join("");
-    el("rdate").textContent = (m.ranAt || "").slice(0, 10) || "an earlier run";
+    el("rdate").textContent = ptDay(m.ranAt) || "an earlier run";
     el("rtrig").textContent = m.trigger === "cron" ? "autonomous run"
       : m.trigger === "precompute" ? "precomputed run" : "run on a visit";
     if(instant) return;

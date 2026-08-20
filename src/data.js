@@ -141,6 +141,44 @@ export const SUPERVISORS = {
 
 export const FALLBACK_OFFICIAL = "Mayor Daniel Lurie";
 
+// ------------------------------------------------------------------ dates
+
+// Every date a visitor reads is a Pacific date, because every claim this site
+// makes about time is a claim about San Francisco: "one more every morning",
+// "audited this morning", "checked on". Evening Pacific is already tomorrow in
+// UTC, which is how the homepage once stamped a "Your corners" chip 2026-08-19
+// while Corner of the Day on the same screen read 2026-08-18. Both were reading
+// the same instant; only one of them was reading it in the city's timezone.
+//
+// Stored timestamps stay UTC and are never rewritten. This converts at the
+// render, and nowhere else.
+export const PACIFIC_TZ = "America/Los_Angeles";
+
+const PT_ISO_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: PACIFIC_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+// A YYYY-MM-DD Pacific day from a Date, an ISO string, or epoch milliseconds.
+// Returns "" for anything missing or unparseable.
+//
+// Deliberately without a default argument. An earlier draft defaulted to now,
+// which meant a record with no timestamp rendered as today: the one wrong date
+// a reader has no way to spot, printed with full confidence. Absent input has
+// to produce absent output. Callers that mean "now" say so with pacificToday().
+export function pacificDay(ts) {
+  if (ts === null || ts === undefined || ts === "") return "";
+  const d = ts instanceof Date ? ts : new Date(ts);
+  if (Number.isNaN(d.getTime())) return "";
+  return PT_ISO_DAY.format(d);
+}
+
+// Today, in the city the claims are about.
+export const pacificToday = () => PT_ISO_DAY.format(new Date());
+
+
 export function supervisorFor(district) {
   const d = parseInt(district, 10);
   return SUPERVISORS[d] || FALLBACK_OFFICIAL;

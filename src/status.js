@@ -3,6 +3,7 @@
 // stored record something else wrote, and the page only counts.
 
 import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
+import { pacificDay } from "./data.js";
 
 const esc = (t) =>
   String(t ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
@@ -38,7 +39,7 @@ export const STATUS = (synth = [], incidents = [], changes = [], origin = "", sp
     const rs = r.results || [];
     return rs.length > 1 && rs.every((x) => !x.ok && x.status === rs[0].status && x.ms < 100);
   };
-  const day = (ts) => String(ts || "").slice(0, 10);
+  const day = (ts) => pacificDay(ts);
 
   return `<!doctype html>
 <html lang="en">
@@ -228,7 +229,7 @@ ${(spend.costs || [])
       ? `rescored to ${c.kept ?? 0} voice${c.kept === 1 ? "" : "s"} from ${c.candidates ?? 0}, no new spend`
       : `${c.kept ?? 0} voice${c.kept === 1 ? "" : "s"} kept from ${c.candidates ?? 0}`
   }</span>
-  <span class="ms">${esc(String(c.at || "").slice(0, 10))} &middot; ${
+  <span class="ms">${esc(day(c.at))} &middot; ${
     c.costUsd == null ? "pending" : `$${Number(c.costUsd).toFixed(4)}`
   }</span></div>`,
   )
@@ -240,7 +241,7 @@ ${
   spend?.invoice
     ? `<p class="note">The ledger above is written per run from what each run reported; the invoice line
 is the provider's own figure for the cycle and is the one that settles. They disagreed once, on
-${esc(String(spend.invoice.at).slice(0, 10))}: a corner topped up with a second scraper had its first
+${esc(day(spend.invoice.at))}: a corner topped up with a second scraper had its first
 run counted twice, overstating the ledger by about $${Number(spend.invoice.overstatedUsd || 0).toFixed(2)}.
 The counting was fixed rather than the history rewritten, which is what a ledger is for.</p>`
     : ""
@@ -254,7 +255,7 @@ ${
         .map(
           (c) => `<div class="srow"><span class="ep"><a href="/c/${esc(c.slug)}">${esc(c.name || c.slug)}</a>
   ${esc(c.old?.grade ?? "?")} ${c.old?.index ?? "?"} &rarr; ${esc(c.new?.grade ?? "?")} ${c.new?.index ?? "?"}</span>
-  <span class="ms">${esc(String(c.date || "").slice(0, 10))}</span></div>`,
+  <span class="ms">${esc(day(c.date))}</span></div>`,
         )
         .join("")
     : `<p class="note">None recorded. The full feed lives at <a href="/changes">/changes</a>.</p>`

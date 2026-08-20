@@ -120,7 +120,8 @@
   }
 
   // opts: {center:[lat,lon], zoom, audited:[], scored:[], heatUrl, focus:{lat,lon,name},
-  //        onReady(map), interactiveCaption(el->update attribution text)}
+  //        bounds:[s,w,n,e], boundsPadding, onReady(map),
+  //        interactiveCaption(el->update attribution text)}
   function mount(container, opts) {
     return lib().then(function () {
       var L = window.L;
@@ -132,6 +133,39 @@
         fadeAnimation: !REDUCED,
         markerZoomAnimation: !REDUCED,
       });
+      // Opening frame, when the caller knows the extent the data actually
+      // occupies. center+zoom is computed for a fixed-size static image and is
+      // wrong for an element of any other size; bounds are fitted to the
+      // element in front of the reader. This runs once, before any interaction,
+      // and changes nothing about how zoom or pan behave afterwards.
+      if (opts.bounds && opts.bounds.length === 4) {
+        var pad = opts.boundsPadding || 12;
+        // Re-runnable, because upgrade() calls invalidateSize() when the static
+        // image is dropped and a size change after a fit leaves the frame off
+        // by however much the container moved. Refused once the reader has
+        // touched the map, so a late resize can never yank the view back.
+        map._scFitCity = function () {
+          if (map._scMoved) return;
+          try {
+            map.fitBounds(
+              [[opts.bounds[0], opts.bounds[1]], [opts.bounds[2], opts.bounds[3]]],
+              { padding: [pad, pad], animate: false }
+            );
+          } catch (e) {
+            // A bad bounds array must not cost the reader the map; center+zoom
+            // above already put something on screen.
+          }
+        };
+        // fitBounds fires these itself, so the flag distinguishes our own fit
+        // from the reader's first gesture.
+        map.on("zoomstart movestart", function () {
+          if (map._scFitting) return;
+          map._scMoved = true;
+        });
+        map._scFitting = true;
+        map._scFitCity();
+        map._scFitting = false;
+      }
       L.tileLayer(TILES, { attribution: TILE_ATTRIB, maxZoom: 19 }).addTo(map);
 
       // audited: solid grade-colored pins
@@ -276,6 +310,13 @@
               if (ch !== shell) ch.remove();
             });
             map.invalidateSize();
+            // The container just changed size. Re-fit if the caller asked for
+            // bounds and the reader has not moved the map yet.
+            if (map._scFitCity) {
+              map._scFitting = true;
+              map._scFitCity();
+              map._scFitting = false;
+            }
             resolve(map);
           };
           map.eachLayer(function (l) {

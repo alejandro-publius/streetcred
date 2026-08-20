@@ -12,8 +12,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   shardKeyFor, tierOf, cityStats, cityScore, cityCred, cityLetter,
-  TIERS, TIER_LABEL, TIER_NOTE, skipsAudit, RANK_PAGE_SIZE,
+  TIERS, TIER_LABEL, TIER_NOTE, skipsAudit, RANK_PAGE_SIZE, CITY_BOUNDS,
 } from "../src/city.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { gradeFor, percentileOf } from "../src/score.js";
 
 const corner = {
@@ -131,4 +134,30 @@ test("the letter is offered, never drafted, and never a sample", () => {
   assert.equal(d.text, "");
   assert.equal(d.gated, true);
   assert.ok(d.gatedReason.length > 10);
+});
+
+// The homepage map's opening frame is fitted to these, so a stale copy puts the
+// city back in a corner of the viewport with no test failing. Recomputed here
+// from the same committed index the browser draws its heat layer from.
+test("the city bounds still match the corner index", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const dots = JSON.parse(readFileSync(join(here, "..", "public", "data", "city", "dots.json"), "utf8"));
+  assert.ok(dots.length > 7000, "the index should hold the whole graded city");
+  const lats = dots.map((d) => d[0]);
+  const lons = dots.map((d) => d[1]);
+  const r6 = (v) => Math.round(v * 1e6) / 1e6;
+  assert.deepEqual(CITY_BOUNDS, [
+    r6(Math.min(...lats)), r6(Math.min(...lons)),
+    r6(Math.max(...lats)), r6(Math.max(...lons)),
+  ]);
+});
+
+// San Francisco, not the bay around it. The bug this replaced opened the map on
+// a frame reaching Sausalito in the north and South San Francisco in the south.
+test("the city bounds are San Francisco and not the bay around it", () => {
+  const [s, w, n, e] = CITY_BOUNDS;
+  assert.ok(n < 37.84, "north edge should stop short of Sausalito");
+  assert.ok(s > 37.69, "south edge should stop short of South San Francisco");
+  assert.ok(w > -122.53 && e < -122.35, "east and west edges should be the peninsula");
+  assert.ok(n > s && e > w, "bounds should not be inverted");
 });
