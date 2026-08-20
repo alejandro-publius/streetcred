@@ -213,6 +213,13 @@ const SUPERVISOR_MENTION = /\bSupervisor\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-
 // Mayor in passing, and flagging that would be a false failure; who it is
 // addressed TO is a different claim and the one a reader acts on.
 const SALUTATION = /^\s*Dear\s+([^,\n]+?)\s*[,:]/m;
+// A letter may open "Supervisor Dorsey," with no "Dear". Four of the 116 in the
+// first fleet did, and every one of them named the right person, which is how
+// this stayed invisible: the addressee check below ran `if (m)` and simply did
+// not execute when the salutation did not match. Omitting one word skipped the
+// entire gate, so a District 9 corner could have been addressed to District 6's
+// supervisor and passed, which is the exact failure the rule was built for.
+const SALUTATION_BARE = /^[ \t]*((?:Supervisor|Mayor)\s+[^,\n]+?)\s*[,:][ \t]*$/m;
 
 // An addressee split into the office and the person, so the two can be checked
 // on their own terms. "Supervisor Mahmood" and "Supervisor Bilal Mahmood" are
@@ -398,7 +405,12 @@ export function verifyLetter(text, inputs) {
   // Daniel Lurie" and "Supervisor Stephen Sherrill" are two different people
   // and "Supervisor Daniel Lurie" is neither.
   if (inputs.addressee) {
-    const m = body.match(SALUTATION);
+    // A body with no salutation at all still skips this check. That is a
+    // narrower hole than the one being closed here and it is deliberately left
+    // open for now: verifyLetter is called on single-sentence fragments in the
+    // test suite and on whole letters in production, and only the second kind
+    // can be required to carry an addressee. Recorded in the post-freeze queue.
+    const m = body.match(SALUTATION) || body.match(SALUTATION_BARE);
     if (m) {
       // Title and name are checked separately, because they fail differently.
       // "Dear Supervisor Mahmood" is correct and ordinary English, so a whole

@@ -65,8 +65,13 @@ for (const slug of chosen) {
   row.served = Boolean(api?.text);
   row.matchesStored = api?.text?.trim() === local.text.trim();
 
-  // 2. The salutation actually on the served letter.
-  const m = (api?.text || "").match(/^\s*Dear\s+([^,\n]+?)\s*[,:]/m);
+  // 2. The salutation actually on the served letter. "Dear" is optional: a
+  // letter may open "Supervisor Dorsey," and four of the first 116 did. Reading
+  // only the Dear form reported those as having no addressee and failed them
+  // for a letter that named the right person.
+  const m =
+    (api?.text || "").match(/^\s*Dear\s+([^,\n]+?)\s*[,:]/m) ||
+    (api?.text || "").match(/^[ \t]*((?:Supervisor|Mayor)\s+[^,\n]+?)\s*[,:][ \t]*$/m);
   row.salutation = m ? m[1] : null;
   row.namedIsReal = m
     ? /^Supervisor\s/.test(m[1])
