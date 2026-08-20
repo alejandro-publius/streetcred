@@ -977,7 +977,16 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .fixrow{display:grid;grid-template-columns:1fr auto;gap:8px 18px;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
 .fixrow .k{font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
 .fixrow .v{font-size:14px;font-weight:500;line-height:1.45}
-.fixrow .cost{font-size:19px;font-weight:700;color:var(--green);white-space:nowrap;text-align:right}
+/* nowrap keeps a short figure like "$250,000" on one line, which is what this
+   was written for. A scored corner's estimate is a sentence, not a figure:
+   "$250,000 to $350,000, order of magnitude" is 409px of unbreakable text in a
+   362px column, and it pushed every corner page sideways on a phone. It wraps
+   below the two column layout, where there is no second column to align to. */
+.fixrow .cost{font-size:19px;font-weight:700;color:var(--green);white-space:nowrap;text-align:right;min-width:0}
+@media(max-width:860px){
+  .fixrow{grid-template-columns:1fr}
+  .fixrow .cost{white-space:normal;text-align:left;overflow-wrap:break-word}
+}
 .letter{font-family:Lora,Georgia,serif;font-size:14.5px;line-height:1.72;white-space:pre-wrap}
 .lfoot{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);flex-wrap:wrap}
 /* Copy is the ask's primary action, so it wears the accent; download is its
