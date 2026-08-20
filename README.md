@@ -90,39 +90,93 @@ Four independent sources cross-check each other on one specific claim, and that 
 
 The rest of the API is on the same contract and is worth clicking: `/api/score`, `/api/cred`, `/api/hazards`, `/api/impact`, `/api/connections`, `/api/suggest`, `/api/city`, `/api/board`, `/api/nearest`, `/api/watchlist`, `/api/radar`, `/api/changes` and `/api/health`, all routed in [`src/index.js`](src/index.js).
 
-## How we used Exa
+## How Exa is used
 
-Exa is the press-coverage lane. It answers "has anyone reported on this corner," which no government dataset can.
+Exa answers the question no government dataset can: has anyone actually written
+about this corner. It runs three lanes here, and the third one is the one worth
+your time.
 
-**The call.** `POST https://api.exa.ai/search`, with the query built from the corner name plus safety terms:
+Every figure below is read from a live constant or a stored record, and every
+one is checkable at a URL. Where a number moves, the reading date is named.
 
-```
-pedestrian safety OR crash OR traffic 16th Street and Mission Street San Francisco
-```
+**1. Press coverage, per corner, records first.** A corner page opens with the
+city's own collision and 311 counts, and press sits underneath as
+corroboration rather than as evidence. The search is `POST
+https://api.exa.ai/search` with `type: "neural"`, `category: "news"`, and page
+text pulled through the nested `contents.text` shape. Lead generation domains
+are excluded at the API rather than filtered afterwards, because law firms
+republish crash reports to farm clients and that is not coverage. Agency
+primary sources are separated out and tagged: an SFMTA project page is the
+record the reporting would be written about, so it can never satisfy the press
+lane in the Cred Check. Every headline renders with its outlet domain and
+publish date and links out, so any claim on the page can be checked in one
+click.
 
-sent with `type: "auto"`, `numResults: 8`, and page text requested as a **nested** `contents: { text: { maxCharacters: 400 } }`. The nesting matters: a flat `text` field is rejected, so the shape of that object is not cosmetic.
+Reading the stored rollup at 2026-08-20T17:16Z, this lane has press-checked
+**606 corners this period, found coverage at 570, and recorded 36 as searched
+and empty**, keeping **1,230 citations**. The 36 matter more than the 570: a
+lane that reports nothing when it found nothing is worth more than a lane that
+always fills.
 
-**The filter.** Relevance tokens are derived from the corner's own name, so `"16th Street and Mission Street"` yields `["16th", "mission"]` and the filter travels to any corner rather than being pinned to the first one. Results are filtered toward the corner and its corridor rather than to the corner alone: a result counts as corner level only when its title or URL carries every street token, and in practice most live headlines are corridor level, naming one of the streets or the neighborhood. The panel claims corner-level precision only when at least three results clear the corner bar. Below that the heading reads "Coverage of this corridor," which is the honest description of what is on screen most of the time. Law firm and lead generation domains are denied outright: they republish crash reports to farm clients and they are not press coverage.
+**2. The 2014 onward timeline.** For a corner worth the calls, one date-sliced
+search per year from `TIMELINE_FROM = 2014` to the current year, which is
+thirteen slices in 2026, run in parallel because thirteen sequential searches
+would cost most of a minute. That turns "this corner is dangerous" into a year by year
+count of how often it has been written about since 2014, which is a different
+and much harder claim to wave away.
 
-**Ordering, in the order it is applied.** Agency primary sources are separated out first: `sfmta.com`, `sfpublicworks.org`, `sanfranciscopolice.org`, `sf.gov`, `sfcta.org` and the state CEQA filings database. An SFMTA project page from 2013 and a 2017 environmental filing are real, citable documents, but they are the record the coverage would be written about rather than the coverage itself, so they render last with an "official source" tag and they can never satisfy the press lane in the Cred Check. What remains is press. Anything older than 18 months drops below anything newer, but only when at least three newer results exist, because a 2022 story beats an empty lane. **Corner-level matches rank first within each of those buckets**, so a story naming both streets is met before a story naming the corridor, and an old story about this exact crossing never displaces this month's corridor coverage. Five items, then stop.
+**3. `findSimilar` connections.** For each audited corner with a best article,
+`findSimilar` asks what else is being written in the same breath. Every
+crossing named in the related coverage goes through the same extractor and the
+same city index, and a surviving link is written to **both** corners, so the
+claim reads identically from either page. Connecting two corners is a stronger
+claim than naming one, so the connecting article must be dated and recent.
+Checked corner by corner against `/api/connections` on 2026-08-20, five of the
+23 audited corners carry a connection and eighteen carry none, which is the
+honest answer rather than a padded one.
 
-At 6th and Market that ordering is the whole difference between an evidence lane and a search box: one genuine corner-level report of a pedestrian death in 2025 comes first, and four agency project records spanning 2013 to 2025 follow it, each labeled as what it is.
+**4. The citywide watchlist: entity discovery, verified, and published with its
+failures.** Every lane above starts from a corner and asks what is written
+about it. This one runs the other way. **29 semantic sweeps** over a 90 day
+window, ten of them anchored to specific neighbourhoods and three restricted at
+the API to San Francisco outlets that write at corner resolution. Every
+crossing name in every result is extracted, and each candidate clears three
+hard bars: both names must be real San Francisco streets, checked against the
+2,219 name street index; the pair must be an exact match in the 7,355 crossing
+graded index; and the article must be about safety *at* that crossing rather
+than merely naming it.
 
-**The render.** Every headline shows its outlet domain and publish date and links out, so any claim on the page can be checked in one click. That is what makes this an evidence lane rather than a search box.
+The accounting is published rather than summarised. The stored pass built
+2026-08-20T13:11Z reads **29 attempted, 7 completed, 22 failed**, and every one
+of the 22 is listed at [/watchlist](https://streetcred.thealexschroeder.workers.dev/watchlist)
+with its reason, which was "Too many subrequests by single Worker invocation".
+That failure was real and is now fixed at the schedule: the lane used to run as
+the last thing inside the daily audit and inherited a nearly spent subrequest
+budget, so it now has **its own cron trigger at 13:20 UTC and therefore its own
+budget**, with a ceiling of 40 searches a run against a set of 29. All 29 fit
+in one run. If the set ever outgrows the ceiling the lane rotates through it
+least recently run first and publishes each query's last run date, rather than
+silently truncating the way it did before. The first pass under the new
+schedule has not run at the time of writing, so the split above is still the
+old one; `/watchlist` will show the new one the morning after it fires.
 
-**Load bearing on the output, not just the panel.** The top two headlines, with outlet and date, are passed into the Gemini letter prompt. Exa results therefore appear in the drafted letter by outlet name, cited as sources in the ask itself, rather than sitting in a side panel the Supervisor never sees.
+That pass read 101 articles, surfaced 5 corners, published 7 rejects and
+discarded 27 phrases that named no crossing in the city. The rejects are the
+interesting half: pairs of real streets with no crossing between them, streets
+that never meet, an article that named a corner but was not about safety there.
 
-**Live example.** The current result set for this corner includes Walk SF (`walksf.org`, 2026-05-27), Mission Local (`missionlocal.org`, 2026-05-28), and KRON4 (`kron4.com`, 2026-05-28), all covering the May 2026 fatality at 16th and Mission. An advocacy organization and a neighborhood newsroom independently reporting the same death is the single most load-bearing fact on the page, and neither one is in any city dataset.
+**5. Spend, metered from Exa's own numbers.** Cost is recorded from the
+`costDollars` field on every Exa response rather than estimated from a price
+list. The period meter reads **$21.45 spent against a $65.00 ceiling** across
+**1,858 searches and 3,888 content pages**, all time $23.20, and the batch
+lanes reserve cents before they call and refuse past the cap. It is public at
+[/status](https://streetcred.thealexschroeder.workers.dev/status), not in a
+spreadsheet. The method behind all of it is at
+[/methodology](https://streetcred.thealexschroeder.workers.dev/methodology).
 
-**The Press Watchlist: entity discovery, verified.** Every lane above starts from a corner and asks what is written about it. This one runs the other way, and it is the part of the product Exa makes possible rather than merely faster. A bank of citywide semantic searches runs every morning over a 90 day window, every crossing name in the results is extracted, and each candidate has to clear three hard bars before it can surface: **both names must be San Francisco streets** (checked against the 2,219 street names in the graded city index, `src/city.js`), **the pair must be an exact match in the intersections index** (one KV read against the same graded city index the site scores from, 7,355 distinct crossings), and **the coverage must be confirmed** to be about safety at that crossing rather than merely mentioning it. Everything that fails is logged with its reason and published at [/watchlist](https://streetcred.thealexschroeder.workers.dev/watchlist), because a discovery pipeline that shows only its hits is indistinguishable from a search box that got lucky.
-
-The live pass, built 2026-08-19T13:11Z, attempted 29 searches and completed 8 of them: the other 21 died with "Too many subrequests by single Worker invocation", because the watchlist runs last inside the daily-audit cron and inherits an already-spent subrequest budget. Each failure is stored with its reason in `/api/watchlist`, which is how this is knowable at all. Those 8 completed searches read 117 articles, surfaced 5 corners, published 7 rejects and discarded 25 phrases that named no crossing in the city. The figures are in the generated table near the top of this file and they move: the pass runs every morning. The subrequest ceiling is a real limit on this lane, not a rounding detail, and it is not fixed.
-
-The rejects are the interesting half: `Second and Fourth Street` and `Lombard and Greenwich` are pairs of real San Francisco streets with no graded crossing between them, `24th and 16th` are two streets that never meet, `Hudson Street and Woodside Road` is not in this city at all, `Church and Market Street` was named in an article that was not about safety there, and `Mission Street and Geneva Avenue` was rejected for the opposite reason: it is a corner already audited, so it is work done rather than a lead. This is an entity-discovery workflow of the shape **Exa's Websets** product is built for, find candidates then verify each against hard criteria, implemented directly on the search API within the event credits.
-
-**Press connections, from `findSimilar`.** For each audited corner with a best article, `findSimilar` asks what else is being written in the same breath; every crossing named in the related coverage goes through the same extractor and the same index, and a surviving link is written to **both** corners, so the claim reads the same from either page. Connecting two corners is a stronger claim than naming one, so two extra bars apply: the connecting article must be dated (a site homepage is not an article) and recent (a blog post from 2007 is not the same breath as anything). Of the 23 audited corners, five carry a connection, checked one by one against `/api/connections` on 2026-08-20. 16th and Mission links to **Grant and Jackson** through CBS coverage of a fatal Chinatown crash; 24th and Valencia links to **Sycamore and Valencia** through Streetsblog on the Valencia corridor; 19th and Mission and Mission and Silver both link to **18th and Potrero**; Fulton and Masonic links to **Fulton and Park Presidio**. The other eighteen show nothing, which is the honest answer.
-
-**Every Exa capability this product uses, in one place:** neural search (`type: "neural"`), the news category (`category: "news"`), date-sliced queries (`startPublishedDate` / `endPublishedDate`, once per year since 2014 for the time machine), domain filtering in both directions at the API (`excludeDomains` for lead-generation farms, `includeDomains` for the pass restricted to San Francisco outlets that write at corner resolution), contents extraction (the nested `contents.text` shape), and `findSimilar` for both the related-corner lead and the press connections. Cost is metered from Exa's own `costDollars` field rather than estimated. The batch lanes reserve cents against a hard monthly ceiling before they call, and refuse past it: `EXA_CAP_CENTS = 6500` in [`src/store.js`](src/store.js), which is the $65.00 the ledger on [/status](https://streetcred.thealexschroeder.workers.dev/status) counts against.
+This design publishes what it threw away because a discovery pipeline that
+shows only its hits is indistinguishable from a search box that got lucky, and
+the same is true of a budget that only reports what it meant to spend.
 
 ## How we used Apify
 
