@@ -159,6 +159,34 @@ ${BASE_CSS}
 .findbig button{font-size:14px;padding:13px 24px}
 .findbig .ta{top:52px;text-align:left}
 .scope{font-size:12.5px;color:var(--dim);margin:14px 0 0}
+/* The city label moved out of the top right corner and under the search, into
+   the space the hero already had. The bridge sits behind it, wider than the
+   label and centred on it, at an opacity chosen by measuring the contrast of
+   the text over its busiest crossing rather than by eye. It never reaches the
+   input or the button: the mark starts below them and the drawing is clipped
+   to its own box. */
+/* The mark spans its column rather than a fixed 520, and the drawing is sized
+   against that column and clipped to it. At 140 percent of a 362px phone
+   container the bridge reached 29px past each edge of the wrap and gave the
+   whole homepage a horizontal scrollbar. Decorative artwork must not be able
+   to widen the document. */
+.sfmark{position:relative;margin:34px auto 0;padding:26px 0 8px;isolation:isolate;overflow:clip}
+/* Opacity chosen by measurement, not by eye. The counter is small text on
+   --dim and starts at 5.04:1 over the bare page, so the bridge has very little
+   room to spend: at 13 percent it drops to 4.44 and fails AA, at 11 it scrapes
+   4.51. Nine leaves real margin at 4.61 and is still inside the range the mark
+   was designed for. The big line never had a problem, sitting above 14:1
+   throughout. */
+.ggb{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:min(620px,100%);height:auto;opacity:.09;z-index:0;pointer-events:none}
+.sfmark .corner{position:relative;z-index:1;margin:0 auto;text-align:center}
+.sfmark .corner > b{font-size:26px;letter-spacing:-.01em;line-height:1.15}
+.sfmark .corner > .csub{margin-top:2px;font-size:13px}
+@media(max-width:600px){
+  .sfmark{margin-top:26px;padding:20px 0 6px}
+  .ggb{width:min(420px,100%);opacity:.08}
+  .sfmark .corner > b{font-size:22px}
+}
 .mine{margin:0 0 22px}
 .mhead{display:flex;align-items:baseline;gap:10px;margin:0 0 10px}
 .mhead h2{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin:0}
@@ -280,9 +308,6 @@ ${BASE_CSS}
 <body>
 <div class="wrap">
 ${MASTHEAD({ scored, active: "" })}
-<header>
-  <div class="corner"><b>San Francisco</b><span class="csub">${scored ? `${n(scored)} corners graded` : `${ranked.length} corners audited`}</span></div>
-</header>
 <main>
 
 <div class="herohead">
@@ -295,6 +320,56 @@ ${MASTHEAD({ scored, active: "" })}
     <div class="findmsg" id="findmsg" role="status" hidden></div>
   </form>
   <p class="scope" id="scope">${scopeLine}</p>
+  <div class="sfmark">
+    <svg class="ggb" viewBox="0 0 600 200" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
+      <!-- Drawn, not traced: two towers, the main cable and its side spans, and
+           suspenders placed on the curve rather than eyeballed. Decorative only,
+           so it is aria-hidden and takes no pointer events. -->
+      <g fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round">
+        <!-- main cable, then the two side spans down to the anchorages -->
+        <path d="M150,34 Q300,132 450,34"/>
+        <path d="M0,86 Q75,52 150,34"/>
+        <path d="M450,34 Q525,52 600,86"/>
+        <!-- the deck -->
+        <path d="M0,150 L600,150"/>
+        <path d="M0,157 L600,157" stroke-width="1.4"/>
+        <!-- towers: legs to the deck and below it, with their crossbeams -->
+        <path d="M143,176 L143,26 M157,176 L157,26 M143,26 L157,26"/>
+        <path d="M443,176 L443,26 M457,176 L457,26 M443,26 L457,26"/>
+        <path d="M143,58 L157,58 M143,92 L157,92 M143,124 L157,124" stroke-width="1.6"/>
+        <path d="M443,58 L457,58 M443,92 L457,92 M443,124 L457,124" stroke-width="1.6"/>
+      </g>
+      <g fill="none" stroke="var(--accent)" stroke-width="1.1" stroke-linecap="round">
+        <line x1="167.6" y1="44.9" x2="167.6" y2="150.0"/>
+        <line x1="185.3" y1="54.3" x2="185.3" y2="150.0"/>
+        <line x1="202.9" y1="62.5" x2="202.9" y2="150.0"/>
+        <line x1="220.6" y1="69.3" x2="220.6" y2="150.0"/>
+        <line x1="238.2" y1="74.7" x2="238.2" y2="150.0"/>
+        <line x1="255.9" y1="78.8" x2="255.9" y2="150.0"/>
+        <line x1="273.5" y1="81.5" x2="273.5" y2="150.0"/>
+        <line x1="291.2" y1="82.8" x2="291.2" y2="150.0"/>
+        <line x1="308.8" y1="82.8" x2="308.8" y2="150.0"/>
+        <line x1="326.5" y1="81.5" x2="326.5" y2="150.0"/>
+        <line x1="344.1" y1="78.8" x2="344.1" y2="150.0"/>
+        <line x1="361.8" y1="74.7" x2="361.8" y2="150.0"/>
+        <line x1="379.4" y1="69.3" x2="379.4" y2="150.0"/>
+        <line x1="397.1" y1="62.5" x2="397.1" y2="150.0"/>
+        <line x1="414.7" y1="54.3" x2="414.7" y2="150.0"/>
+        <line x1="432.4" y1="44.9" x2="432.4" y2="150.0"/>
+        <line x1="25.0" y1="75.1" x2="25.0" y2="150.0"/>
+        <line x1="50.0" y1="65.1" x2="50.0" y2="150.0"/>
+        <line x1="75.0" y1="56.0" x2="75.0" y2="150.0"/>
+        <line x1="100.0" y1="47.8" x2="100.0" y2="150.0"/>
+        <line x1="125.0" y1="40.4" x2="125.0" y2="150.0"/>
+        <line x1="475.0" y1="40.4" x2="475.0" y2="150.0"/>
+        <line x1="500.0" y1="47.8" x2="500.0" y2="150.0"/>
+        <line x1="525.0" y1="56.0" x2="525.0" y2="150.0"/>
+        <line x1="550.0" y1="65.1" x2="550.0" y2="150.0"/>
+        <line x1="575.0" y1="75.1" x2="575.0" y2="150.0"/>
+      </g>
+    </svg>
+    <div class="corner"><b>San Francisco</b><span class="csub">${scored ? `${n(scored)} corners graded` : `${ranked.length} corners audited`}</span></div>
+  </div>
 </section>
 ${HERO_CORNER(embed)}
 </div>
