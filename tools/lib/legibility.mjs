@@ -107,12 +107,31 @@ export async function checkLegibility({ inputRead, renderRead, expectStreets = [
 
   return {
     regions: out,
-    // A render is held only when a signal that WAS readable stopped being
-    // readable. Nothing checkable means the gate abstains and says so.
-    verdict: degraded.length ? "hold" : "pass",
+    // Three verdicts, not two.
+    //
+    // The first version returned pass whenever nothing was degraded, which
+    // meant a render whose source frame was illegible in every region came back
+    // "pass" with checked=[]. That is the gate reporting a clean bill of health
+    // for an examination it never performed, and it is worse than a false
+    // reject: a false reject wastes a render, this publishes an unverified
+    // photograph of a named intersection and records that it was verified.
+    //
+    // Found by re-judging 6th-and-mission, which the old token-comparison gate
+    // had held. Under the paired gate its source frame reads nothing at the
+    // watermark and pure noise at the signage band, so both signals abstain and
+    // the verdict was pass on zero evidence.
+    //
+    //   pass     at least one signal was readable in the source and survived
+    //   hold     a signal that WAS readable stopped being readable
+    //   abstain  nothing was checkable, so there is no verdict to give
+    verdict: degraded.length ? "hold" : checked.length ? "pass" : "abstain",
     checked: checked.map(([k]) => k),
     unchecked: Object.entries(out).filter(([, v]) => v.verdict === "unchecked").map(([k]) => k),
-    reasons: degraded.map(([k, v]) => `${k}: ${v.why}`),
+    reasons: degraded.length
+      ? degraded.map(([k, v]) => `${k}: ${v.why}`)
+      : checked.length
+        ? []
+        : ["nothing legible in the source frame to check against, so this render is unverified rather than verified"],
   };
 }
 

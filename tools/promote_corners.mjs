@@ -165,6 +165,18 @@ async function render(token, frameB64, prompt) {
   };
 }
 
+// The street names an overhead plate at this corner would carry, longest
+// first, so the comparison uses the most distinctive token available rather
+// than "6TH", which OCR finds in noise.
+export function streetNames(name) {
+  return String(name || "")
+    .split(/\s+and\s+/i)
+    .map((part) => part.replace(/\b(street|avenue|boulevard|drive|way|road|place|lane|terrace|st|ave|blvd)\b\.?/gi, "").trim())
+    .filter((x) => x.length >= 4)
+    .sort((a, b) => b.length - a.length)
+    .map((x) => x.toUpperCase());
+}
+
 // Read the two checked regions off an image file, via PIL for the crop and
 // tesseract for the text.
 function readRegions(imgPath, tag) {
@@ -274,7 +286,15 @@ if (IS_MAIN) {
         const cand = join(STAGE, `${slug}.attempt${attempt}.jpg`);
         writeFileSync(cand, Buffer.from(out.b64, "base64"));
         const after = readRegions(cand, `${slug}_out${attempt}`);
-        const gate = await checkLegibility({ inputRead: before, renderRead: after });
+        const gate = await checkLegibility({
+          inputRead: before,
+          renderRead: after,
+          // The signage signal was dead until this was passed. checkLegibility
+          // only compares the upper band against text it independently knows
+          // belongs there, and with no street names supplied it abstained every
+          // time, so the gate had been running on the watermark alone.
+          expectStreets: streetNames(corner.name),
+        });
         if (gate.verdict === "pass") {
           writeFileSync(staged, Buffer.from(out.b64, "base64"));
           done = { attempt, gate };

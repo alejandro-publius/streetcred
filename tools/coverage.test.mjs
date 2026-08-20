@@ -207,3 +207,67 @@ test("the coverage layer uses no grade colour", () => {
   }
   assert.match(block, /#141B2D/, "ink is the coverage colour");
 });
+
+// ------------------------------------------- the legibility gate's verdicts
+//
+// The gate had two verdicts and needed three. Returning "pass" when nothing was
+// checkable is the gate reporting a clean bill of health for an examination it
+// never performed, and on an evidence product that publishes a photograph of a
+// named intersection it is the worse of the two possible errors.
+
+test("a render whose source frame was legible and survived passes", async () => {
+  const { checkLegibility } = await import("./lib/legibility.mjs");
+  const r = await checkLegibility({
+    inputRead: { watermark: "Google", signage: "MISSION ST" },
+    renderRead: { watermark: "Google", signage: "MISSION ST" },
+    expectStreets: ["MISSION"],
+  });
+  assert.equal(r.verdict, "pass");
+  assert.deepEqual(r.checked.sort(), ["signage", "watermark"]);
+});
+
+test("a render that destroyed readable text is held", async () => {
+  const { checkLegibility } = await import("./lib/legibility.mjs");
+  const r = await checkLegibility({
+    inputRead: { watermark: "Google", signage: "MISSION ST" },
+    renderRead: { watermark: "=, --> -", signage: "MISSION ST" },
+    expectStreets: ["MISSION"],
+  });
+  assert.equal(r.verdict, "hold");
+  assert.match(r.reasons.join(" "), /watermark/);
+});
+
+test("a render nothing could be checked against abstains, it does not pass", async () => {
+  // 6th-and-mission: the source frame reads nothing at the watermark and pure
+  // OCR noise at the signage band. Both signals abstain. The old gate called
+  // that pass with checked=[] and would have published an unverified render
+  // while recording that the gate cleared it.
+  const { checkLegibility } = await import("./lib/legibility.mjs");
+  const r = await checkLegibility({
+    inputRead: { watermark: "", signage: "N F Ne as. Ce rst aa" },
+    renderRead: { watermark: "", signage: "blur" },
+    expectStreets: ["MISSION"],
+  });
+  assert.equal(r.verdict, "abstain", "not pass");
+  assert.deepEqual(r.checked, [], "because nothing was checkable");
+  assert.match(r.reasons.join(" "), /unverified rather than verified/);
+});
+
+test("only pass publishes; hold and abstain both keep the render off the site", async () => {
+  const { checkLegibility } = await import("./lib/legibility.mjs");
+  const verdicts = [];
+  for (const [inw, outw] of [["Google", "Google"], ["Google", ""], ["", ""]]) {
+    const r = await checkLegibility({ inputRead: { watermark: inw, signage: "" }, renderRead: { watermark: outw, signage: "" } });
+    verdicts.push(r.verdict);
+  }
+  assert.deepEqual(verdicts, ["pass", "hold", "abstain"]);
+  assert.equal(verdicts.filter((v) => v === "pass").length, 1, "exactly one of the three may reach the site");
+});
+
+test("street names are derived from the corner name, longest token first", async () => {
+  const { streetNames } = await import("./promote_corners.mjs");
+  assert.deepEqual(streetNames("Fillmore Street and Lombard Street"), ["FILLMORE", "LOMBARD"]);
+  // "6th" is dropped: it is three characters and OCR finds it in noise.
+  assert.deepEqual(streetNames("Mission Street and 6th Street"), ["MISSION"]);
+  assert.deepEqual(streetNames(""), []);
+});
