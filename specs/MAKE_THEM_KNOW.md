@@ -110,6 +110,22 @@ https://streetcred.thealexschroeder.workers.dev/watchlist
       06:10 and publishes what it spent.
 - [ ] Neither message addressed to a judge or mentor by name.
 
+## Superseded in part
+
+The judging submission copy now lives in `specs/SUBMISSION.md`, written
+2026-08-20 and aligned to the three criteria. Two claims in the posts above
+have moved since they were written and should be checked before either is
+pasted:
+
+- **Post 2 quotes a watchlist reading of 104 articles and four corners.** The
+  stored pass now reads 101 articles and five corners, and the searches figure
+  is 29 attempted against 7 completed rather than 29 run. Re-read `/watchlist`
+  before posting.
+- **Neither post mentions the letters.** Every corner now shows a pending
+  letter state after the verifier was tightened. That is defensible and
+  `specs/SUBMISSION.md` states it plainly, but a post that implies a drafted
+  letter is on screen would not survive a click.
+
 ## One caveat that survives
 
 The morning cron has not yet fired with the autonomous-voices code deployed, so
