@@ -203,6 +203,72 @@ export async function getRankPage(env, n) {
   return env.STORE.get(`city:rank:${n}`, "json").catch(() => null);
 }
 
+// ---------------------------------------------------------- coverage layer
+
+// The audited zone, as territory rather than as a boundary.
+//
+// The tempting version of this feature is a hull around the audited corners,
+// and it is a lie: a hull encloses every unaudited crossing between them and
+// claims coverage that was never done. There are 7,355 graded corners and 23
+// audited ones, so a hull around those 23 would swallow most of the city.
+//
+// So coverage is drawn per corner, as the 80 metre core the grade is actually
+// computed over, and the union of those discs is the zone. The gaps between
+// them are not a rendering artifact to be smoothed away. The gaps are the
+// truth, and they are most of the map.
+//
+// Returns one disc per corner in the audited roster, with the coordinates the
+// city index already holds and a rendered flag. No imagery reads: whether a
+// corner carries a current proposed-fix render is already answered by the
+// recount in `audit:tiers`, whose `pending` list is exactly the audited corners
+// missing a render. That record is already on the homepage, so this costs no
+// extra work at all in the common case.
+export async function coverageDiscs(env, meta, tiers, rows = []) {
+  const audited = meta?.audited || [];
+  if (!audited.length) return [];
+
+  // `pending` is audited-but-not-rendered. It is structurally empty today,
+  // because the cron only admits a corner to the audited roster once both
+  // generated states exist, which tools/tiers.test.mjs pins as a known gap. The
+  // outlined state below is therefore unreachable through the current roster
+  // and correct the moment that gap is closed. It is not dead code, it is code
+  // waiting for a fix somewhere else.
+  const pending = new Set(tiers?.pending || []);
+
+  const known = new Map();
+  for (const r of rows) {
+    if (r?.slug && Number.isFinite(r.lat) && Number.isFinite(r.lon)) known.set(r.slug, r);
+  }
+
+  const out = [];
+  for (const slug of audited) {
+    let row = known.get(slug);
+    // The board list is not a reliable index of the audited roster: it carries
+    // 25 rows and is missing three audited corners outright. Falling back to
+    // the city shard is what stops the layer from silently drawing 20 discs for
+    // a 23 corner roster, which is exactly the kind of quiet undercount this
+    // layer exists to avoid making.
+    if (!row) {
+      const c = await cityCornerFor(env, slug).catch(() => null);
+      if (c && Number.isFinite(c.lat) && Number.isFinite(c.lon)) row = c;
+    }
+    if (!row) continue;
+    out.push({
+      slug,
+      lat: Math.round(row.lat * 1e6) / 1e6,
+      lon: Math.round(row.lon * 1e6) / 1e6,
+      rendered: !pending.has(slug),
+    });
+  }
+  return out;
+}
+
+// The radius the discs are drawn at, which is the radius the grade is computed
+// over and not a number picked to look good. Read from the built city when it
+// says, so the layer cannot drift from the methodology page.
+export const coverageRadiusM = (meta) =>
+  Number.isFinite(meta?.scoreRadiusM) ? meta.scoreRadiusM : SCORE_RADIUS;
+
 // ---------------------------------------------------------------- payloads
 
 // Every payload below is built from the shard row and nothing else: no

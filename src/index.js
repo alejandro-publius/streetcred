@@ -35,6 +35,7 @@ import { enrichPress, PRESS_VERSION } from "./pressenrich.js";
 import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
 import {
   cityCornerFor, getCityMeta, getRankPage, cityStats, cityScore, cityCred,
+  coverageDiscs, coverageRadiusM,
   cityNews, cityVoices, cityTimeline, cityRun, cityHazards, cityLetter,
   TIERS, tierOf, RANK_PAGE_SIZE, tagTiers, putCityMeta,
 } from "./city.js";
@@ -1854,6 +1855,23 @@ async function cornerOfTheDay(env, ctx, origin) {
 // branch and quietly runs the press batch instead of the job it was scheduled
 // for, forever, with nothing red anywhere. tools/cron.test.mjs reads the config
 // and asserts the two agree, which is the only way that mistake gets caught.
+// Coverage discs, memoised for the life of the isolate.
+//
+// Keyed on the roster and the recount timestamp, so a corner promoted overnight
+// produces a new key and a fresh build rather than a stale layer. Deliberately
+// an isolate memo and not a KV record: this is derived data, it costs a handful
+// of shard reads to rebuild, and writing it would be a third place for the
+// audited count to disagree with itself.
+let COVERAGE_MEMO = null;
+
+async function coverageCached(env, meta, tiers, rows) {
+  const key = `${(meta?.audited || []).join(",")}|${tiers?.at || ""}`;
+  if (COVERAGE_MEMO && COVERAGE_MEMO.key === key) return COVERAGE_MEMO.value;
+  const value = await coverageDiscs(env, meta, tiers, rows).catch(() => []);
+  COVERAGE_MEMO = { key, value };
+  return value;
+}
+
 export const CRON_MORNING = "10 13 * * *";
 export const CRON_WATCHLIST = "20 13 * * *";
 export const CRON_PRESS_TICK = "*/15 * * * *";
@@ -2318,6 +2336,12 @@ export default {
           getAuditTiers(env).catch(() => null),
           getActorCosts(env).catch(() => []),
         ]);
+        // The audited coverage layer, built once per isolate rather than per
+        // request. The roster changes at most once a morning, so the signature
+        // below is stable for the life of an isolate and the shard reads behind
+        // it happen on the first homepage load and never again.
+        const coverage = await coverageCached(env, meta, auditTiers, corners);
+
         const city = meta
           ? {
               meta,
@@ -2425,7 +2449,7 @@ export default {
           checkCitations: pressCites?.citations || 0,
           asOf: fmtAsOf(pressCites?.at || pressRoll?.updated || pressSummary?.at),
         };
-        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressTile, spendUsd, embed, auditTiers), {
+        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressTile, spendUsd, embed, auditTiers, { discs: coverage, radiusM: coverageRadiusM(meta) }), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }

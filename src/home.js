@@ -100,7 +100,7 @@ function severityLine(c) {
   return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
 
-export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null, press = null, spendUsd = null, embed = null, tiers = null) => {
+export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null, press = null, spendUsd = null, embed = null, tiers = null, coverage = null) => {
   // A corner without finite geometry poisons every pin: fitView produces a NaN
   // center and every overlay lands at left:NaN%. One bad row on the board must
   // cost that row its pin, not the whole map its anchors. It happened: a board
@@ -139,6 +139,13 @@ export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview
   const scopeLine = scored
     ? `${n(scored)} intersections graded citywide, ${n(fullyAudited)} fully audited, ${pendingClause}one attempted every morning.`
     : `${n(fullyAudited)} intersections fully audited, ${pendingClause}one attempted every morning.`;
+  // The coverage layer, and the two numbers the legend prints. Both are counted
+  // off the discs actually drawn rather than off a roster length, so the legend
+  // cannot claim a disc the map is not showing.
+  const discs = Array.isArray(coverage?.discs) ? coverage.discs : [];
+  const coverRadiusM = coverage?.radiusM || 80;
+  const coverRendered = discs.filter((d) => d.rendered).length;
+  const coverPending = discs.length - coverRendered;
   const board = city?.top?.length ? city.top : ranked;
   const boardIsCity = Boolean(city?.top?.length);
   // Built from the same live count the page prints, never a second copy of it.
@@ -231,6 +238,32 @@ ${BASE_CSS}
    letters, which read as plain text at a glance. The letter itself is now the
    swatch, in the same .gA..gF colours the board rows and the corner pages use,
    so there is one source of grade colour on the site. */
+/* The audited coverage legend. Deliberately not a grade colour: this layer is
+   about how much of the city has been looked at, not about how dangerous a
+   corner is, and borrowing the A to F palette would say the second thing. Ink
+   at low opacity reads as territory. */
+.covfoot{margin-top:-22px;align-items:baseline}
+.covkey{width:13px;height:13px;border-radius:50%;display:block;flex:0 0 13px}
+.covkey-on{background:rgba(20,27,45,.20);border:1.5px solid rgba(20,27,45,.55)}
+.covcount{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}
+.covnote{flex-basis:100%;color:var(--dim);line-height:1.6;max-width:640px}
+/* The layer toggle, sitting in the map's own control column. */
+.covtoggle{font-family:Poppins,system-ui,sans-serif;font-size:11.5px;font-weight:600;
+  color:var(--ink);background:var(--panel);border:1px solid var(--line2);border-radius:999px;
+  padding:6px 12px;cursor:pointer;box-shadow:0 1px 3px rgba(20,27,45,.12);
+  display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.covtoggle:hover{border-color:var(--ink)}
+.covtoggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.covtoggle i{width:11px;height:11px;border-radius:50%;display:block;flex:0 0 11px;
+  background:rgba(20,27,45,.20);border:1.5px solid rgba(20,27,45,.55)}
+.covtoggle[aria-pressed="false"] i{background:none;border-color:var(--line2)}
+.covtoggle[aria-pressed="false"]{color:var(--dim)}
+@media(max-width:600px){
+  /* Reachable on a phone: the control column is narrow, so the label shortens
+     rather than wrapping the button off the map. */
+  .covtoggle{font-size:11px;padding:6px 10px}
+  .covtoggle .covlabel-long{display:none}
+}
 .gk{font-size:11px;font-weight:700;min-width:19px;height:19px;border-radius:5px;
   display:inline-grid;place-items:center;color:#fff;letter-spacing:0}
 .board{border-top:1px solid var(--line2)}
@@ -431,7 +464,18 @@ ${
   <span class="key"><b class="gk gD">D</b></span>
   <span class="key"><b class="gk gF">F</b></span>
   <span id="mapdata">Map data: Google. Danger Index ranks reported harm, not risk per crossing.</span>
+</p>${
+  discs.length
+    ? `
+<p class="mapfoot covfoot" id="covlegend">
+  <span class="key"><i class="covkey covkey-on"></i>Audited coverage: the ${coverRadiusM}m core around each fully audited corner. One more every morning.</span>
+  <span class="covcount">${n(discs.length)} corner${discs.length === 1 ? "" : "s"}${
+        coverPending ? `, ${n(coverPending)} awaiting a render` : ""
+      }</span>
+  <span class="covnote">Drawn per corner, never as one outline: a boundary around these would enclose thousands of crossings nobody has audited.</span>
 </p>`
+    : ""
+}`
     : ""
 }
 
@@ -555,6 +599,10 @@ var VIEW = {lat: ${view.center.lat}, lon: ${view.center.lon}, zoom: ${view.zoom}
 // VIEW, because that frame was computed for its exact pixel size; the
 // interactive map fits these instead, for its own.
 var CITY_BOUNDS = ${JSON.stringify(CITY_BOUNDS)};
+// The audited zone. One entry per corner in the audited roster, drawn as a disc
+// of COVERAGE_R metres, which is the radius the grade is computed over.
+var COVERAGE = ${JSON.stringify(discs)};
+var COVERAGE_R = ${coverRadiusM};
 var AUDITED = ${JSON.stringify(
     ranked.map((c) => ({ slug: c.slug, name: c.name, lat: c.lat, lon: c.lon, grade: c.grade, index: c.index })),
   )};
@@ -677,6 +725,7 @@ var AUDITED = ${JSON.stringify(
           // sets the opening frame and then zoom and pan behave exactly as
           // they did before.
           bounds: CITY_BOUNDS, boundsPadding: 14,
+          coverage: COVERAGE, coverageRadiusM: COVERAGE_R,
           audited: AUDITED, scored: scored, heatUrl: "/data/city/dots.json",
           tapAnywhere: true,
           onReady: function(map){

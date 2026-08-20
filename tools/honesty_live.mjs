@@ -668,3 +668,81 @@ test("a corner page labels its AI overlays before it can show them", () => {
     );
   }
 });
+
+// ---------------------------------------------------- audited coverage layer
+//
+// Coverage is a claim about how much of the city has actually been looked at,
+// so every assertion here is about the layer agreeing with the roster rather
+// than about it looking good. The design rule is that it is drawn per corner
+// and never as one boundary: a hull around the audited set would enclose
+// thousands of crossings nobody has audited and claim them as covered.
+
+const coverDiscs = (() => {
+  const m = P.home.match(/var COVERAGE = (\[[\s\S]*?\]);/);
+  return m ? JSON.parse(m[1]) : null;
+})();
+
+test("the coverage layer draws exactly one disc per fully audited corner", () => {
+  if (!coverDiscs || !coverDiscs.length) return;
+  const audited = num(
+    one(
+      P.home,
+      /<p class="scope" id="scope">[\d,]+ intersections graded citywide, ([\d,]+) fully audited/,
+      "the homepage subtitle's audited count",
+    )[1],
+  );
+  assert.equal(
+    coverDiscs.length,
+    audited,
+    `the map drew ${coverDiscs.length} coverage discs while the page claims ${audited} fully audited corners`,
+  );
+  const slugs = new Set(coverDiscs.map((d) => d.slug));
+  assert.equal(slugs.size, coverDiscs.length, "a corner may not be drawn twice");
+  for (const d of coverDiscs) {
+    assert.ok(Number.isFinite(d.lat) && Number.isFinite(d.lon), `${d.slug} has no usable coordinate`);
+    assert.equal(typeof d.rendered, "boolean", `${d.slug} carries no render state`);
+  }
+});
+
+test("the coverage legend counts the discs the map is actually drawing", () => {
+  if (!coverDiscs || !coverDiscs.length) return;
+  const claimed = num(
+    one(P.home, /<span class="covcount">([\d,]+) corners?/, "the coverage legend count")[1],
+  );
+  assert.equal(claimed, coverDiscs.length, "the legend and the layer must be the same number");
+
+  const pending = coverDiscs.filter((d) => !d.rendered).length;
+  const clause = P.home.match(/<span class="covcount">[\d,]+ corners?, ([\d,]+) awaiting a render/);
+  if (pending) {
+    assert.ok(clause, `${pending} corners await a render and the legend does not say so`);
+    assert.equal(num(clause[1]), pending);
+  } else {
+    assert.equal(clause, null, "nothing is pending, so the clause must be absent rather than zero");
+  }
+});
+
+test("the coverage legend states the radius and refuses the boundary reading", () => {
+  if (!coverDiscs || !coverDiscs.length) return;
+  const t = P.home.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(t, /Audited coverage: the \d+m core around each fully audited corner/);
+  assert.match(t, /One more every morning/);
+  assert.match(t, /Drawn per corner, never as one outline/);
+  assert.match(t, /would enclose thousands of crossings nobody has audited/);
+});
+
+test("the coverage radius is the radius the methodology grades over", () => {
+  if (!coverDiscs || !coverDiscs.length) return;
+  const r = one(P.home, /var COVERAGE_R = (\d+);/, "the coverage radius sent to the browser")[1];
+  const legend = one(P.home, /Audited coverage: the (\d+)m core/, "the radius in the legend")[1];
+  assert.equal(r, legend, "the drawn radius and the stated radius must be one number");
+  assert.match(
+    P.methodology.replace(/<[^>]+>/g, " "),
+    new RegExp(`within ${r} meters`),
+    `the layer draws ${r}m discs, so /methodology has to state the same radius`,
+  );
+});
+
+test("the coverage layer reaches the map and cannot intercept a corner tap", () => {
+  if (!coverDiscs || !coverDiscs.length) return;
+  assert.match(P.home, /coverage: COVERAGE, coverageRadiusM: COVERAGE_R/, "the layer must be handed to the map");
+});

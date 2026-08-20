@@ -183,6 +183,81 @@
       }
       L.tileLayer(TILES, { attribution: TILE_ATTRIB, maxZoom: 19 }).addTo(map);
 
+      // ------------------------------------------------- audited coverage
+      //
+      // The audited zone, drawn per corner as its scoring core. Never as one
+      // boundary around the set: a hull would enclose every unaudited crossing
+      // between them and claim coverage that was not done, which for 23 audited
+      // corners in a city of 7,355 would be most of the map. The union of discs
+      // is the zone and the gaps between them are the honest part.
+      //
+      // Three properties this needs and gets:
+      //
+      // Its own pane, below the overlay pane the markers use, so coverage can
+      // never draw over a corner dot whatever order things are added in.
+      //
+      // interactive:false on every circle, so a tap that lands inside a disc
+      // passes through to the dot underneath. A coverage layer that swallowed
+      // taps meant for corners would make the map worse in exchange for
+      // context.
+      //
+      // L.circle rather than L.circleMarker, because circle takes a radius in
+      // METRES and scales with zoom. circleMarker's radius is pixels, which
+      // would draw a disc that means 80 metres at one zoom and half a mile at
+      // another, and a coverage claim that changes size with the zoom level is
+      // not a coverage claim.
+      if ((opts.coverage || []).length) {
+        map.createPane("coverage");
+        map.getPane("coverage").style.zIndex = 350; // tiles 200, overlays 400
+        map.getPane("coverage").style.pointerEvents = "none";
+
+        var coverR = opts.coverageRadiusM || 80;
+        var coverLayer = L.layerGroup();
+        opts.coverage.forEach(function (d) {
+          if (!isFinite(d.lat) || !isFinite(d.lon)) return;
+          L.circle([d.lat, d.lon], {
+            pane: "coverage",
+            radius: coverR,
+            interactive: false,
+            // Not a grade colour. This layer answers "has anyone looked here",
+            // and the A to F palette answers a different question.
+            color: "#141B2D",
+            weight: d.rendered ? 1 : 1.5,
+            opacity: d.rendered ? 0.5 : 0.65,
+            fillColor: "#141B2D",
+            fillOpacity: d.rendered ? 0.16 : 0.05,
+            dashArray: d.rendered ? null : "3 3",
+          }).addTo(coverLayer);
+        });
+
+        // Built once, from the index, and then only added and removed. No
+        // rebuild on zoom: the discs are in metres, so zoom already renders
+        // them correctly and recomputing them would be work for no change.
+        coverLayer.addTo(map);
+
+        var covBtn = L.DomUtil.create("button", "covtoggle");
+        covBtn.type = "button";
+        covBtn.setAttribute("aria-pressed", "true");
+        covBtn.innerHTML =
+          '<i></i><span>Audited <span class="covlabel-long">coverage</span></span>';
+        covBtn.title = "Show or hide the audited coverage layer";
+        L.DomEvent.disableClickPropagation(covBtn);
+        covBtn.addEventListener("click", function () {
+          var on = covBtn.getAttribute("aria-pressed") === "true";
+          if (on) map.removeLayer(coverLayer);
+          else coverLayer.addTo(map);
+          covBtn.setAttribute("aria-pressed", on ? "false" : "true");
+        });
+
+        var CovControl = L.Control.extend({
+          options: { position: "topright" },
+          onAdd: function () {
+            return covBtn;
+          },
+        });
+        map.addControl(new CovControl());
+      }
+
       // audited: solid grade-colored pins
       (opts.audited || []).forEach(function (c) {
         L.circleMarker([c.lat, c.lon], {
