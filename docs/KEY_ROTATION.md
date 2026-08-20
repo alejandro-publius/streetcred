@@ -87,11 +87,11 @@ Names only, from `cut -d= -f1`. `.dev.vars` is untracked and is line 1 of
 `.gitignore`; `git ls-files --error-unmatch .dev.vars` fails, and the file has
 never existed in any of the 132 commits on `main`.
 
-| Name | in `.dev.vars` | in `.dev.vars.example` | read by `src/` | read by `tools/` |
+| Name | in `.dev.vars` | in `.dev.vars.example` | the NAME is read by `src/` | read by `tools/` |
 | --- | --- | --- | --- | --- |
-| `EXA_API_KEY` | line 1 | yes | yes | yes |
+| `EXA_API_KEY` | line 1 | yes | yes, the deployed value | yes |
 | `APIFY_TOKEN` | line 2 | yes | yes | yes |
-| `GEMINI_API_KEY` | line 3 | yes | yes | `tools/gemini_preflight.mjs:28`, `tools/generate_imagery.py:129` |
+| `GEMINI_API_KEY` | line 3 | yes | yes, the deployed value | `tools/gemini_preflight.mjs:28`, `tools/generate_imagery.py:129` |
 | `GOOGLE_MAPS_API_KEY` | line 4 | yes | yes | `tools/generate_imagery.py:128`, `tools/make_og.py:78` |
 | `UPSTASH_REDIS_REST_URL` | line 5 | yes | **no** | **no** |
 | `UPSTASH_REDIS_REST_TOKEN` | line 6 | yes | **no** | **no** |
@@ -128,7 +128,7 @@ and the session record handed to this sweep.
   cannot be confirmed from the tree, because nothing outside the Worker can see
   the current value. What the tree does show is that all 29 Exa monitors were
   created at `2026-08-20T02:08:17.204Z`, which is after the exposure, and they
-  carry whatever secret the Worker held at that moment. Item 2 of tomorrow's
+  carry whatever secret the Worker held at that moment. Item 4 of tomorrow's
   checklist is a human confirming that the deployed value is the replacement
   and not the exposed one.
 
@@ -180,8 +180,10 @@ get a false clean over every ignored path.
 Exa keys are UUIDs, so the CI pattern cannot see one. Scanning for a UUID in an
 Exa context, and then for bare UUIDs anywhere, with `command grep`:
 
-- UUID assigned to an `EXA`-prefixed name: **zero matches** in the working tree
-  and zero across all 132 commits.
+- UUID assigned to an `EXA`-prefixed name: **zero matches** across tracked
+  files and across all 132 commits. Tracked, not the working tree: `.dev.vars:1`
+  is exactly such an assignment, which is the next bullet. The distinction is the
+  whole point of this section and this line used to blur it.
 - Bare UUID shape, whole tree, gitignored files included: **6 matches in 2
   files.** `.dev.vars:1`, which is `EXA_API_KEY` and is therefore a live Exa key
   sitting in a gitignored local file. And `specs/HANDOFF.md` lines 392, 395,
@@ -291,7 +293,9 @@ name, by file and line number, or by description, and nothing was copied out of
 That sentence was verified, not just asserted. This file was grepped with
 `command grep` for the four CI provider patterns, for the UUID shape, for any
 run of 32 hex characters, for a bearer literal, and for a quoted `x-api-key`
-literal. All six searches returned zero. The longest unbroken alphanumeric run
+literal. All of them returned zero, including the two shapes the command below
+does not cover, `AQ.`-prefixed tokens and a literal `x-api-key` assignment, which
+were run separately. The longest unbroken alphanumeric run
 in the file is the string `UPSTASH_REDIS_REST_TOKEN`, which is a variable name.
 The one number here that could be mistaken for a secret, 64, is a length that
 `/api/radar` already publishes to the public internet.
