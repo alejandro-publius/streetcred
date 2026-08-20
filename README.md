@@ -5,7 +5,9 @@
 
 **Every claim about a dangerous corner, graded and traced to its source, ending in a picture of the fix and a letter to the Supervisor.**
 
-![The Hazards state at 16th and Mission. The real Street View frame on the left, the Gemini safety audit annotated onto that same frame on the right, drag handle between them, with a legend naming faded crosswalk markings in red and vehicle conflict zones in amber.](https://streetcred.thealexschroeder.workers.dev/gen/16th-mission/hazards.jpg)
+![Two panels side by side for 16th and Mission with an arrow between them. Left, labelled AUDIT: the real Street View frame with the Gemini safety audit annotated onto it, red over faded crosswalk markings and amber over the vehicle conflict zone, with a legend naming both. Right, labelled PROPOSED FIX: the same view rendered with continental crosswalks, a protected bike lane and a corner curb extension.](assets/readme_hero_16th_mission.png)
+
+*The audit and the proposed fix, 16th and Mission. The fix is an AI visualization, not a photograph of anything that exists.*
 
 Pick a San Francisco intersection. StreetCred shows what the city's own data records, what the press reports, and what residents say, each claim traceable to where it came from. Then it shows what an automated visual audit finds wrong with the corner, what the fix would look like, and drafts the letter to the correct District Supervisor.
 
