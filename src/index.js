@@ -2,6 +2,11 @@ import {
   CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, canonicalSlug, makeCorner, SERVICE_NAMES,
   resolvedDistrict, addresseeFor,
   pacificToday as pacificTodayShared,
+  // The dated formatter, not the zero-argument one aliased below. `pacificDay`
+  // in this file means TODAY; passing it a timestamp silently ignores the
+  // argument and dates every row as now, which is the exact failure the alias
+  // comment warns about.
+  pacificDay as pacificDayOf,
   COTD_SEED,
 } from "./data.js";
 import { PAGE, NOT_FOUND } from "./page.js";
@@ -1566,7 +1571,15 @@ export async function auditedIndex(env) {
         name: corner?.name || slug,
         grade: score?.grade || null,
         index: Number.isFinite(score?.index) ? score.index : null,
-        date: dateBySlug.get(slug) || null,
+        // Two different facts, and the row says which it is showing. cotd:log
+        // records the morning cron auditing a corner, which is the audit date.
+        // imgstatus.at records when the imagery was generated, which is not the
+        // same claim and must not borrow the same label. The log only reaches
+        // back three mornings, so without the fallback 22 of 23 rows would
+        // carry no date at all and the sort would be alphabetical wearing a
+        // chronological caption.
+        date: dateBySlug.get(slug) || (Number.isFinite(img.at) ? pacificDayOf(img.at) : null),
+        dateKind: dateBySlug.has(slug) ? "audited" : "generated",
         provenance: provenanceOf(img),
         letter: storedLetterServes(letter),
         fix: true,
@@ -2308,6 +2321,17 @@ export default {
         });
       }
 
+      // Deliberately above the corner lookup, for the same reason /watchlist
+      // and /watchdog are: `corner(url, env)` resolves any unclaimed path as a
+      // corner slug, so a surface routed after it is answered with NOT_FOUND
+      // for a corner named "audited" that does not exist.
+      if (p === "/audited" || p === "/audited/") {
+        const rows = await auditedIndex(env);
+        return new Response(AUDITED_PAGE(rows, origin, Boolean(env.PREVIEW), await mastScored()), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+
       if (p === "/watchdog" || p === "/watchdog/") {
         const [journal, rejects] = await Promise.all([
           getJournal(env).catch(() => []),
@@ -2491,13 +2515,6 @@ export default {
           asOf: fmtAsOf(pressCites?.at || pressRoll?.updated || pressSummary?.at),
         };
         return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressTile, spendUsd, embed, auditTiers, { discs: coverage, radiusM: coverageRadiusM(meta) }), {
-          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-        });
-      }
-
-      if (p === "/audited" || p === "/audited/") {
-        const rows = await auditedIndex(env);
-        return new Response(AUDITED_PAGE(rows, origin, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }

@@ -43,7 +43,11 @@ function row(r) {
       ${cell(r.voices, "Voices kept", "No voices kept")}
     </div>
   </div>
-  ${r.date ? `<time class="adate" datetime="${esc(r.date)}">${esc(r.date)}</time>` : `<span class="adate none">date not recorded</span>`}
+  ${
+    r.date
+      ? `<time class="adate" datetime="${esc(r.date)}"><span class="adk">${r.dateKind === "audited" ? "audited" : "imagery"}</span>${esc(r.date)}</time>`
+      : `<span class="adate none">date not recorded</span>`
+  }
 </li>`;
 }
 
@@ -90,7 +94,8 @@ ${BASE_CSS}
 .lcell{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line2);white-space:nowrap}
 .lcell.on{color:var(--ink);background:var(--card)}
 .lcell.off{color:var(--dim);background:none;border-style:dashed}
-.adate{flex:0 0 auto;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+.adk{display:block;font-size:9.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--dimline)}
+.adate{flex:0 0 auto;font-size:12px;text-align:right;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
 .adate.none{font-style:italic}
 /* The operator reads this on a phone. Below 620px the thumbnail keeps its place
    but the date moves under the name rather than squeezing the strip into two

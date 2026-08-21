@@ -97,3 +97,30 @@ test("the page is reachable from the nav and the footer", async () => {
   assert.match(MASTHEAD({ scored: 7355, active: "audited" }), /href="\/audited"[^>]*class="on"/);
   assert.match(FOOTER(), /href="\/audited">Audited corners</);
 });
+
+test("the date label says which fact it is showing", () => {
+  const audited = render({ full: [r({ date: "2026-08-18", dateKind: "audited" })], promoted: [] });
+  assert.match(audited, /<span class="adk">audited<\/span>2026-08-18/);
+
+  // cotd:log only reaches back three mornings. Without a fallback, 22 of 23
+  // rows would carry no date and the sort would be alphabetical wearing a
+  // chronological caption. The fallback is the imagery generation time, which
+  // is a different fact and carries a different word.
+  const generated = render({ full: [r({ date: "2026-08-17", dateKind: "generated" })], promoted: [] });
+  assert.match(generated, /<span class="adk">imagery<\/span>2026-08-17/);
+  assert.doesNotMatch(generated, /<span class="adk">audited<\/span>/, "a generation time is not an audit date");
+});
+
+test("rows sort most recent first and undated rows sort last", async () => {
+  // The sort itself lives in auditedIndex; this pins the contract the page
+  // depends on, which is that the array arrives ordered and is rendered in
+  // order rather than re-sorted here.
+  const h = render({
+    full: [r({ slug: "newest", name: "Newest", date: "2026-08-21" }),
+           r({ slug: "older", name: "Older", date: "2026-08-17" }),
+           r({ slug: "undated", name: "Undated", date: null })],
+    promoted: [],
+  });
+  const order = [...h.matchAll(/class="aname" href="\/c\/([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["newest", "older", "undated"], "the page renders the order it is given");
+});
