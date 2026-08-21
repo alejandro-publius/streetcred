@@ -15,9 +15,12 @@ import { PROMOTED_FROM_ENRICHED, AUDITED } from "../src/imagery.js";
 
 const r = (over = {}) => ({
   slug: "16th-mission", name: "16th Street and Mission Street", grade: "F", index: 99,
-  date: "2026-08-18", provenance: AUDITED, letter: true, fix: true, press: true, voices: true, ...over,
+  date: "2026-08-18", dateKind: "audited", provenance: AUDITED, letter: true, fix: true, press: "found", voices: "found", ...over,
 });
 const render = (data) => AUDITED_PAGE(data, "https://x.test", false, 7355);
+// The lane cells only. Assertions over the whole document catch BASE_CSS, which
+// carries these words in a comment.
+const cells = (h) => [...h.matchAll(/class="lcell (?:on|off|none)">([^<]*)</g)].map((m) => m[1]);
 const counts = (h) => [...h.matchAll(/class="acount">([^<]*)</g)].map((m) => m[1]);
 const sectionOf = (h, which) => {
   const i = h.indexOf(which === "full" ? 'id="fullhead"' : 'id="promhead"');
@@ -57,18 +60,44 @@ test("every row's thumbnail names that corner's stored frame", () => {
   assert.doesNotMatch(h, /src="\/gen\/[a-z0-9-]+\/(fix|hazards)\.jpg"/);
 });
 
-test("a lane shows the state its record holds, both ways", () => {
-  const on = render({ full: [r({ letter: true, press: true, voices: true })], promoted: [] });
-  assert.match(on, /Letter served/);
-  assert.match(on, /Press found/);
-  assert.match(on, /Voices kept/);
+test("a lane shows the state its record holds, all three ways", () => {
+  const found = render({ full: [r({ letter: true, press: "found", voices: "found" })], promoted: [] });
+  assert.match(found, /Letter served/);
+  assert.match(found, /Press found/);
+  assert.match(found, /Voices found/);
 
-  const off = render({ full: [r({ letter: false, press: false, voices: false })], promoted: [] });
-  assert.match(off, /Letter pending/);
-  assert.match(off, /No press found/);
-  assert.match(off, /No voices kept/);
-  // An empty lane is a result, not an omission: the cell is still rendered.
-  assert.equal((off.match(/class="lcell (on|off)"/g) || []).length, 4, "four cells either way");
+  const none = render({ full: [r({ letter: false, press: "none", voices: "none" })], promoted: [] });
+  assert.match(none, /Letter pending/);
+  assert.match(none, /Press none found/);
+  assert.match(none, /Voices none found/);
+
+  // The distinction the third state exists for. Most audited corners have no
+  // stored press record at all, and /api/news answers those with a live search
+  // at read time, so the corner page shows items the store does not hold.
+  // Calling that "none found" would claim an outcome for a search nobody ran.
+  const unchecked = render({ full: [r({ press: "unchecked", voices: "unchecked" })], promoted: [] });
+  assert.match(unchecked, /Press not checked/);
+  assert.match(unchecked, /Voices not checked/);
+  // Scoped to the cells. BASE_CSS carries a comment containing the words
+  // "none found", so asserting over the whole document tests the stylesheet.
+  assert.deepEqual(
+    cells(unchecked).filter((c) => /none found/.test(c)),
+    [],
+    "not checked is not a result",
+  );
+
+  // The cell is always rendered, whichever state it is in.
+  for (const h of [found, none, unchecked]) {
+    assert.equal((h.match(/class="lcell (?:on|off|none)"/g) || []).length, 4, "four cells in every state");
+  }
+});
+
+test("an unknown or missing lane state falls back to not checked", () => {
+  // Never to a result. A shape this page has not seen must not be reported as
+  // a search that ran.
+  const weird = render({ full: [r({ press: undefined, voices: "banana" })], promoted: [] });
+  assert.match(weird, /Press not checked/);
+  assert.match(weird, /Voices not checked/);
 });
 
 test("a corner with no recorded date says so instead of inventing one", () => {

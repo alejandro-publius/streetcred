@@ -1583,8 +1583,15 @@ export async function auditedIndex(env) {
         provenance: provenanceOf(img),
         letter: storedLetterServes(letter),
         fix: true,
-        press: (press?.items || []).length > 0,
-        voices: (voices?.items || []).length > 0,
+        // Three states, not two. "No press found" says a search ran and came
+        // back empty, which is a result. Most audited corners have no
+        // press:corner record at all, meaning the batch lane has not reached
+        // them: /api/news answers those with a LIVE Exa search at read time,
+        // which is why the corner page shows items the store does not hold.
+        // Reporting that as "no press found" would be the page claiming a
+        // result for a search that never ran.
+        press: !press ? "unchecked" : (press.items || []).length > 0 ? "found" : "none",
+        voices: !voices ? "unchecked" : (voices.items || []).length > 0 ? "found" : "none",
       };
     }),
   );

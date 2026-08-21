@@ -27,6 +27,21 @@ const n = (x) => Number(x || 0).toLocaleString("en-US");
 const cell = (ok, onLabel, offLabel) =>
   `<span class="lcell ${ok ? "on" : "off"}">${esc(ok ? onLabel : offLabel)}</span>`;
 
+// A lane with three honest states. "found" and "none" are both results: a
+// search ran. "unchecked" is not a result, it is the absence of one, and it
+// must not borrow the wording of the empty result. Most audited corners have no
+// stored press record at all, and calling that "no press found" would claim an
+// outcome for a search nobody ran.
+const LANE = {
+  found: ["on", "found"],
+  none: ["off", "none found"],
+  unchecked: ["none", "not checked"],
+};
+const lane = (state, noun) => {
+  const [cls, word] = LANE[state] || LANE.unchecked;
+  return `<span class="lcell ${cls}">${esc(noun)} ${esc(word)}</span>`;
+};
+
 function row(r) {
   return `<li class="arow">
   <a class="athumb" href="/c/${esc(r.slug)}" aria-hidden="true" tabindex="-1"><img src="/gen/${esc(r.slug)}/today.jpg" alt="" width="112" height="70" loading="lazy"></a>
@@ -39,8 +54,8 @@ function row(r) {
     <div class="lstrip">
       ${cell(r.letter, "Letter served", "Letter pending")}
       ${cell(r.fix, "Fix render", "Render held")}
-      ${cell(r.press, "Press found", "No press found")}
-      ${cell(r.voices, "Voices kept", "No voices kept")}
+      ${lane(r.press, "Press")}
+      ${lane(r.voices, "Voices")}
     </div>
   </div>
   ${
@@ -94,6 +109,9 @@ ${BASE_CSS}
 .lcell{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line2);white-space:nowrap}
 .lcell.on{color:var(--ink);background:var(--card)}
 .lcell.off{color:var(--dim);background:none;border-style:dashed}
+/* Not a result. Dimmer than the empty result and visibly a different kind of
+   statement, because "none found" and "not checked" are different facts. */
+.lcell.none{color:var(--dimline);background:none;border-style:dotted}
 .adk{display:block;font-size:9.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--dimline)}
 .adate{flex:0 0 auto;font-size:12px;text-align:right;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
 .adate.none{font-style:italic}
