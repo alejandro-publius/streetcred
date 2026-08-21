@@ -15,6 +15,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { DISTRIBUTION } from "../src/score.js";
 import { WATCHLIST_QUERIES, runCounts } from "../src/press.js";
 import { CITY_BOUNDS } from "../src/city.js";
@@ -27,9 +28,7 @@ const PATHS = {
   audited: "/c/16th-mission",
   enriched: "/c/16th-and-potrero",
   enriched2: "/c/fillmore-and-lombard",
-  // Shard-only: no stored corner record, so it takes the score-tier path
-  // where the figures are already in hand and can be rendered server-side.
-  scored: "/c/arleta-and-bay-shore",
+  // Shard-only: resolved at run time, never pinned. See below.
   methodology: "/methodology",
   watchlist: "/watchlist",
   status: "/status",
@@ -38,9 +37,40 @@ const PATHS = {
 const page = {};
 const api = {};
 
+// The scored exemplar is chosen at run time, not written down.
+//
+// It used to be pinned to /c/arleta-and-bay-shore, and on 2026-08-21 the
+// morning cron audited that exact corner. It stopped being shard-only, started
+// taking the warmed path, and its tiles became skeletons, so a cell asserting
+// server-rendered figures failed on a healthy site because the fixture had been
+// promoted out from under it. Any pinned slug has that property: this suite
+// runs against a site whose roster changes every morning by design.
+//
+// A scored corner is one the roster does not carry at all, so the roster is
+// what picks it.
+async function scoredExemplar() {
+  const meta = await fetch(`${ORIGIN}/api/city`).then((r) => r.json()).catch(() => null);
+  const m = meta?.meta || meta || {};
+  const warmed = new Set([...(m.audited || []), ...(m.enriched || [])]);
+  // The whole city, not the board. /api/board lists the warmed roster, so every
+  // row it returns is by definition disqualified.
+  const sweep = JSON.parse(readFileSync(new URL("../sweep-results.json", import.meta.url), "utf8")).corners;
+  const all = Array.isArray(sweep) ? sweep : Object.values(sweep);
+  // Deterministic: the same corner every run until the cron warms it, at which
+  // point the next one is picked automatically.
+  const hit = all
+    .map((r) => r?.slug)
+    .filter(Boolean)
+    .sort()
+    .find((slug) => !warmed.has(slug));
+  assert.ok(hit, "no shard-only corner found to use as the scored exemplar");
+  return `/c/${hit}`;
+}
+
 // One fetch per surface, shared by every assertion, so two checks a second
 // apart cannot disagree for an honest reason and still fail.
 before: {
+  PATHS.scored = await scoredExemplar();
   for (const [k, p] of Object.entries(PATHS)) {
     const r = await fetch(ORIGIN + p);
     assert.equal(r.status, 200, `${p} did not return 200`);
