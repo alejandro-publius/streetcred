@@ -198,7 +198,7 @@ ${
       // to go looking for a second cause would be inventing one: the page
       // would be applying the new arrangement's reasoning to a record the new
       // arrangement did not produce.
-      : `<p class="wlnote"><b>The last pass completed ${run.completed} of the ${run.attempted} it attempted, and it predates the change above.</b> There is no run record for this lane yet, which means the figures on this page are the last ones the old shared-invocation arrangement produced: the ${run.failed} cut off are exactly the shortfall the move to a separate trigger was made to fix. The first pass under the new trigger has not happened yet, and until it does this page reports the old numbers rather than pretending to the new ones. Every query is listed below.</p>`
+      : `<p class="wlnote"><b>The last pass completed ${run.completed} of the ${run.attempted} it attempted, and it predates the change above.</b> There is no run record for this lane yet, which means the figures on this page are the last ones the old shared-invocation arrangement produced: the ${run.failed} cut off are exactly the shortfall the move to a separate trigger was made to fix. They cost nothing and found nothing, so the pass costs ${run.completed} searches rather than ${run.attempted}. The first pass under the new trigger has not happened yet, and until it does this page reports the old numbers rather than pretending to the new ones. Every one of them is listed below.</p>`
     : `<p class="wlnote"><b>The last pass completed all ${run.attempted}.</b> The pass costs ${run.attempted} searches.</p>`
 }
 ${
