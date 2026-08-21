@@ -14,6 +14,51 @@ import {
 } from "./store.js";
 import { skipsAudit } from "./city.js";
 
+// ------------------------------------------------------------- provenance
+//
+// Where a corner's generated imagery came from, and it is not decoration.
+//
+// The 23 audited corners earned their renders through the daily cron, which
+// admits a corner to the audited roster only once both generated states exist.
+// A promoted corner did not: it was pulled out of the enriched pool because it
+// had a stored Street View frame, given a proposed-fix render, and nothing
+// else. It has no visual audit, no hazards pass, and it is not in the coverage
+// layer. On a site whose entire claim is that it does not overstate what it
+// checked, those two must not look the same on the page.
+//
+// The client used to decide the tier chip from imagery status alone:
+// `IMG.status === "ready"` meant AUDITED. That would have flipped a promoted
+// corner's chip to AUDITED the moment its render published, which is the exact
+// confusion this field exists to prevent.
+export const AUDITED = "audited";
+export const PROMOTED_FROM_ENRICHED = "promoted-from-enriched";
+const KNOWN_PROVENANCE = new Set([AUDITED, PROMOTED_FROM_ENRICHED]);
+
+// Absent is not audited. A record written before this field existed carries no
+// claim either way, and resolving that silence into the stronger of the two
+// values is the same mistake as a gate that passes when it checked nothing.
+// Callers get null and must say nothing rather than guess.
+export function provenanceOf(status) {
+  const p = status?.provenance;
+  return KNOWN_PROVENANCE.has(p) ? p : null;
+}
+
+// The sentence a promoted corner owes its reader, directly under the render.
+export const PROMOTED_NOTE =
+  "This render was promoted from the enriched pool. This corner has not had a full visual audit " +
+  "and is not counted in the audited coverage layer.";
+
+export function provenanceNote(p) {
+  return p === PROMOTED_FROM_ENRICHED ? PROMOTED_NOTE : "";
+}
+
+// What tier a corner may claim on the strength of its imagery. A promoted
+// corner has a render and is still enriched, so imagery alone can never lift it.
+export function tierFromImagery(status, provenance) {
+  if (provenance === PROMOTED_FROM_ENRICHED) return "enriched";
+  return status === "ready" ? "audited" : status ? "enriched" : null;
+}
+
 const MODEL = "gemini-3.1-flash-image";
 
 const HAZARD_PROMPT = (name) =>
@@ -131,6 +176,10 @@ export async function generateStates(c, env) {
       status: done.length ? "ready" : "failed",
       states: done,
       at: Date.now(),
+      // The Worker generating both states for a corner IS the audit path, so
+      // anything written here is audited by construction. The promoted value is
+      // only ever written by tools/promote_corners.mjs, which does not audit.
+      provenance: AUDITED,
     });
   } catch {
     await putImageryStatus(env, c.slug, { status: "failed", states: [], at: Date.now() });
@@ -160,6 +209,9 @@ export async function imageryFor(c, env, ctx, opts = {}) {
       today: `${base}/today.jpg`,
       hazards: existing.states.includes("hazards") ? `${base}/hazards.jpg` : null,
       fix: existing.states.includes("fix") ? `${base}/fix.jpg` : null,
+      // Travels to the client so the caption and the tier chip can both tell
+      // the truth about a render that did not come from a full audit.
+      provenance: provenanceOf(existing),
     };
   }
   if (existing?.status === "failed") {

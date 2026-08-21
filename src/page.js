@@ -1,6 +1,10 @@
 import { CORNERS } from "./data.js";
 import { DISTRIBUTION } from "./score.js";
 import { TIER_LABEL, TIER_NOTE } from "./city.js";
+// Imported rather than restated. The homepage hero and the corner page must
+// make the same claim in the same words, and the client-side copy inside PAGE
+// is pinned to this one by tools/provenance.test.mjs.
+import { PROMOTED_NOTE } from "./imagery.js";
 
 // The citywide distribution strip, built once at module load from the frozen
 // array rather than shipped to the browser as 600 numbers on every page. The
@@ -327,7 +331,12 @@ export const HERO_CORNER = (e) => {
     // the unedited photograph and on the hazard overlay, both of which have
     // their own honest captions.
     frames.fix
-      ? `<p class="hcdisclaim" id="hcdisc"${compare === "fix" ? "" : " hidden"}>${AI_DISCLAIMER}</p>`
+      ? `<p class="hcdisclaim" id="hcdisc"${compare === "fix" ? "" : " hidden"}>${AI_DISCLAIMER}${
+          // Where this particular render came from. Follows the same visibility
+          // rule as the disclaimer above it, because it is a claim about the
+          // proposed-fix frame and about nothing else on the page.
+          e.provenance === "promoted-from-enriched" ? ` ${PROMOTED_NOTE}` : ""
+        }</p>`
       : ""
   }
   ${
@@ -1715,6 +1724,10 @@ ${FOOTER()}
 
 <script>
 ${PACIFIC_DAY_JS}
+// Kept byte-identical to PROMOTED_NOTE in src/imagery.js. tools/provenance.test.mjs
+// asserts the two match, because a caption that drifts from the server's own
+// definition of the claim is a caption nobody is checking.
+const PROMOTED_NOTE = "This render was promoted from the enriched pool. This corner has not had a full visual audit and is not counted in the audited coverage layer.";
 const CAPS = {
   today:["Today","The corner as Street View last photographed it. Imagery: Google."],
   hazards:["Hazards","Gemini read the real photograph and marked the zones it flags as high risk: faded crosswalk markings in red, vehicle conflict zones in amber. Drag to compare."],
@@ -1827,7 +1840,11 @@ function render(){
     setSplit(split);
   }
   el("capk").textContent = CAPS[state][0];
-  el("capv").textContent = CAPS[state][1] + (state === "today" && IMG.note ? " " + IMG.note : "");
+  // The promoted note rides the fix caption and nowhere else. It is a statement
+  // about where THIS render came from, so it belongs beside the render and not
+  // on the photograph or the hazard overlay, which are not promoted anything.
+  const prov = state === "fix" && IMG.provenance === "promoted-from-enriched" ? " " + PROMOTED_NOTE : "";
+  el("capv").textContent = CAPS[state][1] + prov + (state === "today" && IMG.note ? " " + IMG.note : "");
   // The projected outcome belongs to the fix state alone: it describes the
   // proposal, not the photograph.
   const ib = el("impact");
@@ -2292,6 +2309,10 @@ function paintTier(){
   if(!chips.length) return;
   let t = TIER;
   if(V.score && V.score.source === "sweep") t = "scored";
+  // A promoted corner has a proposed-fix render and no audit. Reading the chip
+  // off imagery status alone made "ready" mean AUDITED, which would have
+  // relabelled every promoted corner the moment its render published.
+  else if(IMG && IMG.provenance === "promoted-from-enriched") t = "enriched";
   else if(IMG && IMG.status === "ready") t = "audited";
   else if(IMG && IMG.status) t = "enriched";
   chips.forEach(function(chip){

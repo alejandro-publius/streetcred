@@ -40,7 +40,7 @@ import {
   TIERS, tierOf, RANK_PAGE_SIZE, tagTiers, putCityMeta,
 } from "./city.js";
 import { evidenceLine } from "./page.js";
-import { imageryFor } from "./imagery.js";
+import { imageryFor, provenanceOf } from "./imagery.js";
 import { corroborate, HAZARD_VERSION } from "./hazards.js";
 import { credCheck, isSafetyCoverage, CRED_VERSION } from "./cred.js";
 import { buildManifest, PUBLIC_TRIGGERS } from "./manifest.js";
@@ -2342,6 +2342,11 @@ export default {
             hazards: states.includes("hazards") ? `${base}/hazards.jpg` : null,
             fix: states.includes("fix") ? `${base}/fix.jpg` : null,
           };
+          // Where the featured corner's render came from, so the hero can say
+          // so under the image. Resolved from the stored record rather than
+          // inferred from the roster: absent means the record predates the
+          // field and the hero says nothing at all.
+          const featuredProvenance = provenanceOf(fimg);
           const hasGenerated = Boolean(frames.hazards || frames.fix);
 
           // The daily cadence is carried by the subtitle, which says one is
@@ -2355,6 +2360,7 @@ export default {
             slug: featured.slug,
             name: ec?.name || featured.name || featured.slug,
             date: featured.date,
+            provenance: featuredProvenance,
             // "This morning" is only true if this audit ran this morning in
             // Pacific, which is the timezone the claim is about. An older
             // featured corner states its real date and drops the claim rather
