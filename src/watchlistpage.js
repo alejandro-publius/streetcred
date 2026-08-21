@@ -184,11 +184,21 @@ ${rejects
 }
 
 <div class="eyebrow"><span>How it runs</span></div>
-<p class="wlnote">${run.attempted} citywide semantic searches are attempted over the last ${w?.windowDays ?? 90} days, run through Exa with the news category, a published-date window, and lead-generation domains excluded at the API rather than filtered afterwards. Each result's text is scanned for crossing names, and every name is checked against the same index the site grades from. It runs again every morning with the daily audit.</p>
+<p class="wlnote">${run.attempted} citywide semantic searches are attempted over the last ${w?.windowDays ?? 90} days, run through Exa with the news category, a published-date window, and lead-generation domains excluded at the API rather than filtered afterwards. Each result's text is scanned for crossing names, and every name is checked against the same index the site grades from.</p>
 <p class="wlnote">This lane has its own cron trigger at 13:20 UTC and therefore its own subrequest budget. A Worker invocation may make fifty external requests and this lane costs exactly one per query, so the set fits with room to spare. It used to run as the last lane of the daily audit, sharing that invocation's fifty with everything the audit had already spent, and arrived with about seven of them left: twenty-two searches were cut off before they reached Exa every morning, and this page reported twenty-nine.</p>
 ${
   run.failed
-    ? `<p class="wlnote"><b>The last pass completed ${run.completed} of the ${run.attempted} it attempted.</b> On a budget of its own that should not happen, so the ${run.failed} that were cut off mean something else spent the invocation first. They cost nothing and found nothing, so the pass costs ${run.completed} searches rather than ${run.attempted}. Every one of them is listed below.</p>`
+    ? lastRun
+      // The displayed pass ran under the new schedule, so a cut-off search
+      // really does mean something else spent the invocation first.
+      ? `<p class="wlnote"><b>The last pass completed ${run.completed} of the ${run.attempted} it attempted.</b> On a budget of its own that should not happen, so the ${run.failed} that were cut off mean something else spent the invocation first. They cost nothing and found nothing, so the pass costs ${run.completed} searches rather than ${run.attempted}. Every one of them is listed below.</p>`
+      // It did not. The stored pass is the last one the OLD path produced,
+      // from inside the audit's invocation, and the paragraph above has just
+      // finished explaining why that ran out of subrequests. Telling a reader
+      // to go looking for a second cause would be inventing one: the page
+      // would be applying the new arrangement's reasoning to a record the new
+      // arrangement did not produce.
+      : `<p class="wlnote"><b>The last pass completed ${run.completed} of the ${run.attempted} it attempted, and it predates the change above.</b> There is no run record for this lane yet, which means the figures on this page are the last ones the old shared-invocation arrangement produced: the ${run.failed} cut off are exactly the shortfall the move to a separate trigger was made to fix. The first pass under the new trigger has not happened yet, and until it does this page reports the old numbers rather than pretending to the new ones. Every query is listed below.</p>`
     : `<p class="wlnote"><b>The last pass completed all ${run.attempted}.</b> The pass costs ${run.attempted} searches.</p>`
 }
 ${
