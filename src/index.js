@@ -26,7 +26,8 @@ import {
   getLetterBackoff, setLetterBackoff,
   getVoicesStored, exaBudget, actorRunBudget, getActorCosts, getVoicesSummary,
   recordExaSpend, recordExaProbe, getExaProbe,
-  getPress, putPress, getPressRollup, bumpPressRollup, getBurnCheckpoint, putBurnCheckpoint,
+  getPress, putPress, getPressRollup, bumpPressRollup, bumpPressRollupBulk, openExaMeter,
+  getBurnCheckpoint, putBurnCheckpoint,
   radarBudget, countRadarDetection, getMonitors, putMonitors, getRadarFeed, pushRadarFeed, putRadarUnknown,
   recountPressCitations, getPressCitations, CITATION_CACHE_S,
   recountAuditTiers, getAuditTiers, AUDIT_TIER_CACHE_S,
@@ -1110,6 +1111,12 @@ export const PRESS_BATCH_PER_NIGHT = 100;
 // does not save. Overnight that is roughly 190 corners, at a cost the cap
 // still governs.
 export const PRESS_BATCH_PER_TICK = 6;
+
+// What the provider says when the key itself is out of credit, as opposed to
+// when our own cap is reached. Two different facts: the first needs a new key,
+// the second needs a new period or a raised cap, and reporting either as the
+// other sends somebody to fix the wrong thing.
+export const EXA_CREDITS_SPENT = /\b402\b|credits?/i;
 const PRESS_FRESH_DAYS = 30;
 const PRESS_LANES = 4;
 
@@ -1149,6 +1156,13 @@ export async function pressBatch(env, limit = PRESS_BATCH_PER_NIGHT) {
   }
 
   const out = { source: "live", checked: 0, withCoverage: 0, empty: 0, deferred: 0, failed: 0, spentUsd: 0 };
+  // One metering session and one rollup write for the whole tick, instead of
+  // three meter writes per Exa call and a rollup write per corner. The lane was
+  // spending roughly 2,976 KV writes a day against a 1,000 a day allowance, and
+  // almost all of it was write amplification rather than work: the counts stay
+  // identical, the ledger still measures every dollar, and nothing is throttled.
+  const meter = openExaMeter(env);
+  const rollup = [];
   let next = 0;
   const worker = async () => {
     for (;;) {
@@ -1157,24 +1171,52 @@ export async function pressBatch(env, limit = PRESS_BATCH_PER_NIGHT) {
       if (out.deferred) return;   // the cap is reached, stop the whole run
       try {
         const corner = { slug: row.slug, name: row.name, city: "San Francisco", lat: row.lat, lon: row.lon };
-        const rec = await enrichPress(env, corner);
+        const rec = await enrichPress(env, corner, meter);
         if (rec.source === "budget-deferred") {
           out.deferred += 1;
-          await bumpPressRollup(env, rec).catch(() => {});
+          rollup.push(rec);
           return;
         }
         await putPress(env, row.slug, rec);
-        await bumpPressRollup(env, rec).catch(() => {});
+        rollup.push(rec);
         out.checked += 1;
         out.spentUsd = Math.round((out.spentUsd + (rec.cost?.usd || 0)) * 1e6) / 1e6;
         if (rec.source === "live") out.withCoverage += 1;
         else out.empty += 1;
-      } catch {
+      } catch (e) {
+        // A key with no credit left is not a corner that failed.
+        //
+        // exaPost throws "exa 402 credits" when the provider refuses on
+        // balance, and this catch counted it as a generic failure, so a key at
+        // its ceiling read as six corners breaking for unknown reasons. That is
+        // the silent degradation: the lane looked broken instead of paused, and
+        // nothing on the site said the word credit.
+        //
+        // Recorded as its own state, and the run stops: every remaining corner
+        // in this tick would refuse for the same reason and counting them as
+        // failures would bury the one fact worth reporting.
+        if (EXA_CREDITS_SPENT.test(String(e?.message || e))) {
+          out.paused = (out.paused || 0) + 1;
+          out.pausedReason = "the exa key was refused on credit (402); the lane is paused, not broken";
+          rollup.push({
+            source: "budget-paused",
+            version: PRESS_VERSION,
+            slug: row.slug,
+            reason: out.pausedReason,
+            fetchedAt: new Date().toISOString(),
+          });
+          return;
+        }
         out.failed += 1;
       }
     }
   };
   await Promise.all(Array.from({ length: Math.min(PRESS_LANES, targets.length) }, worker));
+  // Flushed after the lanes finish, in a fixed order, so a partial tick still
+  // records what it measured. bumpPressRollupBulk has existed since the rollup
+  // was written and nothing called it.
+  await meter.flush().catch(() => {});
+  if (rollup.length) await bumpPressRollupBulk(env, rollup).catch(() => {});
   // The stored press records are what make this resumable corner by corner.
   // The checkpoint only carries the reader's place in the rank and the running
   // totals the status card reads.
@@ -2551,7 +2593,7 @@ export default {
         // what makes the batch lane visible to a reader. A deferred record is
         // not an answer: that corner was never checked.
         const stored = await getPress(env, c.slug, PRESS_VERSION).catch(() => null);
-        if (stored && stored.source !== "budget-deferred") {
+        if (stored && stored.source !== "budget-deferred" && stored.source !== "budget-paused") {
           return await edgeCached(ctx, `news-${c.slug}`, 600, async () => stored);
         }
         // Press coverage is an Exa search per corner. Running one for every

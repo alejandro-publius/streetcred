@@ -108,7 +108,13 @@ function shortlistRank(x, tokens) {
   return [named, x.publishedDate || ""];
 }
 
-export async function enrichPress(env, corner, opts = {}) {
+// `session` is an optional metering session from openExaMeter. When one is
+// supplied the reserve and the spend accumulate into it and reach KV once for
+// the whole batch; without one this behaves exactly as it always did, so every
+// other caller is unaffected.
+export async function enrichPress(env, corner, session = null, opts = {}) {
+  const reserve = session ? (n, p) => session.reserve(n, p) : (n, p) => reserveExa(env, n, p);
+  const record = session ? (u) => session.record(u) : (u) => recordExaSpend(env, u);
   const tokens = streetTokens(corner);
   const meter = {
     searches: 0, contentPages: 0, costUsd: 0,
@@ -157,7 +163,7 @@ export async function enrichPress(env, corner, opts = {}) {
   // at once, because a batch that checks its budget between calls has already
   // overspent by the time it notices.
   const plannedSearches = cold.length + WINDOWS.length;
-  if (!(await reserveExa(env, plannedSearches, SHORTLIST))) {
+  if (!(await reserve(plannedSearches, SHORTLIST))) {
     return {
       source: "budget-deferred",
       version: PRESS_VERSION,
@@ -259,7 +265,7 @@ export async function enrichPress(env, corner, opts = {}) {
   };
 
   // One write for everything this corner actually cost.
-  if (meter.costUsd > 0) await recordExaSpend(env, meter.costUsd).catch(() => {});
+  if (meter.costUsd > 0) await record(meter.costUsd).catch(() => {});
 
   // Searched and empty is a result, stored and shown like one. The lane that
   // says nothing was found is worth more than the lane that says nothing.
