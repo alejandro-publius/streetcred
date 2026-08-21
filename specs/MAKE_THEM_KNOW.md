@@ -148,3 +148,72 @@ The morning cron has not yet fired with the autonomous-voices code deployed, so
 "one corner audited every morning" is true of the audit and the voices path has
 been proved by hand rather than by a scheduled run. If someone asks, that is
 the honest answer. The next 06:10 PT run closes it.
+
+## Update, 2026-08-21: the letter lane is no longer empty
+
+**Status: DRAFTED, NOT POSTED.** Both posts above carry a line saying the
+letters are deliberately empty. That line is now false and must be replaced
+before either post is pasted. Replacements below, one per post, same length and
+voice as the paragraph each one is displacing.
+
+### Replace in Post 1
+
+The paragraph beginning "The drafted letters are deliberately empty right now"
+becomes:
+
+---
+
+Every corner now carries a drafted letter to its own Supervisor, and 16 of them
+deliberately do not. The letters are written off the site, on my machine, and
+each one is checked against the same records its page shows before it can be
+stored: the figures it cites, the streets it names, the press it claims, the
+resident voices it quotes, and whether it is addressed to the representative who
+actually holds that district. 116 of 132 passed. The 16 that did not still show
+a pending state, with the reason, because a letter that cannot be checked should
+not be served as though it had been.
+
+---
+
+### Replace in Post 2
+
+The paragraph beginning "One lane is deliberately empty while I write this"
+becomes:
+
+---
+
+The letter lane filled in this week and 16 corners stayed empty on purpose. Each
+draft is verified against its own page before it can be stored: every figure
+traced to the records the page displays, every cited outlet checked against what
+the press pass actually found, every quoted resident against what the scrape
+actually returned, and the addressee against the sitting supervisor for the
+district that corner resolves to. 116 of 132 cleared it, addressed to 11
+different officials. The 16 that did not are still showing a pending state and
+the reason they failed. Nine of them tried to cite reporting that does not exist
+for that corner, which is the failure mode worth building a checker for.
+
+---
+
+### The numbers behind those paragraphs, all checkable
+
+- 132 corners in the fleet, 116 with a stored verified letter, 16 pending.
+- 11 distinct officials addressed. Matt Dorsey 51, Bilal Mahmood 30, Jackie
+  Fielder 10, Danny Sauter 5, Chyanne Chen 4, Rafael Mandelman 4, Shamann Walton
+  3, Myrna Melgar 2, Alan Wong 2, Stephen Sherrill 1, and Mayor Daniel Lurie 4
+  for corners whose district does not resolve.
+- The 16 holds, by what they got wrong: 9 press, 5 numbers, 1 street, 1 voices.
+- Generated against Vertex AI under Application Default Credentials. The Worker
+  holds no model credential and never has.
+- Cost is in the public ledger at /status, named as an estimate rather than a
+  provider figure, because Vertex bills out of band and Exa does not.
+
+### Before pasting, two things that are still true and one that is not
+
+- **Do not claim the imagery.** Seven proposed-fix renders were attempted on
+  2026-08-20 and none published: two were held by the text-legibility check and
+  five never returned an image. Neither post mentions renders and neither should
+  until some pass.
+- **The watchlist figures still move every morning.** Unchanged from the caveat
+  above: re-read /watchlist and swap the numbers if the pass has run again.
+- **The "one caveat that survives" section above is now stale in one respect**
+  and should be re-read against the morning cron's actual run history before
+  either post goes out.
