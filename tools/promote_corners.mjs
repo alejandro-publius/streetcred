@@ -243,9 +243,16 @@ export function imagerySpend(rows) {
   if (!src.length) return null;
   const spent = src.reduce((a, r) => a + (r.usd || 0), 0);
   const held = src.filter((r) => r.state === "held");
+  // When these renders were attempted. The block used to carry counts and
+  // dollars with no timestamp at all, sitting inside a ledger whose `period` is
+  // a calendar month, so nothing on the record said which day the money was
+  // spent. Read off the run rows rather than stamped at read time, because the
+  // question is when the calls happened and not when the ledger was rebuilt.
+  const stamps = src.map((r) => r.at || r.regatedAt).filter(Boolean).sort();
   return {
     model: MODEL,
     via: `vertex:${LOCATION}`,
+    at: stamps.length ? stamps[stamps.length - 1] : null,
     attempted: src.length,
     published: src.filter((r) => r.state === "passed").length,
     held: held.length,
@@ -433,7 +440,7 @@ if (IS_MAIN) {
       // buys a hold that was already decided.
       const pre = sourceIsCheckable(before, wantStreets);
       if (!pre.checkable) {
-        results.push({ slug, state: "held", why: `unrenderable: ${pre.why}`, usd: 0, promptTokens: 0, outputTokens: 0, preflight: true });
+        results.push({ slug, state: "held", why: `unrenderable: ${pre.why}`, usd: 0, promptTokens: 0, outputTokens: 0, preflight: true, at: new Date().toISOString() });
         console.log(`  [${i + 1}/${picks.length}] ${slug}: SKIPPED before spending, ${pre.why.slice(0, 80)}`);
         continue;
       }
@@ -499,12 +506,12 @@ if (IS_MAIN) {
             usd,
           }),
         );
-        results.push({ slug, state: "passed", attempt: done.attempt, usd, ...tok, gate: done.gate });
+        results.push({ slug, state: "passed", attempt: done.attempt, usd, ...tok, gate: done.gate, at: new Date().toISOString() });
         console.log(
           `  [${i + 1}/${picks.length}] ${slug}: passed attempt ${done.attempt}, checked [${done.gate.checked.join(",")}] unchecked [${done.gate.unchecked.join(",")}]`,
         );
       } else {
-        results.push({ slug, state: "held", why: held, usd, ...tok });
+        results.push({ slug, state: "held", why: held, usd, ...tok, at: new Date().toISOString() });
         console.log(`  [${i + 1}/${picks.length}] ${slug}: HELD, ${String(held).slice(0, 90)}`);
       }
     }

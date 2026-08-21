@@ -170,3 +170,18 @@ test("a named retry cannot overwrite a render that already published", async () 
   assert.deepEqual(eligible(meta, keys, {}, 0, ["a", "b"]), ["a"]);
   assert.deepEqual(eligible(meta, keys, {}, 0, ["b"]), [], "naming a published corner selects nothing");
 });
+
+test("the render ledger says when the calls happened, not when it was rebuilt", async () => {
+  const { imagerySpend } = await import("./promote_corners.mjs");
+  // The block used to carry counts and dollars with no timestamp at all, inside
+  // a ledger whose period is a calendar month, so nothing on the record said
+  // which day the money was spent.
+  const r = imagerySpend([
+    { slug: "a", state: "passed", usd: 0.006, at: "2026-08-21T00:20:00.000Z" },
+    { slug: "b", state: "held", why: "quota", usd: 0, at: "2026-08-21T00:24:00.000Z" },
+  ]);
+  assert.equal(r.at, "2026-08-21T00:24:00.000Z", "the latest attempt in the run");
+
+  const undated = imagerySpend([{ slug: "a", state: "passed", usd: 0.006 }]);
+  assert.equal(undated.at, null, "no stamp is null, not a guess at now");
+});
