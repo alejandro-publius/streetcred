@@ -137,8 +137,8 @@ export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview
     typeof c?.points === "number" ? String(Math.round(c.points * 10) / 10) : String(c?.index ?? "");
   const pendingClause = textAudited ? `${n(textAudited)} more with imagery pending, ` : "";
   const scopeLine = scored
-    ? `${n(scored)} intersections graded citywide, ${n(fullyAudited)} fully audited, ${pendingClause}one attempted every morning.`
-    : `${n(fullyAudited)} intersections fully audited, ${pendingClause}one attempted every morning.`;
+    ? `${n(scored)} intersections graded citywide, <a class="subaud" href="/audited">${n(fullyAudited)} fully audited</a>, ${pendingClause}one attempted every morning.`
+    : `<a class="subaud" href="/audited">${n(fullyAudited)} intersections fully audited</a>, ${pendingClause}one attempted every morning.`;
   // The coverage layer, and the two numbers the legend prints. Both are counted
   // off the discs actually drawn rather than off a roster length, so the legend
   // cannot claim a disc the map is not showing.
@@ -245,7 +245,11 @@ ${BASE_CSS}
 .covfoot{margin-top:-22px;align-items:baseline}
 .covkey{width:13px;height:13px;border-radius:50%;display:block;flex:0 0 13px}
 .covkey-on{background:rgba(20,27,45,.20);border:1.5px solid rgba(20,27,45,.55)}
-.covcount{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}
+.subaud{color:inherit;text-decoration:none;border-bottom:1px solid var(--line2)}
+.subaud:hover{border-bottom-color:var(--ink)}
+.covcount{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600;text-decoration:none;
+  border-bottom:1px solid var(--line2)}
+.covcount:hover{border-bottom-color:var(--ink)}
 .covnote{flex-basis:100%;color:var(--dim);line-height:1.6;max-width:640px}
 /* The layer toggle, sitting in the map's own control column. */
 .covtoggle{font-family:Poppins,system-ui,sans-serif;font-size:11.5px;font-weight:600;
@@ -469,9 +473,9 @@ ${
     ? `
 <p class="mapfoot covfoot" id="covlegend">
   <span class="key"><i class="covkey covkey-on"></i>Audited coverage: the ${coverRadiusM}m core around each fully audited corner. One more every morning.</span>
-  <span class="covcount">${n(discs.length)} corner${discs.length === 1 ? "" : "s"}${
+  <a class="covcount" href="/audited">${n(discs.length)} corner${discs.length === 1 ? "" : "s"}${
         coverPending ? `, ${n(coverPending)} awaiting a render` : ""
-      }</span>
+      }</a>
   <span class="covnote">Drawn per corner, never as one outline: a boundary around these would enclose thousands of crossings nobody has audited.</span>
 </p>`
     : ""
