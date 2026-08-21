@@ -506,7 +506,19 @@ if (IS_MAIN) {
   let publishNote = null;
 
   if (DO_PUBLISH) {
-    const staged = readdirSync(STAGE).filter((f) => f.endsWith(".json") && !f.startsWith("_") && !f.includes(".pending."));
+    // stagedLetterFiles, not a fourth hand-rolled copy of its filter. The copy
+    // that used to be here omitted the leading-dot check, so every scratch file
+    // this tool writes into the staging directory was published as a letter:
+    // `.keys-*.json` from the bulk reads and `.bulk-*.json` from the previous
+    // publish, 11 of them on the first run, stored under keys like
+    // `letter:verified:.keys-1140589900`. Nothing could serve them, because no
+    // corner has a slug beginning with a dot, but they were counted, and the
+    // ledger reported 127 letters where 116 existed.
+    //
+    // tools/letters.test.mjs has asserted that stagedLetterFiles rejects
+    // `.keys-123.json` since the day it was written. The test was right and
+    // nothing called the function it was testing.
+    const staged = stagedLetterFiles(readdirSync(STAGE));
     const prior = existsSync(join(STAGE, "_results.json"))
       ? JSON.parse(readFileSync(join(STAGE, "_results.json"), "utf8"))
       : results;

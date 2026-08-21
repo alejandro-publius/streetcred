@@ -321,3 +321,33 @@ test("no render run bills nothing rather than zero", async () => {
   const { imagerySpend } = await import("./promote_corners.mjs");
   assert.equal(imagerySpend([]), null, "null is absent; 0 would claim a run happened and cost nothing");
 });
+
+// ------------------------------------------ the publish path's own filter
+//
+// stagedLetterFiles has rejected `.keys-123.json` since the day it was written,
+// and the publish path did not call it. It carried a hand-rolled copy of the
+// same filter that omitted the leading-dot check, so on the first real publish
+// 11 scratch files went to KV as `letter:verified:.keys-1140589900` and the
+// ledger reported 127 letters where 116 existed. The test was right. Nothing
+// ran the function it was testing.
+
+test("every scratch file this tool writes into the staging directory is excluded", () => {
+  const dir = [
+    "church-and-duboce.json",
+    "6th-market.pending.json",
+    "_results.json",
+    "_runs.json",
+    ".keys-1140589900.json",   // written by bulkGet, one per chunked read
+    ".bulk-0.json",            // written by the previous publish, one per batch
+    ".DS_Store",
+  ];
+  assert.deepEqual(stagedLetterFiles(dir), ["church-and-duboce.json"]);
+});
+
+test("the ledger counts what the publish path selected, not what the directory holds", () => {
+  const dir = ["a.json", "b.json", ".keys-1.json", ".bulk-0.json", "_runs.json", "c.pending.json"];
+  const selected = stagedLetterFiles(dir);
+  assert.equal(selected.length, 2);
+  const l = buildLedger([], { letters: selected.length });
+  assert.equal(l.letters, 2, "not 4, which is what counting the raw listing gave");
+});
