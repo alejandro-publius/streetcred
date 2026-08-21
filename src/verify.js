@@ -466,6 +466,26 @@ export function verifyLetter(text, inputs) {
     }
   }
 
+  // 4b-ii. A count butting against the literal 311.
+  //
+  // "30 311 reports" has no visual separation at any font size and reads as
+  // 30311. It came from the stored hazard details, which the prompt handed over
+  // verbatim, so the model was copying rather than inventing: 22 of the 124
+  // letters published on 2026-08-21 carried it, 41 times. buildLetterPrompt now
+  // rephrases at the seam, and this rule is what stops a draft that reaches for
+  // the old form anyway.
+  //
+  // Bounded to the literal 311 immediately after a count. "86 street-condition
+  // 311 reports" is fine and must stay fine, because the words between the
+  // number and the 311 are the separation.
+  for (const m of body.matchAll(/\b\d[\d,]*\s+311\b/g)) {
+    failures.push({
+      token: m[0],
+      kind: "collision",
+      reason: `"${m[0]}" reads as one number; write "311 reports: N" or put a word between the count and the 311`,
+    });
+  }
+
   // 4c. Is the letter finished?
   //
   // 25 of the 125 letters published on 2026-08-21 stopped mid-sentence, around

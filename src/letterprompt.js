@@ -12,6 +12,24 @@
 import { supervisorFor, resolvedDistrict, addresseeFor } from "./data.js";
 import { SCORE_CAVEAT } from "./score.js";
 
+// "30 311 reports in 12 months" reads as one number.
+//
+// The collision is not the model's invention. It is the stored hazard detail,
+// handed to the prompt verbatim, and 22 of the 124 letters published on
+// 2026-08-21 reproduced it faithfully 41 times. A count immediately followed by
+// the literal 311 has no visual separation at any font size, and "30311" is
+// what a reader sees.
+//
+// Fixed at the seam rather than by asking the model to be careful: the phrasing
+// the model is handed is the phrasing it copies. The verifier carries the same
+// rule so a draft that reintroduces it is still refused.
+export function decollide311(text) {
+  return String(text || "").replace(
+    /\b(\d[\d,]*)\s+311\s+(reports?)\b/gi,
+    (_m, n, word) => `311 ${word.toLowerCase()}: ${n}`,
+  );
+}
+
 export function buildLetterPrompt(c, ctx) {
   const supervisor = supervisorFor(resolvedDistrict(c, ctx.stats));
   const headlines = (ctx.news?.items || [])
@@ -48,10 +66,10 @@ export function buildLetterPrompt(c, ctx) {
         .map((h) => {
           const what = h.label.toLowerCase();
           if (h.verdict === "CONFIRMED")
-            return `- The automated visual audit flagged ${what} in the Street View photograph, and city records corroborate it: ${h.detail}. You may present this as documented.`;
+            return `- The automated visual audit flagged ${what} in the Street View photograph, and city records corroborate it: ${decollide311(h.detail)}. You may present this as documented.`;
           if (h.verdict === "CANDIDATE")
             return `- The audit also flagged ${what}, which does not yet appear in city records. Present this as an observation from the photograph only. Never state it as established fact.`;
-          return `- City records show ${h.detail} relating to ${what}, although the visual audit did not find it in the photograph. Attribute this to the records, not to the audit.`;
+          return `- City records show ${decollide311(h.detail)} relating to ${what}, although the visual audit did not find it in the photograph. Attribute this to the records, not to the audit.`;
         })
         .join("\n")
     : "- No visual audit findings are available for this corner. Do not describe any audit.";
@@ -95,7 +113,7 @@ ${scoreLine}${longevityLine}${hazardLines}
 ${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident testimony."}
 - The request: fund ${c.fix.name}, estimated ${c.fix.cost}, through the ${c.fix.grant}.
 
-Rules: plain civic English. Under 220 words. Address only ${addressee}. Distinguish clearly between what city records document and what the visual audit merely observed. Never present an observation as a documented fact. No em dashes anywhere. No placeholders in brackets. Sign off as "${signoff}". Return only the letter text.`;
+Rules: never write a count immediately before the literal 311, because the two run together and read as a single number; write "311 reports: 30" or put a word between them as in "street-condition 311 reports". Plain civic English. Under 220 words. Address only ${addressee}. Distinguish clearly between what city records document and what the visual audit merely observed. Never present an observation as a documented fact. No em dashes anywhere. No placeholders in brackets. Sign off as "${signoff}". Return only the letter text.`;
 
   return { prompt, addressee, supervisor, signoff, district: dist, quote, headlines };
 }
