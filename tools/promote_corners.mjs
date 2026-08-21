@@ -54,6 +54,16 @@ const DO_PUBLISH = has("--publish");
 // offline run must not quietly exceed what the site would allow itself.
 const DAILY_GENERATION_CAP = 25;
 
+// Retry shape. MAX_ATTEMPTS covers both a legibility retry and a quota retry,
+// which is why it is 3 rather than 2: a corner that loses one attempt to a rate
+// window still gets its two real tries at the gate.
+const MAX_ATTEMPTS = Number(process.env.RENDER_MAX_ATTEMPTS || 3);
+const SPACING_MS = Number(process.env.RENDER_SPACING_MS || 20_000);
+
+// A named subset, for retrying exactly the corners a quota window cost without
+// paying again for the ones that already published.
+const ONLY = (argOf("only", "") || "").split(",").map((x) => x.trim()).filter(Boolean);
+
 const kv = (a) =>
   execFileSync("npx", ["wrangler", ...a], {
     cwd: ROOT,
@@ -87,6 +97,47 @@ function accessToken() {
 
 // Eligible: enriched, has a stored Street View frame to condition on, and has
 // NO stored fix render. Worst first by the same points the board ranks on.
+// Can this corner's render ever be verified?
+//
+// The gate is PAIRED: it compares each region on the render against the same
+// region on the source frame, and reports "unchecked" wherever the source was
+// not legible. So a corner whose source frame reads nothing in every region can
+// never produce a passing render. Not "is unlikely to": cannot. The source is
+// fixed in KV and tesseract is deterministic, so the verdict is decided before
+// a single token is spent.
+//
+// 6th-and-mission is exactly that corner. Its source watermark reads nothing
+// and its signage band reads OCR noise, so both signals abstain and the gate
+// returns "abstain" no matter what the model draws. It was re-rendered twice on
+// 2026-08-20 and held both times, and a third render would have held too.
+//
+// Refusing here turns money into a sentence. The corner is not broken and the
+// model is not at fault: the SOURCE PHOTOGRAPH is unreadable, and the fix is a
+// better Street View frame, not another render.
+export function sourceIsCheckable(before, expectStreets) {
+  const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const watermark = norm(before?.watermark).includes("google");
+  const street = (expectStreets || []).some((n) => norm(before?.signage).includes(norm(n)));
+  return {
+    checkable: watermark || street,
+    watermark,
+    street,
+    why: watermark || street
+      ? ""
+      : "the source frame is unreadable in every checked region, so no render of it can be verified; " +
+        "re-fetch the Street View frame rather than re-rendering",
+  };
+}
+
+// Exponential backoff with a floor, for a quota that is a short rate window
+// rather than a daily cap. Probed 2026-08-20: a call that returned RESOURCE
+// EXHAUSTED succeeded on a later attempt with no quotaId in the error, which is
+// the signature of a per-minute limit and not an allowance that is gone.
+export const backoffMs = (attempt, base = 20_000, cap = 240_000) =>
+  Math.min(cap, base * Math.pow(2, Math.max(0, attempt - 1)));
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // Which staged files become KV entries.
 //
 // The same guarantee stagedLetterFiles gives the letter fleet, for the same
@@ -210,11 +261,18 @@ export function imagerySpend(rows) {
   };
 }
 
-export function eligible(meta, keyNames, sweepRows, limit) {
+export function eligible(meta, keyNames, sweepRows, limit, only = []) {
   const enr = new Set(meta.enriched || []);
   const today = new Set(keyNames.filter((n) => /^img:.+:today$/.test(n)).map((n) => n.split(":")[1]));
   const fix = new Set(keyNames.filter((n) => /^img:.+:fix$/.test(n)).map((n) => n.split(":")[1]));
   const pool = [...enr].filter((s) => today.has(s) && !fix.has(s));
+  // A named subset picks out of the SAME pool rather than around it. The skip
+  // on an existing fix render is what makes this tool idempotent, and a retry
+  // must not be able to overwrite a render that already published.
+  if (only.length) {
+    const want = new Set(only);
+    return pool.filter((s) => want.has(s)).sort((a, b) => a.localeCompare(b));
+  }
   const pts = (s) => sweepRows[s]?.points ?? 0;
   return pool.sort((a, b) => pts(b) - pts(a) || a.localeCompare(b)).slice(0, limit);
 }
@@ -309,7 +367,11 @@ if (IS_MAIN) {
   const rows = {};
   for (const r of Array.isArray(sweep) ? sweep : Object.values(sweep)) if (r?.slug) rows[r.slug] = r;
 
-  const picks = eligible(meta, keyNames, rows, N);
+  // A named subset overrides the ranked selection. eligible() skips corners that
+  // already have a stored fix render, which is what makes the tool idempotent,
+  // and a retry of corners a quota window cost has to bypass the ranking
+  // without bypassing that skip.
+  const picks = ONLY.length ? eligible(meta, keyNames, rows, 0, ONLY) : eligible(meta, keyNames, rows, N);
   console.log(`model:  ${MODEL} on Vertex locations/${LOCATION}, ADC, no api key`);
   console.log(`picks:  ${picks.length} enriched corners with a frame and no fix render, worst first`);
   for (const s of picks) console.log(`  ${s.padEnd(26)} ${rows[s]?.points ?? "?"} points`);
@@ -364,16 +426,36 @@ if (IS_MAIN) {
       const prompt = FIX_PROMPT(corner.name, corner.fix?.name || "continental crosswalks and corner daylighting");
 
       const before = readRegions(framePath, `${slug}_in`);
+      const wantStreets = streetNames(corner.name);
+
+      // Refuse before spending. A corner whose source frame is unreadable in
+      // every checked region cannot produce a passing render, so a call here
+      // buys a hold that was already decided.
+      const pre = sourceIsCheckable(before, wantStreets);
+      if (!pre.checkable) {
+        results.push({ slug, state: "held", why: `unrenderable: ${pre.why}`, usd: 0, promptTokens: 0, outputTokens: 0, preflight: true });
+        console.log(`  [${i + 1}/${picks.length}] ${slug}: SKIPPED before spending, ${pre.why.slice(0, 80)}`);
+        continue;
+      }
+
       let done = null;
       let tok = { promptTokens: 0, outputTokens: 0 };
       let held = null;
 
-      for (let attempt = 1; attempt <= 2 && !done; attempt += 1) {
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS && !done; attempt += 1) {
         let out;
         try {
           out = await render(token, frame.toString("base64"), prompt);
         } catch (e) {
           held = `render error: ${e.message}`;
+          // A quota refusal is a rate window, not a spent allowance. Back off
+          // and try again rather than burning the corner on one bad minute.
+          if (/exhaust|quota|RESOURCE/i.test(String(e.message)) && attempt < MAX_ATTEMPTS) {
+            const wait = backoffMs(attempt);
+            console.log(`      quota refusal on attempt ${attempt}, waiting ${Math.round(wait / 1000)}s`);
+            await sleep(wait);
+            continue;
+          }
           break;
         }
         tok = { promptTokens: tok.promptTokens + out.promptTokens, outputTokens: tok.outputTokens + out.outputTokens };
@@ -387,7 +469,7 @@ if (IS_MAIN) {
           // only compares the upper band against text it independently knows
           // belongs there, and with no street names supplied it abstained every
           // time, so the gate had been running on the watermark alone.
-          expectStreets: streetNames(corner.name),
+          expectStreets: wantStreets,
         });
         if (gate.verdict === "pass") {
           writeFileSync(staged, Buffer.from(out.b64, "base64"));
@@ -396,6 +478,10 @@ if (IS_MAIN) {
           held = `${gate.reasons.join("; ")}`;
         }
       }
+
+      // Spacing between corners, on top of the per attempt backoff above. The
+      // five quota holds on 2026-08-20 all landed inside the same minute.
+      if (i < picks.length - 1) await sleep(SPACING_MS);
 
       const usd = Math.round(((tok.promptTokens / 1e6) * 0.3 + (tok.outputTokens / 1e6) * 2.5) * 1e6) / 1e6;
       if (done) {

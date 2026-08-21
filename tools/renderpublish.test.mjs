@@ -131,3 +131,42 @@ test("the ledger names its own provenance, so nothing reads it as an audit", () 
   assert.equal(l.auth, "application default credentials, no api key");
   assert.match(l.basis, /held renders are counted/);
 });
+
+// -------------------------------------------- refusing to spend on a hold
+
+test("a corner whose source frame is unreadable is refused before spending", async () => {
+  const { sourceIsCheckable } = await import("./promote_corners.mjs");
+  // 6th-and-mission, verbatim: the watermark band reads nothing and the signage
+  // band reads OCR noise off a clean photograph.
+  const r = sourceIsCheckable(
+    { watermark: "", signage: "N F Ne as. Ce rst aa a aw ap Dp Po I ee 4 aeig cf ns x ics Zu son" },
+    ["MISSION"],
+  );
+  assert.equal(r.checkable, false);
+  assert.match(r.why, /re-fetch the Street View frame rather than re-rendering/);
+});
+
+test("one readable signal is enough to be worth rendering", async () => {
+  const { sourceIsCheckable } = await import("./promote_corners.mjs");
+  assert.equal(sourceIsCheckable({ watermark: "Google", signage: "noise" }, ["MISSION"]).checkable, true);
+  assert.equal(sourceIsCheckable({ watermark: "", signage: "MISSION ST" }, ["MISSION"]).checkable, true);
+  assert.equal(sourceIsCheckable({ watermark: "", signage: "" }, []).checkable, false);
+});
+
+test("backoff grows and is capped", async () => {
+  const { backoffMs } = await import("./promote_corners.mjs");
+  assert.equal(backoffMs(1, 1000, 60_000), 1000);
+  assert.equal(backoffMs(2, 1000, 60_000), 2000);
+  assert.equal(backoffMs(3, 1000, 60_000), 4000);
+  assert.equal(backoffMs(20, 1000, 60_000), 60_000, "capped, never unbounded");
+});
+
+test("a named retry cannot overwrite a render that already published", async () => {
+  const { eligible } = await import("./promote_corners.mjs");
+  const meta = { enriched: ["a", "b", "c"] };
+  const keys = ["img:a:today", "img:b:today", "img:c:today", "img:b:fix"];
+  // b already has a fix render. Naming it explicitly must not resurrect it:
+  // the whole stage is skip-existing and idempotent.
+  assert.deepEqual(eligible(meta, keys, {}, 0, ["a", "b"]), ["a"]);
+  assert.deepEqual(eligible(meta, keys, {}, 0, ["b"]), [], "naming a published corner selects nothing");
+});
