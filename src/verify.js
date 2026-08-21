@@ -34,7 +34,7 @@ const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").tr
 // Everything the letter is permitted to assert, assembled from the same objects
 // the prompt was built from. If a fact is not in here, the letter may not state
 // it, which is the entire contract.
-export function buildInputSet({ corner, stats, score, news, timeline, supervisor, voices, district, hazards }) {
+export function buildInputSet({ corner, stats, score, news, timeline, supervisor, voices, district, hazards, signoff }) {
   const numbers = new Set();
   const addNum = (n) => {
     const v = typeof n === "number" ? n : parseInt(n, 10);
@@ -199,6 +199,11 @@ export function buildInputSet({ corner, stats, score, news, timeline, supervisor
     pressCount: items.length,
     citedPressCount,
     historicalHeadlines,
+    // Armed only when the caller supplies it, same as the supervisor rule
+    // above. verifyLetter runs on single-sentence fragments in the test suite
+    // and on whole letters in production, and only the second kind can be
+    // required to be finished.
+    signoff: signoff || null,
     displayed,
   };
 }
@@ -459,6 +464,32 @@ export function verifyLetter(text, inputs) {
         });
       }
     }
+  }
+
+  // 4c. Is the letter finished?
+  //
+  // 25 of the 125 letters published on 2026-08-21 stopped mid-sentence, around
+  // 500 to 600 characters, with no request, no closing and no signoff. One
+  // ended on the words "No exposure". Every one of them passed every rule in
+  // this file, because not one rule asked whether the letter was over.
+  //
+  // The cause was upstream: Gemini 2.5 spends thinking tokens out of
+  // maxOutputTokens, the draft hit the ceiling, and the tool returned the
+  // partial text without reading finishReason. That is fixed where it happened.
+  // This rule exists because the gate should not have depended on it being
+  // fixed: a truncated letter is a letter that does not make its request, and
+  // an evidence product must not serve one whatever the vendor did.
+  //
+  // The signoff is the right terminator to test. The prompt names it exactly
+  // and a complete letter always ends on it, so "ends with the signoff" is a
+  // single check for "reached the end" that no punctuation heuristic matches:
+  // four of the 25 ended on a full stop and were still truncated.
+  if (inputs.signoff && !body.trim().endsWith(inputs.signoff)) {
+    failures.push({
+      token: body.trim().slice(-60),
+      kind: "truncated",
+      reason: `this letter does not end with its signoff, "${inputs.signoff}", so it stopped before it made its request`,
+    });
   }
 
   // 5, 6 and 7. Lane consistency. One pass over the sentences, because all

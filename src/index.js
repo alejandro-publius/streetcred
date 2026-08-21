@@ -657,7 +657,7 @@ async function getLetter(c, env, ctx) {
   // Built by the shared module so the Worker and the offline generator in
   // tools/generate_letters.mjs cannot drift. Everything this used to compute
   // inline lives there now, unchanged.
-  const { prompt, supervisor, district: dist, quote, headlines } = buildLetterPrompt(c, ctx);
+  const { prompt, supervisor, district: dist, quote, headlines, signoff } = buildLetterPrompt(c, ctx);
 
 
   // 3.7-flash returns UNAVAILABLE under load often enough that a single attempt
@@ -720,6 +720,9 @@ async function getLetter(c, env, ctx) {
     news: ctx.news,
     timeline: ctx.timeline,
     supervisor: dist ? supervisor : null,
+    // Arms the completeness rule. A letter served to a visitor must have
+    // reached its request, and the signoff is where a finished letter ends.
+    signoff,
     // The voices lane was already fetched to pick the prompt's quote. Passing
     // it here is what lets the verifier refuse a letter that describes what
     // residents said at a corner where nobody said anything.

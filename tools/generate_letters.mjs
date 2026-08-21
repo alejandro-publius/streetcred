@@ -138,7 +138,13 @@ async function vertexDraft(token, prompt) {
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 3072 },
+      // Gemini 2.5 spends thinking tokens out of maxOutputTokens, so the
+      // ceiling is shared between reasoning and the letter. At 3072 the model
+      // ran out mid-sentence on 25 of 125 drafts, all of them stopping around
+      // 500 to 600 characters of visible text. A 220 word letter needs a few
+      // hundred output tokens; the rest of this is headroom for the thinking
+      // that is charged against the same budget.
+      generationConfig: { temperature: 0.4, maxOutputTokens: 8192 },
     }),
   });
   const d = await r.json().catch(() => null);
@@ -148,10 +154,18 @@ async function vertexDraft(token, prompt) {
     e.status = r.status;
     throw e;
   }
-  const text = (d?.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+  const cand = d?.candidates?.[0];
+  const text = (cand?.content?.parts || []).map((p) => p.text || "").join("").trim();
+  // finishReason was read and thrown away, which is why a truncated draft was
+  // indistinguishable from a finished one all the way through the verifier and
+  // onto the live site. MAX_TOKENS is not a draft, it is a fragment, and the
+  // caller has to be able to tell the difference in order to retry.
+  const finish = cand?.finishReason || null;
   const u = d?.usageMetadata || {};
   return {
     text,
+    finishReason: finish,
+    truncated: Boolean(finish) && finish !== "STOP",
     promptTokens: u.promptTokenCount || 0,
     outputTokens: (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0),
   };
@@ -390,6 +404,7 @@ if (IS_MAIN) {
         hazards: ctx.hazards,
         district,
         supervisor: district ? built.supervisor : null,
+        signoff: built.signoff,
       });
 
       let text = null;
@@ -408,6 +423,13 @@ if (IS_MAIN) {
             promptTokens: tokens.promptTokens + out.promptTokens,
             outputTokens: tokens.outputTokens + out.outputTokens,
           };
+          // A draft that hit the ceiling is a fragment. Say so rather than
+          // handing it to the verifier as though the model had finished, and
+          // let the retry above have another go at it.
+          if (out.truncated) {
+            check = { ok: false, version: VERIFY_VERSION, failures: [{ token: "", kind: "truncated", reason: `the model stopped early with finishReason ${out.finishReason}` }] };
+            continue;
+          }
         } catch (e) {
           err = e.message;
           break;
