@@ -4,6 +4,11 @@
 //   node tools/audited_live.mjs
 //   STREETCRED_ORIGIN=https://preview... node tools/audited_live.mjs
 //
+// Run it through tools/live_suite.sh, or with --test-force-exit. Without that
+// flag the runner prints every result and then never exits: undici's connection
+// pool holds the process open after the last assertion and these suites open
+// dozens of sockets.
+//
 // Read only. Every request is a GET and none of them can cause a draft, a
 // render or a write.
 //

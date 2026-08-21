@@ -3,6 +3,11 @@
 //   node tools/audited_page_live.mjs
 //   STREETCRED_ORIGIN=https://streetcred-preview... node tools/audited_page_live.mjs
 //
+// Run it through tools/live_suite.sh, or with --test-force-exit. Without that
+// flag the runner prints every result and then never exits: undici's connection
+// pool holds the process open after the last assertion and these suites open
+// dozens of sockets.
+//
 // Read only. Every request is a GET.
 
 import assert from "node:assert/strict";
@@ -105,7 +110,10 @@ test("the page renders whole: no loading fallbacks, no bare headers", () => {
 
 test("the count the homepage publishes and this page's count agree", async () => {
   const home = await fetch(`${ORIGIN}/`).then((r) => r.text());
-  const legend = (home.match(/class="covcount">(\d+) corner/) || [])[1];
+  // Tag-agnostic on purpose. The count became a link to this very page, and an
+  // extractor keyed to `<span class="covcount">` reported undefined the moment
+  // it did, which reads as a disagreement rather than as a stale regex.
+  const legend = (home.match(/class="covcount"[^>]*>(\d+) corner/) || [])[1];
   assert.equal(Number(counts[0]), Number(legend), `audited index says ${counts[0]}, homepage coverage legend says ${legend}`);
   assert.equal(Number(counts[0]), (meta.audited || []).length, "and both must equal the stored roster");
 });
