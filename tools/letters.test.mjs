@@ -351,3 +351,16 @@ test("the ledger counts what the publish path selected, not what the directory h
   const l = buildLedger([], { letters: selected.length });
   assert.equal(l.letters, 2, "not 4, which is what counting the raw listing gave");
 });
+
+test("a corner that regresses has its old verified letter withdrawn", () => {
+  // The mirror of the stale-pending cleanup, and the more dangerous direction.
+  // 6th-market passed before the completeness rule existed and failed after it.
+  // Its old truncated letter was still staged, so the next publish would have
+  // written it back to KV: a letter the current gate rejects, still serving,
+  // not because anything overrode the gate but because nothing withdrew the
+  // old answer.
+  const after = ["6th-market.pending.json", "other.json", "_runs.json"];
+  const selected = stagedLetterFiles(after);
+  assert.deepEqual(selected, ["other.json"]);
+  assert.ok(!selected.includes("6th-market.json"), "the regressed corner must not publish");
+});

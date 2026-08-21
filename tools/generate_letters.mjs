@@ -478,6 +478,13 @@ if (IS_MAIN) {
         const reasons = [...new Map(check.failures.map((f) => [f.kind, f])).values()].map(
           (f) => `${f.kind}: ${f.reason}`,
         );
+        // The mirror of the cleanup on the passing branch, and it matters more.
+        // A corner that passed under the old rules and fails under the new ones
+        // still had its verified letter sitting in the staging directory, so
+        // the next publish would put it straight back into KV. That is how a
+        // letter the current gate rejects keeps serving: not because anything
+        // overrode the gate, but because nothing withdrew the old answer.
+        rmSync(join(STAGE, `${slug}.json`), { force: true });
         writeFileSync(
           join(STAGE, `${slug}.pending.json`),
           // The rejected draft is kept beside the reasons. Without it a pending
