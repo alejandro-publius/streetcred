@@ -54,6 +54,12 @@ const DO_PUBLISH = has("--publish");
 // offline run must not quietly exceed what the site would allow itself.
 const DAILY_GENERATION_CAP = 25;
 
+// Cloudflare's own message for a spent daily KV write allowance, which is
+// account wide on the free plan and resets at 00:00 UTC. An ordinary operating
+// condition, not a fault, and worth recognising by name so the tool can say so
+// instead of surfacing a stringified stderr dump.
+export const KV_CAP_SPENT = /free usage limit for this operation|code: *10048/i;
+
 // Retry shape. MAX_ATTEMPTS covers both a legibility retry and a quota retry,
 // which is why it is 3 rather than 2: a corner that loses one attempt to a rate
 // window still gets its two real tries at the gate.
@@ -138,6 +144,48 @@ export const backoffMs = (attempt, base = 20_000, cap = 240_000) =>
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ------------------------------------------- the render log, accumulated
+//
+// Two files, for the same reason the letter fleet keeps two. `_results.json` is
+// per corner state, latest run wins. `_runs.json` is append only, one entry per
+// invocation, and it is where spend lives: token counts are only knowable while
+// the response is in hand, and a corner re-rendered tomorrow does not unspend
+// the calls made on it today.
+
+const RENDER_RESULTS = join(STAGE, "_results.json");
+const RENDER_RUNS = join(STAGE, "_runs.json");
+
+export function readRenderResults() {
+  try {
+    return JSON.parse(readFileSync(RENDER_RESULTS, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+export function readRenderRuns() {
+  try {
+    return JSON.parse(readFileSync(RENDER_RUNS, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+export function mergeRenderResults(prior, fresh) {
+  const by = new Map((prior || []).map((r) => [r.slug, r]));
+  for (const row of fresh || []) {
+    const was = by.get(row.slug);
+    by.set(row.slug, was ? { ...row, rerenders: (was.rerenders || 0) + 1 } : row);
+  }
+  return [...by.values()].sort((a, b) => String(a.slug).localeCompare(String(b.slug)));
+}
+
+function appendRenderRun(entry) {
+  const all = readRenderRuns();
+  all.push(entry);
+  writeFileSync(RENDER_RUNS, JSON.stringify(all, null, 2));
+}
+
 // Which staged files become KV entries.
 //
 // The same guarantee stagedLetterFiles gives the letter fleet, for the same
@@ -214,8 +262,27 @@ export function buildRenderLedger(rows, opts = {}) {
     promptTokens: 0, outputTokens: 0, estUsd: 0,
     basis: "estimated from token counts; held renders are counted, because they were billed",
   };
+  // Money comes from the run log when one is supplied, not from the per corner
+  // rows. A row only ever holds the most recent run's figures for a corner, so
+  // summing rows forgets every call an earlier pass paid for on a corner that
+  // was later re-rendered. larkin-and-myrtle is exactly that corner: held on a
+  // quota refusal at 00:20 and re-rendered at 05:54, billed both times.
+  const runs = opts.runs || null;
+  const money = runs
+    ? {
+        estUsd: Math.round(runs.reduce((a, r) => a + (r.estUsd || 0), 0) * 1e6) / 1e6,
+        promptTokens: runs.reduce((a, r) => a + (r.promptTokens || 0), 0),
+        outputTokens: runs.reduce((a, r) => a + (r.outputTokens || 0), 0),
+      }
+    : {};
   return {
     ...spend,
+    ...money,
+    ...(runs
+      ? {
+          runs: runs.map((r) => ({ at: r.at, label: r.label, corners: r.corners, estUsd: r.estUsd, ...(r.note ? { note: r.note } : {}) })),
+        }
+      : {}),
     updated: opts.now || new Date().toISOString(),
     project: opts.project || PROJECT,
     auth: "application default credentials, no api key",
@@ -515,7 +582,31 @@ if (IS_MAIN) {
         console.log(`  [${i + 1}/${picks.length}] ${slug}: HELD, ${String(held).slice(0, 90)}`);
       }
     }
-    writeFileSync(join(STAGE, "_results.json"), JSON.stringify(results, null, 2));
+    // Merge, never replace. This is burn 26 in the sibling tool, and it was
+    // fixed there and missed here: a `--only=` retry of one corner wrote its
+    // single row over the six the pass before it had recorded, and the ledger
+    // built from that file then reported one render attempted and $0.0095 for
+    // a night that attempted six and spent $0.0222. The published ledger's
+    // perRender lines were the only surviving copy.
+    //
+    // Same shape as the letter fleet: per corner state merges by slug with the
+    // latest run winning, and the money lives in an append only run log beside
+    // it, because a corner re-rendered tomorrow overwrites its own verdict but
+    // does not unspend today's calls.
+    writeFileSync(
+      join(STAGE, "_results.json"),
+      JSON.stringify(mergeRenderResults(readRenderResults(), results), null, 2),
+    );
+    appendRenderRun({
+      at: new Date().toISOString(),
+      label: ONLY.length ? `re-render of ${ONLY.length} named corners` : `pass over ${picks.length} corners`,
+      corners: results.length,
+      calls: results.reduce((a, r) => a + (r.attempt || 0), 0),
+      promptTokens: results.reduce((a, r) => a + (r.promptTokens || 0), 0),
+      outputTokens: results.reduce((a, r) => a + (r.outputTokens || 0), 0),
+      estUsd: Math.round(results.reduce((a, r) => a + (r.usd || 0), 0) * 1e6) / 1e6,
+      model: MODEL,
+    });
   }
 
   // ---------------------------------------------------------------- publish
@@ -570,8 +661,13 @@ if (IS_MAIN) {
           kv(["kv", "key", "put", `img:${slug}:fix`, "--path", join(STAGE, f), "--binding", "STORE", "--remote"]);
           kvWrites += 1;
         } catch (e) {
-          console.log(`  ${slug}: image write FAILED, ${String(e.message || e).slice(0, 90)}`);
-          publishNote = `image write failed for ${slug}`;
+          const msg = String(e.message || e);
+          const capped = KV_CAP_SPENT.test(msg);
+          console.log(`  ${slug}: image write ${capped ? "REFUSED, daily KV allowance spent" : `FAILED, ${msg.slice(0, 90)}`}`);
+          publishNote = capped
+            ? "the account's daily KV write allowance is spent; nothing was published and the staged renders are unchanged"
+            : `image write failed for ${slug}`;
+          if (capped) break;
           continue;
         }
         let prior = existing[`imgstatus:${slug}`] ?? null;
@@ -596,18 +692,46 @@ if (IS_MAIN) {
       if (statusEntries.length) {
         const bulk = join(STAGE, `.imgbulk-${statusEntries.length}.json`);
         writeFileSync(bulk, JSON.stringify(statusEntries));
-        kv(["kv", "bulk", "put", bulk, "--binding", "STORE", "--remote"]);
-        kvWrites += statusEntries.length;
+        try {
+          kv(["kv", "bulk", "put", bulk, "--binding", "STORE", "--remote"]);
+          kvWrites += statusEntries.length;
+        } catch (e) {
+          // The bytes are already stored and the record that points at them is
+          // not. That is the recoverable direction, but it must be said out
+          // loud rather than crashing: an image with no status record is
+          // invisible to the site, which is harmless and also not what the run
+          // just claimed to have done.
+          const msg = String(e.message || e);
+          published = 0;
+          publishNote = KV_CAP_SPENT.test(msg)
+            ? "the image bytes were stored but the status records were refused: the daily KV write allowance is spent. Nothing is visible on the site until a republish after the 00:00 UTC reset."
+            : `status write failed: ${msg.slice(0, 160)}`;
+          console.log(`\nSTATUS NOT WRITTEN: ${publishNote}`);
+        }
       }
     }
 
     // The ledger, one record holding a line per render, held ones included.
-    const ledger = buildRenderLedger(rows, { now: new Date().toISOString() });
+    const ledger = buildRenderLedger(rows, { now: new Date().toISOString(), runs: readRenderRuns() });
     const lf = join(STAGE, ".renderledger.json");
     writeFileSync(lf, JSON.stringify([{ key: "budget:renders", value: JSON.stringify(ledger) }]));
-    kv(["kv", "bulk", "put", lf, "--binding", "STORE", "--remote"]);
-    kvWrites += 1;
-    console.log(`  budget:renders written, ${ledger.published} published of ${ledger.attempted} attempted, $${(ledger.estUsd || 0).toFixed(4)}`);
+    try {
+      kv(["kv", "bulk", "put", lf, "--binding", "STORE", "--remote"]);
+      kvWrites += 1;
+      console.log(`  budget:renders written, ${ledger.published} published of ${ledger.attempted} attempted, $${(ledger.estUsd || 0).toFixed(4)}`);
+    } catch (e) {
+      // The daily KV write allowance is account wide and resets at 00:00 UTC.
+      // Hitting it is an ordinary operating condition on the free plan, not a
+      // fault, and it used to end this tool in a raw Node stack trace with the
+      // real message buried in a stringified stderr dump. Say what happened and
+      // what it means: the staged state on disk is correct and republishing
+      // after the reset is all that is needed.
+      const msg = String(e.message || e);
+      publishNote = KV_CAP_SPENT.test(msg)
+        ? "the account's daily KV write allowance is spent, so the ledger was not updated; the staged results are correct and a republish after the 00:00 UTC reset will carry them"
+        : `ledger write failed: ${msg.slice(0, 160)}`;
+      console.log(`\nLEDGER NOT WRITTEN: ${publishNote}`);
+    }
   }
 
   const src = results.length

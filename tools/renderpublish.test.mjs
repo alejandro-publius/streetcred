@@ -185,3 +185,67 @@ test("the render ledger says when the calls happened, not when it was rebuilt", 
   const undated = imagerySpend([{ slug: "a", state: "passed", usd: 0.006 }]);
   assert.equal(undated.at, null, "no stamp is null, not a guess at now");
 });
+
+// ------------------------------------ the render log accumulates across runs
+//
+// Burn 26 in the sibling tool, fixed there and missed here. A `--only=` retry
+// of one corner wrote its single row over the six the pass before it recorded,
+// and the ledger built from that file reported one render attempted and $0.0095
+// for a night that attempted six and spent $0.0222. The perRender lines of the
+// already-published ledger were the only surviving copy of the other five.
+
+test("a subset re-render merges into the log instead of replacing it", async () => {
+  const { mergeRenderResults } = await import("./promote_corners.mjs");
+  const first = [
+    { slug: "a", state: "held", usd: 0.003 },
+    { slug: "b", state: "passed", usd: 0.009 },
+    { slug: "c", state: "held", usd: 0 },
+  ];
+  const rerun = [{ slug: "a", state: "held", why: "watermark", usd: 0.0095 }];
+  const merged = mergeRenderResults(first, rerun);
+  assert.equal(merged.length, 3, "the corners the retry did not touch survive");
+  assert.deepEqual(merged.map((r) => r.slug), ["a", "b", "c"]);
+  assert.equal(merged.find((r) => r.slug === "a").why, "watermark", "the retry's verdict wins");
+  assert.equal(merged.find((r) => r.slug === "a").rerenders, 1);
+  assert.equal(merged.find((r) => r.slug === "b").rerenders, undefined);
+});
+
+test("a re-render adds to the render bill rather than replacing it", async () => {
+  const { buildRenderLedger } = await import("./promote_corners.mjs");
+  // The merged row for a re-rendered corner holds only the LATEST spend, so a
+  // ledger that sums rows loses the first attempt. The run log is what keeps it.
+  const rows = [
+    { slug: "a", state: "held", usd: 0.0095, promptTokens: 3735, outputTokens: 3360 },
+    { slug: "b", state: "passed", usd: 0.0095 },
+  ];
+  const runs = [
+    { at: "2026-08-21T00:20:34.803Z", label: "first pass", corners: 6, estUsd: 0.012697, promptTokens: 4992, outputTokens: 4480 },
+    { at: "2026-08-21T05:54:28.577Z", label: "re-render", corners: 1, estUsd: 0.009521, promptTokens: 3735, outputTokens: 3360 },
+  ];
+  const l = buildRenderLedger(rows, { runs });
+  assert.equal(l.estUsd, 0.022218, "both runs are billed");
+  assert.equal(l.promptTokens, 8727);
+  assert.equal(l.runs.length, 2, "and the runs are itemised rather than only summed");
+  // Counts still come from the rows, which are the current state of the fleet.
+  assert.equal(l.attempted, 2);
+  assert.equal(l.published, 1);
+});
+
+test("without a run log the ledger falls back to the rows", async () => {
+  const { buildRenderLedger } = await import("./promote_corners.mjs");
+  const l = buildRenderLedger([{ slug: "a", state: "passed", usd: 0.006 }]);
+  assert.equal(l.estUsd, 0.006);
+  assert.equal(l.runs, undefined);
+});
+
+test("a spent daily KV allowance is recognised as a condition, not a crash", async () => {
+  // Cloudflare's free plan allows 1,000 KV writes a day, account wide,
+  // resetting 00:00 UTC. Hitting it is an ordinary operating condition. The
+  // publish path used to surface it as an unhandled Node exception with the
+  // real message buried inside a stringified stderr dump.
+  const { KV_CAP_SPENT } = await import("./promote_corners.mjs");
+  assert.ok(KV_CAP_SPENT.test("your account has reached the free usage limit for this operation for today [code: 10048]"));
+  assert.ok(KV_CAP_SPENT.test("something failed code: 10048"));
+  assert.ok(!KV_CAP_SPENT.test("bulk get keys: 'You can request a maximum of 100 keys' [code: 10029]"), "a different cap is a different message");
+  assert.ok(!KV_CAP_SPENT.test("Resource has been exhausted (e.g. check quota)."), "a model quota is not a KV cap");
+});
