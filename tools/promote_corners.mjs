@@ -18,7 +18,7 @@
 // why the gate is paired against the source frame rather than absolute.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkLegibility, ocr, REGIONS } from "./lib/legibility.mjs";
@@ -87,6 +87,100 @@ function accessToken() {
 
 // Eligible: enriched, has a stored Street View frame to condition on, and has
 // NO stored fix render. Worst first by the same points the board ranks on.
+// Which staged files become KV entries.
+//
+// The same guarantee stagedLetterFiles gives the letter fleet, for the same
+// reason. A render that passed the gate is written to `{slug}.fix.jpg`; a
+// render that was held leaves `{slug}.attempt1.jpg` and `{slug}.attempt2.jpg`
+// behind for diagnosis and no `.fix.jpg` at all. Selecting on that suffix is
+// what makes "a held render cannot publish" structural rather than a promise
+// that the loop above got its branches right.
+//
+// The leading-dot and leading-underscore exclusions are not decoration either.
+// The letter publish path carried a hand-rolled copy of its own filter that
+// omitted the dot check, and on its first real run it published 11 of the
+// tool's own scratch files to KV as letters. One filter, exported, tested, and
+// called by the publish path itself.
+export function stagedRenderFiles(names) {
+  return (names || []).filter(
+    (f) => f.endsWith(".fix.jpg") && !f.startsWith(".") && !f.startsWith("_"),
+  );
+}
+
+export const slugOfRender = (f) => f.replace(/\.fix\.jpg$/, "");
+
+// The imgstatus record a promoted render produces, merged onto whatever the
+// corner already had.
+//
+// Merged, not replaced: a corner that somehow already carries a hazards state
+// must not lose it because a fix render published. And `states` is a set, so
+// republishing the same render twice cannot produce ["fix","fix"].
+export function promotedStatus(existing, { at, model, via, attempt, usd, gate }) {
+  const prior = existing && typeof existing === "object" ? existing : {};
+  const states = [...new Set([...(Array.isArray(prior.states) ? prior.states : []), "fix"])];
+  return {
+    ...prior,
+    status: "ready",
+    states,
+    at: at ?? Date.now(),
+    // The whole point of the field. A corner promoted out of the enriched pool
+    // is not audited and must never read as audited, whatever its imagery says.
+    provenance: "promoted-from-enriched",
+    // Per image attribution, written in the same record as the provenance so
+    // the two can never disagree about the same render.
+    render: {
+      ...(prior.render && typeof prior.render === "object" ? prior.render : {}),
+      fix: {
+        model,
+        via,
+        attempt: attempt ?? null,
+        at: new Date(at ?? Date.now()).toISOString(),
+        usd: usd ?? 0,
+        // What the legibility gate actually checked, kept beside the image. A
+        // render that passed because nothing was checkable is a different fact
+        // from one that passed a watermark comparison, and the record says which.
+        gateChecked: gate?.checked || [],
+        gateUnchecked: gate?.unchecked || [],
+        gateVerdict: gate?.verdict || null,
+      },
+    },
+  };
+}
+
+// The render ledger: one record holding a line per render.
+//
+// Deliberately its own key rather than a section of budget:gemini. That record
+// is written by tools/generate_letters.mjs, and having two tools write two
+// halves of one value is how one of them ends up clobbering the other's half.
+// Both derive from the same scratch/imagery/_results.json, so they cannot
+// disagree about the totals.
+export function buildRenderLedger(rows, opts = {}) {
+  const src = rows || [];
+  const spend = imagerySpend(src) || {
+    model: opts.model || MODEL,
+    via: `vertex:${opts.location || LOCATION}`,
+    attempted: 0, published: 0, held: 0, heldOnGate: 0, heldOnApi: 0,
+    promptTokens: 0, outputTokens: 0, estUsd: 0,
+    basis: "estimated from token counts; held renders are counted, because they were billed",
+  };
+  return {
+    ...spend,
+    updated: opts.now || new Date().toISOString(),
+    project: opts.project || PROJECT,
+    auth: "application default credentials, no api key",
+    provenance: "promoted-from-enriched",
+    // A line per render, held ones included, because a held render was billed
+    // and a ledger that lists only what shipped makes the gate look free.
+    perRender: src.map((r) => ({
+      slug: r.slug,
+      state: r.state,
+      attempt: r.attempt ?? null,
+      usd: r.usd ?? 0,
+      why: r.state === "held" ? String(r.why || "").slice(0, 200) : undefined,
+    })),
+  };
+}
+
 // What the render stage cost, for the letter ledger to carry.
 //
 // A held render is a paid render. The model was called, the tokens were spent,
@@ -331,6 +425,98 @@ if (IS_MAIN) {
     writeFileSync(join(STAGE, "_results.json"), JSON.stringify(results, null, 2));
   }
 
+  // ---------------------------------------------------------------- publish
+
+  let published = 0;
+  let kvWrites = 0;
+  let publishNote = null;
+
+  if (DO_PUBLISH) {
+    const rows = results.length
+      ? results
+      : existsSync(join(STAGE, "_results.json"))
+        ? JSON.parse(readFileSync(join(STAGE, "_results.json"), "utf8"))
+        : [];
+    const byslug = new Map(rows.map((r) => [r.slug, r]));
+
+    const files = stagedRenderFiles(readdirSync(STAGE));
+    const slugs = files.map(slugOfRender);
+    console.log(`\npublishing ${slugs.length} render${slugs.length === 1 ? "" : "s"}`);
+
+    if (slugs.length) {
+      // Read the existing imgstatus for each, so the merge cannot drop a state
+      // the corner already had.
+      const keyFile = join(STAGE, `.imgkeys-${slugs.length}.json`);
+      writeFileSync(keyFile, JSON.stringify(slugs.map((x) => `imgstatus:${x}`)));
+      let existing = {};
+      try {
+        const out = kv(["kv", "bulk", "get", keyFile, "--binding", "STORE", "--remote"]);
+        existing = JSON.parse(out.slice(out.indexOf("{")));
+      } catch (e) {
+        console.log(`  could not read existing imgstatus, treating all as new: ${String(e.message || e).slice(0, 90)}`);
+      }
+
+      // Two writes per render: the bytes, then the record that says the bytes
+      // exist and where they came from. The bytes go first. A record claiming a
+      // render that is not stored is a broken image on a live page; bytes with
+      // no record are invisible and harmless, so that is the safer order to
+      // fail in.
+      const statusEntries = [];
+      for (const f of files) {
+        const slug = slugOfRender(f);
+        const row = byslug.get(slug) || {};
+        if (row.state === "held") {
+          // Cannot happen through stagedRenderFiles, which selects only
+          // `.fix.jpg` and a held render never gets one. Asserted anyway,
+          // because "cannot happen" is what the letter publish said too.
+          console.log(`  ${slug}: REFUSING, the run log says this render was held`);
+          publishNote = `refused to publish ${slug}, held in the run log`;
+          continue;
+        }
+        try {
+          kv(["kv", "key", "put", `img:${slug}:fix`, "--path", join(STAGE, f), "--binding", "STORE", "--remote"]);
+          kvWrites += 1;
+        } catch (e) {
+          console.log(`  ${slug}: image write FAILED, ${String(e.message || e).slice(0, 90)}`);
+          publishNote = `image write failed for ${slug}`;
+          continue;
+        }
+        let prior = existing[`imgstatus:${slug}`] ?? null;
+        if (typeof prior === "string") { try { prior = JSON.parse(prior); } catch { prior = null; } }
+        statusEntries.push({
+          key: `imgstatus:${slug}`,
+          value: JSON.stringify(
+            promotedStatus(prior, {
+              at: Date.now(),
+              model: MODEL,
+              via: `vertex:${LOCATION}`,
+              attempt: row.attempt ?? null,
+              usd: row.usd ?? 0,
+              gate: row.gate || null,
+            }),
+          ),
+        });
+        published += 1;
+        console.log(`  ${slug}: published, provenance promoted-from-enriched`);
+      }
+
+      if (statusEntries.length) {
+        const bulk = join(STAGE, `.imgbulk-${statusEntries.length}.json`);
+        writeFileSync(bulk, JSON.stringify(statusEntries));
+        kv(["kv", "bulk", "put", bulk, "--binding", "STORE", "--remote"]);
+        kvWrites += statusEntries.length;
+      }
+    }
+
+    // The ledger, one record holding a line per render, held ones included.
+    const ledger = buildRenderLedger(rows, { now: new Date().toISOString() });
+    const lf = join(STAGE, ".renderledger.json");
+    writeFileSync(lf, JSON.stringify([{ key: "budget:renders", value: JSON.stringify(ledger) }]));
+    kv(["kv", "bulk", "put", lf, "--binding", "STORE", "--remote"]);
+    kvWrites += 1;
+    console.log(`  budget:renders written, ${ledger.published} published of ${ledger.attempted} attempted, $${(ledger.estUsd || 0).toFixed(4)}`);
+  }
+
   const src = results.length
     ? results
     : existsSync(join(STAGE, "_results.json"))
@@ -346,9 +532,12 @@ if (IS_MAIN) {
   console.log(`| passed the legibility gate | ${passed.length} |`);
   console.log(`| held | ${held.length} |`);
   console.log(`| estimated spend | $${usd.toFixed(4)} |`);
+  console.log(`| published to kv | ${published} |`);
+  console.log(`| kv writes consumed | ${kvWrites} |`);
   if (held.length) {
     console.log("\nheld, with reasons and the frame kept for diagnosis:");
     for (const h of held) console.log(`  ${h.slug}: ${h.why}`);
   }
+  if (publishNote) console.log(`\npublish: ${publishNote}`);
   console.log(`\nstaged at ${STAGE}`);
 }
