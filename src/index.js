@@ -2712,6 +2712,25 @@ export default {
             backoff,
           });
         }
+        // A stored letter is served before anything is drafted.
+        //
+        // This used to sit only inside the backoff branch above, so a corner
+        // with a perfectly good verified letter served it only while a backoff
+        // record happened to exist. That record has a TTL. When it expired the
+        // request fell through to drafting, drafting failed, and the catch
+        // below returned the pending state for a corner whose letter was
+        // sitting in KV the whole time. Corners went dark one at a time as
+        // their edge caches expired, which is why it looked per-corner.
+        //
+        // Drafting is the fallback, not the default. The letter lane's own
+        // claim is that it serves what passed the check; going to the model
+        // first and only remembering the stored answer on one particular
+        // failure path had that backwards.
+        const alreadyVerified = await getVerifiedLetter(env, c.slug).catch(() => null);
+        if (storedLetterServes(alreadyVerified)) {
+          return json({ ...alreadyVerified, source: "verified-cache" });
+        }
+
         // The slowest lane by far, and the one worth caching hardest: a fresh
         // draft costs several seconds of Gemini time.
         return await edgeCached(ctx, `letter-${LETTER_VERSION}-${c.slug}`, 24 * 3600, () =>
