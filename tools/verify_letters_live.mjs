@@ -73,10 +73,18 @@ for (const slug of chosen) {
     (api?.text || "").match(/^\s*Dear\s+([^,\n]+?)\s*[,:]/m) ||
     (api?.text || "").match(/^[ \t]*((?:Supervisor|Mayor)\s+[^,\n]+?)\s*[,:][ \t]*$/m);
   row.salutation = m ? m[1] : null;
+  // Surname-only is correct for both offices. "Dear Supervisor Mahmood" and
+  // "Dear Mayor Lurie" are ordinary English and src/verify.js accepts both:
+  // splitAddressee compares the office exactly and the person on either the
+  // full name or the surname. This check demanded the full name for the Mayor
+  // branch alone, so it reported FAIL for a letter addressed exactly as the
+  // real verifier requires. Same class as the "Dear" assumption fixed above:
+  // the checker was stricter than the thing it was checking.
+  const lastOf = (n) => String(n).trim().split(/\s+/).slice(-1)[0];
   row.namedIsReal = m
     ? /^Supervisor\s/.test(m[1])
-      ? [...known].some((n) => n.split(" ").slice(-1)[0] === m[1].split(" ").slice(-1)[0])
-      : m[1] === FALLBACK_OFFICIAL
+      ? [...known].some((n) => lastOf(n) === lastOf(m[1]))
+      : /^Mayor\s/.test(m[1]) && lastOf(FALLBACK_OFFICIAL) === lastOf(m[1])
     : false;
   row.supervisorMatches = api?.supervisor === local.supervisor;
 
