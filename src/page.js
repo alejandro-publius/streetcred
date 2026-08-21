@@ -426,6 +426,7 @@ export const FOOTER = () => `<footer>
   <div class="fcol">
     <span class="fh">Product</span>
     <a href="/#find">Find your corner</a>
+    <a href="/audited">Audited corners</a>
     <a href="/watchlist">Watchlist</a>
     <a href="/methodology">How it is scored</a>
   </div>
@@ -469,6 +470,7 @@ export const MASTHEAD = ({ scored = 0, active = "" } = {}) => {
   ${scored ? `<span class="mastcount">${n(scored)} SF intersections scored</span>` : ""}
   <a class="mastfind" href="/#find">Find your corner</a>
   <nav class="mastnav" aria-label="Trust surfaces">
+    ${link("/audited", "Audited", "audited")}
     ${link("/watchlist", "Watchlist", "watchlist")}
     ${link("/methodology", "Methodology", "methodology")}
     ${link("/status", "Status", "status")}
@@ -480,6 +482,7 @@ export const MASTHEAD = ({ scored = 0, active = "" } = {}) => {
   <button class="mastmenu" id="mastmenu" type="button" aria-expanded="false" aria-controls="mastnav-collapsed">Menu</button>
 </nav>
 <nav class="mastdrop" id="mastnav-collapsed" hidden aria-label="Trust surfaces">
+  ${link("/audited", "Audited", "audited")}
   ${link("/watchlist", "Watchlist", "watchlist")}
   ${link("/methodology", "Methodology", "methodology")}
   ${link("/status", "Status", "status")}

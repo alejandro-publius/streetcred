@@ -40,7 +40,7 @@ import {
   TIERS, tierOf, RANK_PAGE_SIZE, tagTiers, putCityMeta,
 } from "./city.js";
 import { evidenceLine } from "./page.js";
-import { imageryFor, provenanceOf } from "./imagery.js";
+import { imageryFor, provenanceOf, PROMOTED_FROM_ENRICHED } from "./imagery.js";
 import { corroborate, HAZARD_VERSION } from "./hazards.js";
 import { credCheck, isSafetyCoverage, CRED_VERSION } from "./cred.js";
 import { buildManifest, PUBLIC_TRIGGERS } from "./manifest.js";
@@ -54,6 +54,7 @@ import { WATCHDOG } from "./watchdog.js";
 import { projectImpact } from "./impact.js";
 import { METHODOLOGY } from "./methodology.js";
 import { WATCHLIST_PAGE } from "./watchlistpage.js";
+import { AUDITED_PAGE } from "./auditedpage.js";
 import { buildWatchlist, buildConnections, reciprocal, WATCHLIST_VERSION, runCounts } from "./press.js";
 import { commissionVoices, ingestVoices } from "./voices.js";
 import { CHANGES } from "./changes.js";
@@ -1526,6 +1527,66 @@ async function ogFor(c, env) {
   };
 }
 
+// ---------------------------------------------------------------- the audited index
+
+// Everything /audited renders, assembled from stored records only.
+//
+// The section a corner lands in is decided by the provenance field on its
+// imagery record, not by which roster list it appears in. Those two can drift,
+// and when they do the provenance is the one attached to the render itself, so
+// it is the one that decides what the page may claim about it.
+//
+// Every lane cell is read rather than inferred. "No press found" is a result
+// and it renders as one; a corner with no press record at all lands in the same
+// cell, because an absent record is not evidence of a lane that ran.
+export async function auditedIndex(env) {
+  const meta = await getCityMeta(env).catch(() => null);
+  const roster = [...new Set([...(meta?.audited || []), ...(meta?.enriched || [])])];
+  const log = (await env.STORE?.get("cotd:log", "json").catch(() => null)) || [];
+  const dateBySlug = new Map(
+    (Array.isArray(log) ? log : log.entries || []).filter((e) => e?.slug).map((e) => [e.slug, e.date]),
+  );
+
+  const rows = await Promise.all(
+    roster.map(async (slug) => {
+      const img = await getImageryStatus(env, slug).catch(() => null);
+      // Only a corner that actually holds a fix render belongs on this page.
+      // The roster lists corners at every stage; this page is about the ones
+      // carrying generated imagery.
+      if (img?.status !== "ready" || !(img.states || []).includes("fix")) return null;
+      const [corner, score, letter, press, voices] = await Promise.all([
+        cornerBySlug(env, slug).catch(() => null),
+        getScore(env, slug, SCORE_VERSION).catch(() => null),
+        getVerifiedLetter(env, slug).catch(() => null),
+        getPress(env, slug, PRESS_VERSION).catch(() => null),
+        getVoicesStored(env, slug).catch(() => null),
+      ]);
+      return {
+        slug,
+        name: corner?.name || slug,
+        grade: score?.grade || null,
+        index: Number.isFinite(score?.index) ? score.index : null,
+        date: dateBySlug.get(slug) || null,
+        provenance: provenanceOf(img),
+        letter: storedLetterServes(letter),
+        fix: true,
+        press: (press?.items || []).length > 0,
+        voices: (voices?.items || []).length > 0,
+      };
+    }),
+  );
+
+  const live = rows.filter(Boolean);
+  // Most recently audited first, so the morning cron's newest corner is on top
+  // by itself. A corner with no recorded date sorts last rather than to the
+  // top, because an absent date is not a recent one.
+  const bydate = (a, b) => String(b.date || "").localeCompare(String(a.date || "")) || a.slug.localeCompare(b.slug);
+  return {
+    full: live.filter((r) => r.provenance !== PROMOTED_FROM_ENRICHED).sort(bydate),
+    promoted: live.filter((r) => r.provenance === PROMOTED_FROM_ENRICHED).sort(bydate),
+  };
+}
+
 // ---------------------------------------------------------------- generated imagery
 
 async function generatedImage(pathname, env, ctx) {
@@ -2430,6 +2491,13 @@ export default {
           asOf: fmtAsOf(pressCites?.at || pressRoll?.updated || pressSummary?.at),
         };
         return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressTile, spendUsd, embed, auditTiers, { discs: coverage, radiusM: coverageRadiusM(meta) }), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+
+      if (p === "/audited" || p === "/audited/") {
+        const rows = await auditedIndex(env);
+        return new Response(AUDITED_PAGE(rows, origin, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
