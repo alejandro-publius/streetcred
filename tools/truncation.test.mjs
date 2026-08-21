@@ -75,3 +75,25 @@ test("the failure names what it saw, not just that it failed", () => {
   assert.match(f.reason, /A resident of District 3/);
   assert.match(f.token, /No exposure$/, "the tail is quoted so the failure is diagnosable");
 });
+
+test("the retry for a cut-off draft asks it to finish, not to delete a claim", async () => {
+  const { retryInstruction } = await import("../src/verify.js");
+  const only = retryInstruction({ failures: [{ kind: "truncated", token: "", reason: "the model stopped early with finishReason MAX_TOKENS" }] });
+  assert.match(only, /cut off before it finished/);
+  assert.match(only, /ends with the exact sign-off line/);
+  assert.doesNotMatch(only, /records do not support/, "a truncated draft did not claim anything wrong");
+  assert.doesNotMatch(only, /""/, "and there is no offending token to name");
+});
+
+test("a draft that is both truncated and wrong gets told both things", async () => {
+  const { retryInstruction } = await import("../src/verify.js");
+  const both = retryInstruction({
+    failures: [
+      { kind: "number", token: "94102", reason: "the figure 94102 does not appear in this corner's records" },
+      { kind: "truncated", token: "", reason: "stopped early" },
+    ],
+  });
+  assert.match(both, /94102/);
+  assert.match(both, /records do not support/);
+  assert.match(both, /also cut off before it finished/);
+});

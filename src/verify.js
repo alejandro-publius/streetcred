@@ -583,14 +583,40 @@ export function verifyLetter(text, inputs) {
 // that failed is the difference between a retry that fixes the problem and a
 // retry that reshuffles the same invention into a new sentence.
 export function retryInstruction(result) {
-  const named = result.failures
+  const failures = result.failures || [];
+
+  // Truncation is not an unsupported claim and must not be described as one.
+  //
+  // This function was written for one kind of failure, and every retry got the
+  // same sentence: "rejected for stating something the records do not support
+  // ... rewrite it without that claim." Handed to a draft that ran out of
+  // output tokens, that instruction is incoherent. It names an empty token,
+  // asserts a problem the draft does not have, and asks the model to delete a
+  // claim when what it actually needs to do is finish the letter and be
+  // shorter about it.
+  const cut = failures.filter((f) => f.kind === "truncated");
+  if (cut.length && cut.length === failures.length) {
+    return (
+      `\n\nYour previous draft was cut off before it finished: it stopped mid-letter without ` +
+      `making its request or signing off. Write the whole letter this time, well within the ` +
+      `word limit, and make sure it ends with the exact sign-off line you were given. Prefer ` +
+      `fewer sentences over an unfinished one.`
+    );
+  }
+
+  const named = failures
+    .filter((f) => f.kind !== "truncated")
     .slice(0, 6)
     .map((f) => `"${f.token}" (${f.reason})`)
     .join("; ");
+  const tail = cut.length
+    ? ` Your draft was also cut off before it finished, so write the whole letter and end it ` +
+      `with the exact sign-off line you were given.`
+    : "";
   return (
     `\n\nYour previous draft was rejected by an automatic check for stating something the ` +
     `records do not support: ${named}. Rewrite it without that claim. Do not substitute a ` +
     `different figure for it, and do not restate it in words instead of digits. If a fact is ` +
-    `not in the list above, leave it out entirely.`
+    `not in the list above, leave it out entirely.${tail}`
   );
 }
