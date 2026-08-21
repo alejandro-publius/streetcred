@@ -31,16 +31,27 @@ const meta = kv("city:meta");
 const AUDITED = meta.audited || [];
 const text = (h) => h.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ");
 
+// Concurrent, in bounded chunks. A guard meant to run on every deploy has to
+// finish in a deploy's worth of time: 23 corners fetched one at a time, each
+// with a page and an imagery call, took longer than the deploy it was checking.
+const pool = async (items, n, fn) => {
+  const out = [];
+  for (let i = 0; i < items.length; i += n) {
+    out.push(...(await Promise.all(items.slice(i, i + n).map(fn))));
+  }
+  return out;
+};
+
 const pages = {};
 const imagery = {};
-for (const slug of AUDITED) {
+await pool(AUDITED, 8, async (slug) => {
   const [p, i] = await Promise.all([
-    fetch(`${ORIGIN}/c/${slug}`).then((r) => r.text()),
+    fetch(`${ORIGIN}/c/${slug}`).then((r) => r.text()).catch(() => ""),
     fetch(`${ORIGIN}/api/imagery?x=${slug}`).then((r) => r.json()).catch(() => null),
   ]);
   pages[slug] = p;
   imagery[slug] = i;
-}
+});
 
 test("every audited corner page serves", async () => {
   for (const slug of AUDITED) {
@@ -68,13 +79,16 @@ test("every audited corner serves today and fix img srcs in raw HTML", () => {
 });
 
 test("every img src an audited page names actually serves", async () => {
-  for (const slug of AUDITED) {
-    for (const m of pages[slug].matchAll(new RegExp(`src="(/gen/${slug}/[a-z]+\\.jpg)"`, "g"))) {
-      const r = await fetch(ORIGIN + m[1]);
-      assert.equal(r.status, 200, `${slug}: ${m[1]} returned ${r.status}`);
-      assert.match(r.headers.get("content-type") || "", /image\/jpeg/, `${slug}: ${m[1]} is not a jpeg`);
-    }
-  }
+  const srcs = AUDITED.flatMap((slug) =>
+    [...pages[slug].matchAll(new RegExp(`src="(/gen/${slug}/[a-z]+\\.jpg)"`, "g"))].map((m) => [slug, m[1]]),
+  );
+  assert.ok(srcs.length >= AUDITED.length * 2, `expected at least two srcs per corner, found ${srcs.length}`);
+  const bad = (await pool(srcs, 10, async ([slug, u]) => {
+    const r = await fetch(ORIGIN + u).catch(() => null);
+    const ok = r && r.status === 200 && /image\/jpeg/.test(r.headers.get("content-type") || "");
+    return ok ? null : `${slug}: ${u} -> ${r ? r.status + " " + r.headers.get("content-type") : "unreachable"}`;
+  })).filter(Boolean);
+  assert.deepEqual(bad, [], `img srcs that do not serve: ${bad.join("; ")}`);
 });
 
 test("no audited corner claims Street View has nothing unless a probe said so", () => {
