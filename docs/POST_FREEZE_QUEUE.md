@@ -797,3 +797,41 @@ Three consequences worth deciding on rather than discovering later:
    overhead plates, or the upscale is not enough for the type size.
 
 Source: render retry, 2026-08-21.
+
+## 21. The Worker's own letter path reads no finishReason and sets no ceiling
+
+Fixed in the offline tool, still open in the Worker. `src/index.js` builds its
+live draft with:
+
+```js
+body: JSON.stringify({ contents: [{ parts: [{ text: prompt + extra }] }] }),
+```
+
+No `generationConfig`, so no `maxOutputTokens`, and the response handler reads
+`candidates[0].content.parts` and never looks at `finishReason`. That is the
+exact shape that put 25 truncated letters on the site: a draft cut off by the
+token ceiling is indistinguishable from a finished one.
+
+It is not urgent, because the completeness rule added on 2026-08-21 catches it
+from the other side. A live draft that stops early now fails verification and
+the corner serves its pending state rather than a fragment. That is the correct
+outcome and it is vendor independent, which is the whole argument for putting
+the check in the gate rather than in the caller.
+
+What is still worth doing, in order:
+
+1. Read `finishReason` in the Worker's `draft()` and treat anything other than
+   `STOP` as a retryable fault. The retry loop already exists and already backs
+   off; it just cannot see this failure.
+2. Set an explicit `maxOutputTokens`. The offline tool needed 8192 for a 220
+   word letter because Gemini 2.5 charges thinking tokens against the same
+   budget, and relying on an undocumented API default for that is how the
+   ceiling moves under you.
+
+One corner did not fit even at 8192: `6th-market` hit MAX_TOKENS twice at that
+ceiling and stayed pending. Its prompt carries a 25 headline timeline, which is
+the largest press history in the fleet, so the prompt itself is long before the
+model starts thinking. Worth checking whether the timeline bullet should be
+summarised rather than enumerated before raising the ceiling again.
+
+Source: truncation sweep, 2026-08-21.
