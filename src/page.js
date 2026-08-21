@@ -99,6 +99,21 @@ export const STATBAND = ({ scored = 0, audited = 0, headlines = 0, headlinesAsOf
 // the hero embed says it beside the render itself. Two copies of a sentence
 // like this is one copy too many: they drift, and the drift is the product
 // quietly softening its own disclosure.
+// What to say when there is no photograph on the page.
+//
+// "Street View has no photograph of this corner" is a claim about Google's
+// coverage, and it was rendering for every falsy frame: a corner we simply had
+// not fetched yet, a generation still running, a probe that errored. Only one
+// stored status actually establishes absence, and that is the one where the
+// probe ran and came back empty. Everything else is our gap, and our gap must
+// not be reported as somebody else's.
+export const IMAGERY_ABSENT_CONFIRMED = "nocoverage";
+export function emptyImageryNote(status) {
+  if (status === IMAGERY_ABSENT_CONFIRMED) return "Street View has no photograph of this corner.";
+  if (status === "pending" || !status) return "Loading the Street View photograph for this corner.";
+  return "No photograph stored for this corner yet.";
+}
+
 export const AI_DISCLAIMER =
   "The proposed fix is a visualization, not a photograph of anything that exists.";
 
@@ -1540,19 +1555,29 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
       base: "base",
       ov: "overlay",
       hdl: "handle",
-      single: true,
-      hidden: true,
-      imgHidden: true,
+      // A corner whose record already says ready ships its photograph in the
+      // HTML. The server read that record to build this page; leaving the src
+      // for the client to fill meant the raw HTML of a fully audited corner
+      // said "loading" about bytes that were already in KV.
+      single: !(og.frames && og.frames.fix),
+      hidden: !og.frames,
+      imgHidden: !og.frames,
+      baseSrc: og.frames ? esc(og.frames.today) : "",
       baseAlt: `${esc(c.name)} today, photographed by Google Street View`,
-      ovAlt: `Annotated comparison view of ${esc(c.name)}`,
+      ovSrc: og.frames && og.frames.fix ? esc(og.frames.fix) : "",
+      ovAlt: og.frames && og.frames.fix
+        ? `AI visualization of a proposed fix at ${esc(c.name)}. Not a photograph.`
+        : `Annotated comparison view of ${esc(c.name)}`,
     })}
     <!-- Stands in for the photograph until one is loaded, and stays if none
          arrives. A card that says what is missing and why beats an image
-         element with nothing in it. -->
-    <div class="imgph" id="imgph">
+         element with nothing in it. Rendered only when the server does not
+         already have the frames: a corner that ships its photograph in the HTML
+         must not also ship a card saying the photograph is loading. -->
+    ${og.frames ? "" : `<div class="imgph" id="imgph">
       <span class="imgphl">The corner, three ways</span>
-      <p class="imgphn" id="imgphn">Loading the Street View photograph for this corner.</p>
-    </div>
+      <p class="imgphn" id="imgphn">${esc(emptyImageryNote(og.imageryStatus))}</p>
+    </div>`}
     <p class="cap" aria-live="polite"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
     <div class="impact" id="impact" hidden>
       <div class="ihead">Projected outcome
@@ -1803,15 +1828,24 @@ function render(){
     hero.hidden = true;
     if(ph){
       ph.hidden = false;
-      el("imgphn").textContent = IMG.note || "Street View has no photograph of this corner.";
+      // Only a stored probe that came back empty is a claim about Google. Any
+      // other absent frame is our gap and says so. Mirrors emptyImageryNote on
+      // the server; tools/emptystate.test.mjs pins the two together.
+      el("imgphn").textContent = IMG.note || (IMG.status === "nocoverage"
+        ? "Street View has no photograph of this corner."
+        : "No photograph stored for this corner yet.");
     }
     document.querySelector(".toggle").hidden = true;
     el("capk").textContent = "No photograph";
-    el("capv").textContent = IMG.note || "Street View has no imagery for this corner.";
+    el("capv").textContent = IMG.note || (IMG.status === "nocoverage"
+      ? "Street View has no imagery for this corner."
+      : "No photograph stored for this corner yet.");
     return;
   }
   if(ph) ph.hidden = true;
   hero.hidden = false;
+  // The server may already have set these. Assigning the same src is a no-op in
+  // every browser, but the guard keeps the network panel honest on a reload.
   el("base").hidden = false;
   el("base").src = IMG.today;
   // Alt text from data, not boilerplate: the audit names what it marked.

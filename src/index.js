@@ -1484,9 +1484,38 @@ async function ogFor(c, env) {
   // Whether this corner actually has a generated fix image. The page's own
   // subtitle promises "a picture of the fix", and it must not promise one it
   // is not showing. It comes back by itself when generation does.
+  // The frames, in the server HTML.
+  //
+  // The stage used to ship a loading card on every corner and let the client
+  // fill it, even when this very function had already read the record that says
+  // which states exist. So the raw HTML of a fully audited corner said "loading"
+  // about photographs that were sitting in KV, and anything reading the page
+  // without running scripts saw a corner with no imagery at all.
+  //
+  // Only a record that says ready earns srcs. A pending or failed one still
+  // hands the client the placeholder, because those are the cases where the
+  // answer genuinely is not known yet.
+  const st = imagery?.states || [];
+  const frames =
+    imagery?.status === "ready"
+      ? {
+          today: `/gen/${c.slug}/today.jpg`,
+          hazards: st.includes("hazards") ? `/gen/${c.slug}/hazards.jpg` : null,
+          fix: st.includes("fix") ? `/gen/${c.slug}/fix.jpg` : null,
+        }
+      : null;
+
   return {
     score,
     cred,
+    frames,
+    // Where the render came from, so the caption can say so without waiting on
+    // the imagery fetch.
+    provenance: provenanceOf(imagery),
+    // Whether a stored probe actually confirmed Street View has nothing here,
+    // as opposed to us simply not having fetched it. Those are different facts
+    // and only the first is a claim about Google.
+    imageryStatus: imagery?.status || null,
     // Same gate as the API path. This one writes the letter straight into the
     // server HTML, so a letter that may not be served over the API must not
     // arrive by the shorter route either; that is how a rail becomes a
