@@ -249,3 +249,15 @@ test("a spent daily KV allowance is recognised as a condition, not a crash", asy
   assert.ok(!KV_CAP_SPENT.test("bulk get keys: 'You can request a maximum of 100 keys' [code: 10029]"), "a different cap is a different message");
   assert.ok(!KV_CAP_SPENT.test("Resource has been exhausted (e.g. check quota)."), "a model quota is not a KV cap");
 });
+
+test("a render already staged is never bought again", async () => {
+  const { eligible } = await import("./promote_corners.mjs");
+  // Skip-existing was written against KV. With a publish window closed, a paid
+  // render sits on disk and KV has not heard about it, so the next run would
+  // regenerate it. Four were in exactly that state on 2026-08-21.
+  const meta = { enriched: ["a", "b", "c"] };
+  const keys = ["img:a:today", "img:b:today", "img:c:today"];
+  assert.deepEqual(eligible(meta, keys, {}, 10), ["a", "b", "c"], "all three are eligible with nothing staged");
+  assert.deepEqual(eligible(meta, keys, {}, 10, [], ["b"]), ["a", "c"], "a staged render is skipped");
+  assert.deepEqual(eligible(meta, keys, {}, 0, ["b"], ["b"]), [], "and naming it explicitly does not resurrect it");
+});

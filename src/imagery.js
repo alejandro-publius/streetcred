@@ -10,7 +10,7 @@
 
 import {
   getImage, putImage, putImageryStatus, getImageryStatus, reserveGeneration,
-  reservePhoto, photoBudget,
+  reservePhoto, photoBudget, getFrameIndex,
 } from "./store.js";
 import { skipsAudit } from "./city.js";
 
@@ -238,6 +238,24 @@ export async function imageryFor(c, env, ctx, opts = {}) {
     };
   }
   if (existing?.status === "scoredonly") {
+    return {
+      source: "cache",
+      status: "scoredonly",
+      note: SCORED_ONLY_NOTE,
+      today: `${base}/today.jpg`,
+      hazards: null,
+      fix: null,
+    };
+  }
+
+  // A stored frame answers before anything is reserved or fetched.
+  //
+  // Without this, a scored corner whose frame was published in bulk had no
+  // imgstatus record, fell through to the live path, reserved against the daily
+  // photograph budget and re-fetched bytes that were already in KV. The index
+  // is one read per isolate for the whole city.
+  const framed = await getFrameIndex(env).catch(() => null);
+  if (framed?.slugs?.has(c.slug)) {
     return {
       source: "cache",
       status: "scoredonly",

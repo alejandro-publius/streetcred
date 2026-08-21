@@ -378,6 +378,43 @@ export async function putShareCard(env, slug, bytes) {
 
 // ---------------------------------------------------------------- imagery
 
+// Which corners have a stored Street View frame, as one key.
+//
+// The alternative was an imgstatus record per corner, which is a second write
+// for every frame published: 7,309 frames would have cost 14,618 writes to say
+// something a single list already says. It is read once per isolate and answers
+// for the whole city, so a scored corner's page can serve its stored photograph
+// without a KV read per request and without re-reserving a Maps fetch for bytes
+// that are already in hand.
+//
+// It is an index, not the truth. The bytes under img:{slug}:today are the
+// truth; this only says where to look, and a slug listed here whose bytes are
+// missing degrades to the ordinary not-stored-yet state rather than to a broken
+// image, because /gen answers 404 and the page has an honest empty state.
+export async function getFrameIndex(env) {
+  const raw = await rawGet(env, "img:index");
+  if (!raw) return null;
+  try {
+    const r = JSON.parse(raw);
+    return { ...r, slugs: new Set(r.slugs || []) };
+  } catch {
+    return null;
+  }
+}
+
+export async function putFrameIndex(env, slugs, opts = {}) {
+  const list = [...new Set(slugs)].sort();
+  await rawPut(env, "img:index", JSON.stringify({
+    updated: new Date().toISOString(),
+    count: list.length,
+    // What produced this listing, so a reader can tell a bulk fetch from the
+    // daily cron's own accumulation.
+    source: opts.source || "bulk fetch",
+    slugs: list,
+  }));
+  return list.length;
+}
+
 const imgKey = (slug, state) => `img:${slug}:${state}`;
 
 export async function getImage(env, slug, state) {

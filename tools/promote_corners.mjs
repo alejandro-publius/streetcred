@@ -335,11 +335,19 @@ export function imagerySpend(rows) {
   };
 }
 
-export function eligible(meta, keyNames, sweepRows, limit, only = []) {
+export function eligible(meta, keyNames, sweepRows, limit, only = [], stagedSlugs = []) {
   const enr = new Set(meta.enriched || []);
   const today = new Set(keyNames.filter((n) => /^img:.+:today$/.test(n)).map((n) => n.split(":")[1]));
   const fix = new Set(keyNames.filter((n) => /^img:.+:fix$/.test(n)).map((n) => n.split(":")[1]));
-  const pool = [...enr].filter((s) => today.has(s) && !fix.has(s));
+  // Skip-existing has to mean the staging directory too, not only KV.
+  //
+  // The skip was written against stored renders, which is right until a publish
+  // window closes. With KV writes spent, four renders sat on disk paid for and
+  // unpublished, and the next run would have regenerated every one of them
+  // because KV had not heard about them yet. A render this tool has already
+  // bought is a render it must not buy again.
+  const staged = new Set(stagedSlugs);
+  const pool = [...enr].filter((s) => today.has(s) && !fix.has(s) && !staged.has(s));
   // A named subset picks out of the SAME pool rather than around it. The skip
   // on an existing fix render is what makes this tool idempotent, and a retry
   // must not be able to overwrite a render that already published.
@@ -445,7 +453,13 @@ if (IS_MAIN) {
   // already have a stored fix render, which is what makes the tool idempotent,
   // and a retry of corners a quota window cost has to bypass the ranking
   // without bypassing that skip.
-  const picks = ONLY.length ? eligible(meta, keyNames, rows, 0, ONLY) : eligible(meta, keyNames, rows, N);
+  const stagedAlready = stagedRenderFiles(readdirSync(STAGE)).map(slugOfRender);
+  const picks = ONLY.length
+    ? eligible(meta, keyNames, rows, 0, ONLY, stagedAlready)
+    : eligible(meta, keyNames, rows, N, [], stagedAlready);
+  if (stagedAlready.length) {
+    console.log(`skipping ${stagedAlready.length} already staged and awaiting publish: ${stagedAlready.join(", ")}`);
+  }
   console.log(`model:  ${MODEL} on Vertex locations/${LOCATION}, ADC, no api key`);
   console.log(`picks:  ${picks.length} enriched corners with a frame and no fix render, worst first`);
   for (const s of picks) console.log(`  ${s.padEnd(26)} ${rows[s]?.points ?? "?"} points`);
