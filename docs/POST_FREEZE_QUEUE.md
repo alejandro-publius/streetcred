@@ -750,3 +750,50 @@ salutation naming its own district's representative, checked directly rather
 than inferred from the gate having passed them.
 
 Source: publish close-out, 2026-08-20.
+
+## 20. Frame legibility, not quota, is what bounds the promotion strategy
+
+The five quota holds of 2026-08-20 made the render stage look rate limited. It is
+not, or not mainly. Running the preflight over the six retry candidates offline,
+against frames already stored, with zero spend:
+
+```
+6th-and-mission          checkable=false   watermark=false  street=false
+larkin-and-myrtle        checkable=true    watermark=true   street=false
+6th-and-natoma           checkable=false   watermark=false  street=false
+lafayette-and-mission    checkable=false   watermark=false  street=false
+11th-and-market          checkable=false   watermark=false  street=false
+24th-and-lilac           checkable=true    watermark=true   street=false
+```
+
+Two of six. The gate is paired, so it can only report on a region that was
+legible in the SOURCE frame. Where the source reads nothing, the gate abstains,
+and an abstain is not a pass. Those four corners cannot produce a publishable
+render from the frames currently stored for them, at any price, from any model.
+
+This matches the original calibration: tesseract read the Google watermark on
+only 9 of the 23 known-good audited frames. Roughly a third to a half of stored
+Street View frames are legible enough to verify against, and that fraction, not
+the daily cap and not the rate window, is the ceiling on how many corners can be
+promoted.
+
+Three consequences worth deciding on rather than discovering later:
+
+1. **The queue should be ordered by frame legibility, not only by danger score.**
+   Selecting the worst-ranked eligible corners first spends the daily cap on
+   corners that mostly cannot pass. Running the preflight across the whole
+   enriched pool is free and would let the ranking skip the unverifiable.
+
+2. **Re-fetching a frame is the actual fix for these corners, not re-rendering.**
+   Street View has multiple panoramas per location and the stored frame is one
+   fetch from one heading. A corner whose watermark is illegible may well have a
+   sibling frame where it is not. That is a Maps Static spend, not a Vertex one.
+
+3. **The signage signal has still never fired.** Across every corner checked so
+   far, `street=false` everywhere: no source frame has yet OCR'd its own street
+   name in the upper band. The signal is wired and tested but has never once
+   contributed a verdict, so the gate is in practice still running on the
+   watermark alone. Either the band is wrong, the corners genuinely lack
+   overhead plates, or the upscale is not enough for the type size.
+
+Source: render retry, 2026-08-21.
