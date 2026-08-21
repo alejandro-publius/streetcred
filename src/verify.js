@@ -137,6 +137,18 @@ export function buildInputSet({ corner, stats, score, news, timeline, supervisor
   // the coverage. Same exclusion the Cred Check's press lane makes.
   const items = news?.items || news || [];
   const citedPressCount = items.filter((i) => !i?.official && i?.corroborates).length;
+  // The timeline lane IS press history: headlines counted per year, from the
+  // same kind of source the press lane reads. A corner can have nothing in the
+  // current press window and still have 25 headlines going back to 2014, and
+  // buildLetterPrompt hands the model exactly that and instructs it to state it.
+  // Counting only the current window made rule 6 reject a sourced claim, which
+  // is the hazards bug one lane over: the prompt licenses evidence the verifier
+  // was never shown.
+  //
+  // Deliberately NOT folded into citedPressCount. That figure feeds the
+  // magnitude rule's `displayed` map, which is about what the PAGE shows, and
+  // the page shows cited press items rather than historical headline counts.
+  const historicalHeadlines = Number.isFinite(timeline?.totalHeadlines) ? timeline.totalHeadlines : 0;
 
   // ------------------------------------------------------------- displayed
   //
@@ -186,6 +198,7 @@ export function buildInputSet({ corner, stats, score, news, timeline, supervisor
     voicesCount,
     pressCount: items.length,
     citedPressCount,
+    historicalHeadlines,
     displayed,
   };
 }
@@ -268,6 +281,21 @@ const RESIDENT_WHO =
   /\b(residents?|neighbou?rs?|locals|people who live|those who live|community members?)\b/i;
 const RESIDENT_SAID =
   /\b(describ\w+|say|says|said|report\w*|tell|tells|told|complain\w*|recount\w*|testif\w+|account|accounts|testimony|in their own words|write|writes|wrote)\b/i;
+
+// A sentence that says coverage was NOT found is not a citation.
+//
+// buildLetterPrompt instructs the model, in as many words, to write this when
+// the press lane is empty: "No press coverage was found for this corner." Rule
+// 6 then matched "press coverage" inside that sentence and rejected the letter
+// for obeying the instruction. 31st-and-lawton was held on exactly the string
+// "No press coverage has been found for this specific corner."
+//
+// Bounded on purpose. The negation has to sit within a few words of the noun,
+// so this exempts "no press coverage was found" without exempting "local
+// reporting has covered this corner extensively", which is an assertion that
+// happens to contain the word "no" somewhere earlier in the sentence.
+const PRESS_DENIED =
+  /\b(?:no|not|never|none)\s+(?:\w+\s+){0,3}?(?:press|news|media)\s+coverage\b|\b(?:press|news|media)\s+coverage\b[^.!?]{0,40}?\b(?:has|have|was|were|is|are)\s+(?:not|never)\b|\bno\s+(?:local\s+)?(?:reporting|journalism)\b/i;
 
 // Referring to journalism. Deliberately not "reported", which the records lane
 // also uses ("311 reports"); the tokens here can only mean a newsroom.
@@ -455,7 +483,12 @@ export function verifyLetter(text, inputs) {
     // 6. Press coverage. The same argument, one lane over. The domain rule
     // above catches an invented source; this catches an asserted one that was
     // never named, which is the version with no digits in it to check.
-    if (PRESS_MENTION.test(sentence) && !(inputs.citedPressCount > 0)) {
+    // Sourced by EITHER lane. The current press window and the timeline's
+    // headline history are both press evidence, and a letter that states the
+    // documented history is citing something real even when this week's search
+    // returned nothing.
+    const pressSourced = inputs.citedPressCount > 0 || inputs.historicalHeadlines > 0;
+    if (PRESS_MENTION.test(sentence) && !PRESS_DENIED.test(sentence) && !pressSourced) {
       failures.push({
         token: sentence,
         kind: "press",

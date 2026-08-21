@@ -78,7 +78,19 @@ export function buildLetterPrompt(c, ctx) {
 Use these facts and cite them plainly:
 - ${ctx.stats?.crashes ?? 0} injury collisions recorded by the city within 150 meters of this intersection in the last five years${ctx.stats?.fatal ? `, ${ctx.stats.fatal} of them fatal` : ""}. Do not describe this figure as covering any longer period. The first time you cite this count, state in the same sentence that it covers a 150 metre radius while the Danger Index grade is computed over a tighter 80 metre core, so the two figures are measured over different areas and a reader should not expect them to reconcile.
 - ${ctx.stats?.reports311 ?? 0} street-condition 311 reports at this location in the last three years, counting street defects, sidewalk and curb, signs, streetlights and blocked sidewalks only.
-${headlines ? `- Recent press coverage: ${headlines}.` : "- No press coverage was found for this corner. Do not cite or invent any news reporting."}
+${
+  headlines
+    ? `- Recent press coverage: ${headlines}.`
+    // Two bullets used to contradict each other here. This one said no press
+    // coverage was found and forbade citing any; the longevity bullet directly
+    // below said coverage goes back N years and instructed the model to state
+    // it. The model obeyed the second and the verifier rejected the letter for
+    // it. When the timeline documents a history, the prohibition is narrowed to
+    // what is actually unsupported: naming a specific article or outlet.
+    : Number.isFinite(ctx.timeline?.totalHeadlines) && ctx.timeline.totalHeadlines > 0
+      ? "- No press coverage was found for this corner in the recent search window. Do not name, quote or invent any specific article, outlet or headline. You may state the documented coverage history below."
+      : "- No press coverage was found for this corner. Do not cite or invent any news reporting."
+}
 ${scoreLine}${longevityLine}${hazardLines}
 ${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident testimony."}
 - The request: fund ${c.fix.name}, estimated ${c.fix.cost}, through the ${c.fix.grant}.
