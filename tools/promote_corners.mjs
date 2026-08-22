@@ -7,6 +7,24 @@
 //   node tools/promote_corners.mjs --generate --n=7
 //   node tools/promote_corners.mjs --publish
 //
+// The full lane, which is what the morning cron runs and what earns AUDITED:
+//
+//   node tools/promote_corners.mjs --full --plan --n=25
+//   node tools/promote_corners.mjs --full --generate --n=25
+//   node tools/promote_corners.mjs --full --publish
+//
+// --full runs the visual audit on the frame (the same prompt and schema the
+// Worker's src/hazards.js asks, through Vertex under ADC because the Worker's
+// own key path is billing-blocked), the record corroboration, the hazards
+// overlay render and the proposed-fix render, each through the legibility gate.
+// A corner that completes all three is written with provenance "audited" and
+// moved onto the audited roster, exactly as the cron does it. A corner that
+// passes only a render stays "promoted-from-enriched". A corner that passes
+// nothing publishes nothing. The pool widens to every corner with a stored
+// Street View frame, enriched or scored, worst first by the board's own points;
+// a scored corner is promoted into a stored record first, which is the same
+// step the cron takes before it audits (HANDOFF gotcha 16).
+//
 // Idempotent and skip-existing by construction: a corner that already has a
 // stored fix render is never regenerated and never overwritten. The 23 audited
 // corners keep the renders they have.
@@ -22,10 +40,22 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkLegibility, ocr, REGIONS } from "./lib/legibility.mjs";
+import { kvEnv } from "./lib/kvenv.mjs";
+import { cityCornerFor } from "../src/city.js";
+import { CORNERS, canonicalSlug } from "../src/data.js";
+import { HAZARD_VERSION, AUDIT_PROMPT, AUDIT_SCHEMA, flagsFrom, evidenceFor, assemble } from "../src/hazards.js";
+import { HAZARD_PROMPT, AUDITED } from "../src/imagery.js";
+import { computeScore, SCORE_VERSION } from "../src/score.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const STAGE = join(ROOT, "scratch", "imagery");
 const FRAMES = join(STAGE, "frames");
+// Frames the city fetch staged (tools/fetch_frames.mjs). Read before KV, so a
+// frame that is staged but not yet published can still condition a render.
+const CITY_FRAMES = join(ROOT, "scratch", "frames");
+const HAZARDS_STAGE = join(ROOT, "scratch", "hazards");
+const CORNERS_STAGE = join(ROOT, "scratch", "corners");
+const SCORES_STAGE = join(ROOT, "scratch", "scores");
 const OCRDIR = join(ROOT, "scratch", "ocr");
 const GCLOUD = process.env.GCLOUD_BIN || "/opt/homebrew/share/google-cloud-sdk/bin/gcloud";
 
@@ -40,6 +70,18 @@ const VERTEX_URL =
   `https://aiplatform.googleapis.com/v1/projects/${PROJECT}` +
   `/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
 
+// The audit model. The Worker asks gemini-3.7-flash through its own key path.
+// On Vertex in this project every 3.x text model answers 404 (re-probed
+// 2026-08-22 on both global and us-central1: 3.7-flash, 3.1-flash-lite and
+// 3-flash-preview all NOT_FOUND; 2.5-flash answers). Same deviation the letter
+// fleet records in tools/generate_letters.mjs, stated rather than silently
+// applied, and the model is written into every hazards record this produces.
+const AUDIT_LOCATION = process.env.VERTEX_REGION || "us-central1";
+const AUDIT_MODEL = process.env.VERTEX_AUDIT_MODEL || "gemini-2.5-flash";
+const AUDIT_URL =
+  `https://aiplatform.googleapis.com/v1/projects/${PROJECT}` +
+  `/locations/${AUDIT_LOCATION}/publishers/google/models/${AUDIT_MODEL}:generateContent`;
+
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
 const argOf = (n, d) => {
@@ -49,6 +91,28 @@ const argOf = (n, d) => {
 const N = Number(argOf("n", "7"));
 const DO_GENERATE = has("--generate");
 const DO_PUBLISH = has("--publish");
+const DO_FULL = has("--full");
+// Which corners may be picked. "enriched" is the original pool; "framed" is
+// every corner with a stored Street View frame, enriched or scored. The full
+// lane defaults to the wider pool because that is where the unworked head of
+// the queue is; the render-only lane keeps its original pool.
+const POOL = argOf("pool", DO_FULL ? "framed" : "enriched");
+// A corner the preflight has already refused is a decided verdict, not a
+// candidate: the frame is fixed, tesseract is deterministic, and re-picking it
+// fills a batch slot with a hold that costs nothing and audits nothing. Pass
+// --retry-held to re-pick them anyway, after a frame has been re-fetched.
+const RETRY_HELD = has("--retry-held");
+// Fill the batch with corners the preflight can check, rather than with the
+// next N by rank. The preflight is the pipeline's own first gate (see
+// sourceIsCheckable); applying it at selection time gives the same verdict a
+// slot earlier, and every corner it refuses on the way is recorded as a held
+// outcome at no cost, with the reason and the unblock. Without this, a run
+// over the head of the queue on 2026-08-22 would have refused 17 of 25 slots
+// before spending and attempted 8.
+const ATTEMPTABLE = has("--attemptable");
+// Corners excluded by a standing ruling rather than by the pipeline, named on
+// the command line so the exclusion is in the run log and not in the code.
+const SKIP = (argOf("skip", "") || "").split(",").map((x) => x.trim()).filter(Boolean);
 
 // Ours, not Cloudflare's: the public daily image cap the Worker enforces. An
 // offline run must not quietly exceed what the site would allow itself.
@@ -70,14 +134,34 @@ const SPACING_MS = Number(process.env.RENDER_SPACING_MS || 20_000);
 // paying again for the ones that already published.
 const ONLY = (argOf("only", "") || "").split(",").map((x) => x.trim()).filter(Boolean);
 
-const kv = (a) =>
-  execFileSync("npx", ["wrangler", ...a], {
-    cwd: ROOT,
-    encoding: "utf8",
-    timeout: 600_000,
-    maxBuffer: 256 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+// Transient CLI failures are retried; a refused write is not. Under load this
+// CLI returns 401 Unauthorized and 5xx on calls that succeed a second later
+// (tools/lib/kvenv.mjs records the same), and one such answer used to end a
+// fifty-minute plan with a stack trace. The daily-cap refusal and a 404 are
+// answers, and pass straight through.
+const TRANSIENT = /401: Unauthorized|5\d\d:|ECONNRESET|ETIMEDOUT|fetch failed|socket hang up/i;
+const kv = (a, tries = 3) => {
+  for (let i = 1; ; i += 1) {
+    try {
+      return execFileSync("npx", ["wrangler", ...a], {
+        cwd: ROOT,
+        encoding: "utf8",
+        timeout: 600_000,
+        maxBuffer: 256 * 1024 * 1024,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (e) {
+      const msg = String(e.stderr || e.message || e);
+      if (i < tries && TRANSIENT.test(msg) && !KV_CAP_SPENT.test(msg)) {
+        const wait = 2000 * i;
+        console.log(`      wrangler: transient failure on ${a.slice(0, 4).join(" ")}, retrying in ${wait / 1000}s`);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait);
+        continue;
+      }
+      throw e;
+    }
+  }
+};
 
 // Binary safe. The text helper above decodes as utf8, which silently mangles a
 // JPEG; the frames have to come back as raw bytes and be written by us. An
@@ -246,6 +330,124 @@ export function promotedStatus(existing, { at, model, via, attempt, usd, gate })
   };
 }
 
+// Staged file selection for the other generated state. Same rule, same
+// reason: a held hazards render never gets a `.hazards.jpg`.
+export function stagedHazardFiles(names) {
+  return (names || []).filter(
+    (f) => f.endsWith(".hazards.jpg") && !f.startsWith(".") && !f.startsWith("_"),
+  );
+}
+export const slugOfHazardRender = (f) => f.replace(/\.hazards\.jpg$/, "");
+
+// One attribution block per render, the same shape promotedStatus writes for
+// the fix render, so the two states of one corner are described the same way.
+function renderAttribution(prior, { model, via, attempt, at, usd, gate }) {
+  return {
+    ...(prior && typeof prior === "object" ? prior : {}),
+    model,
+    via,
+    attempt: attempt ?? null,
+    at: new Date(at ?? Date.now()).toISOString(),
+    usd: usd ?? 0,
+    gateChecked: gate?.checked || [],
+    gateUnchecked: gate?.unchecked || [],
+    gateVerdict: gate?.verdict || null,
+  };
+}
+
+// The imgstatus record for a corner that completed the full lane: the visual
+// audit ran and produced a record, and BOTH generated states passed the gate.
+//
+// This is the only place in the offline tooling that may write provenance
+// "audited", and it refuses unless all three are present. The cron's rule for
+// the audited roster is "both generated states exist as bytes"; this is that
+// rule plus the audit itself, which is stricter and never looser. A caller
+// with a fix render and no hazards render gets promotedStatus, not this.
+export function fullLaneStatus(existing, { at, model, via, fix, hazards, audit }) {
+  if (!fix || !hazards || !audit?.ok) {
+    throw new Error("fullLaneStatus requires a passed fix render, a passed hazards render and a completed audit");
+  }
+  const prior = existing && typeof existing === "object" ? existing : {};
+  const states = [...new Set([...(Array.isArray(prior.states) ? prior.states : []), "hazards", "fix"])];
+  const priorRender = prior.render && typeof prior.render === "object" ? prior.render : {};
+  return {
+    ...prior,
+    status: "ready",
+    states,
+    at: at ?? Date.now(),
+    provenance: AUDITED,
+    // Which lane produced this. The cron leaves no such field because the
+    // cron is the default; a batch says so, so a reader of the record knows
+    // the audit was an operator-authorized batch and not the unattended
+    // morning, and the audited index can label its date accordingly.
+    lane: "batch-full",
+    audit: {
+      model: audit.model,
+      via: audit.via,
+      at: audit.at,
+      version: HAZARD_VERSION,
+    },
+    render: {
+      ...priorRender,
+      hazards: renderAttribution(priorRender.hazards, { model, via, at, ...hazards }),
+      fix: renderAttribution(priorRender.fix, { model, via, at, ...fix }),
+    },
+  };
+}
+
+// A corner that passed one render but did not complete the lane. Promoted, by
+// the same rule as a fix-only promotion: it has a render and no audit, and it
+// must never read as audited. `states` names which renders passed.
+export function partialStatus(existing, { at, model, via, fix, hazards }) {
+  if (!fix && !hazards) throw new Error("partialStatus needs at least one passed render");
+  const prior = existing && typeof existing === "object" ? existing : {};
+  const had = Array.isArray(prior.states) ? prior.states : [];
+  const states = [...new Set([...had, ...(hazards ? ["hazards"] : []), ...(fix ? ["fix"] : [])])];
+  const priorRender = prior.render && typeof prior.render === "object" ? prior.render : {};
+  return {
+    ...prior,
+    status: "ready",
+    states,
+    at: at ?? Date.now(),
+    provenance: "promoted-from-enriched",
+    render: {
+      ...priorRender,
+      ...(hazards ? { hazards: renderAttribution(priorRender.hazards, { model, via, at, ...hazards }) } : {}),
+      ...(fix ? { fix: renderAttribution(priorRender.fix, { model, via, at, ...fix }) } : {}),
+    },
+  };
+}
+
+// Decide a corner's published status from its run row and what is staged.
+// Returns { kind: "audited" | "promoted" | null, status }.
+export function statusFor(existing, row, staged, base) {
+  const fixOk = staged.fix && row?.state === "passed";
+  const hazOk = staged.hazards && row?.hazardsRender?.state === "passed";
+  const auditOk = Boolean(row?.audit?.ok);
+  if (fixOk && hazOk && auditOk) {
+    return {
+      kind: "audited",
+      status: fullLaneStatus(existing, {
+        ...base,
+        fix: { attempt: row.attempt, usd: row.fixUsd ?? row.usd, gate: row.gate },
+        hazards: { attempt: row.hazardsRender.attempt, usd: row.hazardsRender.usd, gate: row.hazardsRender.gate },
+        audit: row.audit,
+      }),
+    };
+  }
+  if (fixOk || hazOk) {
+    return {
+      kind: "promoted",
+      status: partialStatus(existing, {
+        ...base,
+        fix: fixOk ? { attempt: row.attempt, usd: row.fixUsd ?? row.usd, gate: row.gate } : null,
+        hazards: hazOk ? { attempt: row.hazardsRender.attempt, usd: row.hazardsRender.usd, gate: row.hazardsRender.gate } : null,
+      }),
+    };
+  }
+  return { kind: null, status: null };
+}
+
 // The render ledger: one record holding a line per render.
 //
 // Deliberately its own key rather than a section of budget:gemini. That record
@@ -295,6 +497,18 @@ export function buildRenderLedger(rows, opts = {}) {
       attempt: r.attempt ?? null,
       usd: r.usd ?? 0,
       why: r.state === "held" ? String(r.why || "").slice(0, 200) : undefined,
+      // The full lane's other two results, when the row ran it. Absent on a
+      // render-only row rather than null, so an old ledger line and a new one
+      // read the same where they mean the same.
+      ...(r.lane === "full"
+        ? {
+            lane: "full",
+            hazards: r.hazardsRender
+              ? { state: r.hazardsRender.state, attempt: r.hazardsRender.attempt ?? null, usd: r.hazardsRender.usd ?? 0, why: r.hazardsRender.state === "held" ? String(r.hazardsRender.why || "").slice(0, 200) : undefined }
+              : null,
+            audit: r.audit ? { ok: Boolean(r.audit.ok), model: r.audit.model ?? null, usd: r.audit.usd ?? 0, why: r.audit.ok ? undefined : String(r.audit.why || "").slice(0, 200) } : null,
+          }
+        : {}),
     })),
   };
 }
@@ -335,9 +549,13 @@ export function imagerySpend(rows) {
   };
 }
 
-export function eligible(meta, keyNames, sweepRows, limit, only = [], stagedSlugs = []) {
+export function eligible(meta, keyNames, sweepRows, limit, only = [], stagedSlugs = [], opts = {}) {
   const enr = new Set(meta.enriched || []);
+  const aud = new Set(meta.audited || []);
   const today = new Set(keyNames.filter((n) => /^img:.+:today$/.test(n)).map((n) => n.split(":")[1]));
+  // Frames the city fetch staged but has not published yet count as stored
+  // for the purpose of picking: the bytes exist and will condition the render.
+  for (const s of opts.stagedFrames || []) today.add(s);
   const fix = new Set(keyNames.filter((n) => /^img:.+:fix$/.test(n)).map((n) => n.split(":")[1]));
   // Skip-existing has to mean the staging directory too, not only KV.
   //
@@ -347,7 +565,21 @@ export function eligible(meta, keyNames, sweepRows, limit, only = [], stagedSlug
   // because KV had not heard about them yet. A render this tool has already
   // bought is a render it must not buy again.
   const staged = new Set(stagedSlugs);
-  const pool = [...enr].filter((s) => today.has(s) && !fix.has(s) && !staged.has(s));
+  // A verdict the preflight already gave. Excluded unless the caller asks for
+  // them back, because the frame that produced the verdict has not changed.
+  const decided = new Set(opts.decided || []);
+  // The wider pool: every framed corner that is not already audited. The
+  // enriched roster is always in; scored corners join when the caller supplies
+  // them (from img:index, the staged city frames, or both).
+  const base = opts.pool === "framed"
+    ? new Set([...enr, ...(opts.framed || [])].filter((s) => !aud.has(s)))
+    : enr;
+  // A flagship alias is the same crossing as a registry corner that is
+  // already audited: 16th-and-mission is 16th-mission under its sweep name.
+  // Rendering it would put a second audited page on one crossing. A shard row
+  // marked alias is the same thing for a slug collision.
+  const aliased = (s) => canonicalSlug(s) !== s || Boolean(sweepRows[s]?.alias);
+  const pool = [...base].filter((s) => today.has(s) && !fix.has(s) && !staged.has(s) && !decided.has(s) && !aliased(s));
   // A named subset picks out of the SAME pool rather than around it. The skip
   // on an existing fix render is what makes this tool idempotent, and a retry
   // must not be able to overwrite a render that already published.
@@ -357,6 +589,14 @@ export function eligible(meta, keyNames, sweepRows, limit, only = [], stagedSlug
   }
   const pts = (s) => sweepRows[s]?.points ?? 0;
   return pool.sort((a, b) => pts(b) - pts(a) || a.localeCompare(b)).slice(0, limit);
+}
+
+// Which tier a pick comes from, for the plan and the report. "audited" cannot
+// occur here because eligible() excludes the audited roster.
+export function tierOf(meta, slug) {
+  if ((meta.audited || []).includes(slug)) return "audited";
+  if ((meta.enriched || []).includes(slug)) return "enriched";
+  return "scored";
 }
 
 // ------------------------------------------------------------------ render
@@ -399,6 +639,101 @@ async function render(token, frameB64, prompt) {
   };
 }
 
+// The hazards overlay, drawn with the cron's own words (src/imagery.js
+// HAZARD_PROMPT) plus the text-preservation sentence the fix prompt above
+// carries. The overlay adds a legend box by design, so the instruction is not
+// "add no text": it is that nothing already in the photograph may change.
+const HAZARD_RENDER_PROMPT = (name) =>
+  HAZARD_PROMPT(name) +
+  " Keep every existing street name sign, speed limit sign and the watermark exactly as it " +
+  "appears, unchanged and legible. Do not alter, redraw or invent any text that is already " +
+  "in the photograph.";
+
+// The visual audit, through Vertex under ADC. Same prompt, same response
+// schema and the same reduction to four booleans as src/hazards.js auditFrame;
+// only the transport and the model differ, and the model is recorded.
+async function auditViaVertex(token, frameB64, corner) {
+  const r = await fetch(AUDIT_URL, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: "user",
+          parts: [{ inlineData: { mimeType: "image/jpeg", data: frameB64 } }, { text: AUDIT_PROMPT(corner) }],
+        },
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: AUDIT_SCHEMA,
+        // 2.5 models spend thinking tokens from the same budget; a tight
+        // ceiling returns MAX_TOKENS with no JSON at all.
+        maxOutputTokens: 8192,
+      },
+    }),
+  });
+  const d = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(String(d?.error?.message || `vertex ${r.status}`).slice(0, 200));
+  const text = (d?.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
+  const fin = d?.candidates?.[0]?.finishReason;
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`audit returned no JSON (finish=${fin})`);
+  }
+  const u = d?.usageMetadata || {};
+  return {
+    flags: flagsFrom(parsed),
+    notes: Object.fromEntries(Object.entries(parsed || {}).map(([k, v]) => [k, String(v?.note || "").slice(0, 200)])),
+    promptTokens: u.promptTokenCount || 0,
+    outputTokens: (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0),
+  };
+}
+
+// Text pricing for the audit call, the letter fleet's figures.
+const auditUsd = (p, o) => Math.round(((p / 1e6) * 0.3 + (o / 1e6) * 2.5) * 1e6) / 1e6;
+
+// One render through the gate, up to MAX_ATTEMPTS, with the quota backoff.
+// Shared by the two generated states so they cannot be gated differently.
+async function renderGated({ token, frame, prompt, before, wantStreets, slug, tag, stagedPath }) {
+  let done = null;
+  let tok = { promptTokens: 0, outputTokens: 0 };
+  let held = null;
+  let attempts = 0;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS && !done; attempt += 1) {
+    attempts = attempt;
+    let out;
+    try {
+      out = await render(token, frame.toString("base64"), prompt);
+    } catch (e) {
+      held = `render error: ${e.message}`;
+      if (/exhaust|quota|RESOURCE/i.test(String(e.message)) && attempt < MAX_ATTEMPTS) {
+        const wait = backoffMs(attempt);
+        console.log(`      ${tag}: quota refusal on attempt ${attempt}, waiting ${Math.round(wait / 1000)}s`);
+        await sleep(wait);
+        continue;
+      }
+      break;
+    }
+    tok = { promptTokens: tok.promptTokens + out.promptTokens, outputTokens: tok.outputTokens + out.outputTokens };
+    const cand = join(STAGE, `${slug}.${tag}.attempt${attempt}.jpg`);
+    writeFileSync(cand, Buffer.from(out.b64, "base64"));
+    const after = readRegions(cand, `${slug}_${tag}_out${attempt}`);
+    const gate = await checkLegibility({ inputRead: before, renderRead: after, expectStreets: wantStreets });
+    if (gate.verdict === "pass") {
+      writeFileSync(stagedPath, Buffer.from(out.b64, "base64"));
+      done = { attempt, gate };
+    } else {
+      held = `${gate.reasons.join("; ")}`;
+    }
+  }
+  const usd = Math.round(((tok.promptTokens / 1e6) * 0.3 + (tok.outputTokens / 1e6) * 2.5) * 1e6) / 1e6;
+  return done
+    ? { state: "passed", attempt: done.attempt, gate: done.gate, usd, ...tok }
+    : { state: "held", why: held, attempts, usd, ...tok };
+}
+
 // The street names an overhead plate at this corner would carry, longest
 // first, so the comparison uses the most distinctive token available rather
 // than "6TH", which OCR finds in noise.
@@ -438,39 +773,196 @@ for name, r in R.items():
 
 const IS_MAIN = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
+// Frame bytes for a corner: the city staging directory first, then the local
+// copy this tool keeps, then KV. A wrangler error page is not a JPEG, so the
+// magic bytes are checked whichever way the bytes arrived.
+function frameFor(slug) {
+  const local = join(FRAMES, `${slug}.jpg`);
+  const city = join(CITY_FRAMES, `${slug}.jpg`);
+  let source = null;
+  if (existsSync(city)) source = city;
+  else if (existsSync(local)) source = local;
+  else {
+    try {
+      writeFileSync(local, kvBytes(`img:${slug}:today`));
+      source = local;
+    } catch {
+      return { frame: null, path: null, from: null };
+    }
+  }
+  try {
+    const frame = readFileSync(source);
+    if (frame.length < 1024 || frame[0] !== 0xff || frame[1] !== 0xd8) return { frame: null, path: null, from: null };
+    return { frame, path: source, from: source === city ? "staged" : source === local ? "local" : "kv" };
+  } catch {
+    return { frame: null, path: null, from: null };
+  }
+}
+
+function readJsonOr(path, fallback) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+
 if (IS_MAIN) {
   mkdirSync(STAGE, { recursive: true });
   mkdirSync(FRAMES, { recursive: true });
+  if (DO_FULL) {
+    mkdirSync(HAZARDS_STAGE, { recursive: true });
+    mkdirSync(CORNERS_STAGE, { recursive: true });
+    mkdirSync(SCORES_STAGE, { recursive: true });
+  }
 
   const keyOut = kv(["kv", "key", "list", "--binding", "STORE", "--remote"]);
   const keyNames = JSON.parse(keyOut.slice(keyOut.indexOf("["))).map((k) => k.name);
-  const meta = JSON.parse(readFileSync(join(ROOT, "data", "city", "meta.json"), "utf8"));
+  const keySet = new Set(keyNames);
+  // The live roster, not the committed file. The cron moves a corner between
+  // rosters every morning and the file is a snapshot of the build; a pick made
+  // against the snapshot can re-audit a corner the cron audited yesterday.
+  let meta;
+  try {
+    const m = kv(["kv", "key", "get", "city:meta", "--binding", "STORE", "--remote", "--text"]);
+    meta = JSON.parse(m.slice(m.indexOf("{")));
+  } catch {
+    meta = JSON.parse(readFileSync(join(ROOT, "data", "city", "meta.json"), "utf8"));
+    console.log("city:meta could not be read from KV, using the committed snapshot");
+  }
   const sweep = JSON.parse(readFileSync(join(ROOT, "sweep-results.json"), "utf8")).corners;
   const rows = {};
   for (const r of Array.isArray(sweep) ? sweep : Object.values(sweep)) if (r?.slug) rows[r.slug] = r;
+
+  // The framed pool: img:index plus whatever the city fetch has staged.
+  let framed = [];
+  let stagedFrames = [];
+  if (POOL === "framed") {
+    try {
+      const o = kv(["kv", "key", "get", "img:index", "--binding", "STORE", "--remote", "--text"]);
+      framed = JSON.parse(o.slice(o.indexOf("{"))).slugs || [];
+    } catch {
+      framed = [];
+    }
+    if (existsSync(CITY_FRAMES)) {
+      stagedFrames = readdirSync(CITY_FRAMES)
+        .filter((f) => f.endsWith(".jpg") && !f.startsWith(".") && !f.startsWith("_"))
+        .map((f) => f.replace(/\.jpg$/, ""));
+    }
+    framed = [...new Set([...framed, ...stagedFrames])];
+  }
+
+  const priorRows = readRenderResults();
+  const decided = RETRY_HELD
+    ? []
+    : priorRows.filter((r) => r.state === "held" && r.preflight).map((r) => r.slug);
 
   // A named subset overrides the ranked selection. eligible() skips corners that
   // already have a stored fix render, which is what makes the tool idempotent,
   // and a retry of corners a quota window cost has to bypass the ranking
   // without bypassing that skip.
   const stagedAlready = stagedRenderFiles(readdirSync(STAGE)).map(slugOfRender);
-  const picks = ONLY.length
-    ? eligible(meta, keyNames, rows, 0, ONLY, stagedAlready)
-    : eligible(meta, keyNames, rows, N, [], stagedAlready);
+  const poolOpts = { pool: POOL, framed, stagedFrames, decided: [...decided, ...SKIP] };
+  let picks = ONLY.length
+    ? eligible(meta, keyNames, rows, 0, ONLY, stagedAlready, poolOpts)
+    : eligible(meta, keyNames, rows, ATTEMPTABLE ? 0 : N, [], stagedAlready, poolOpts);
+  if (ATTEMPTABLE && !ONLY.length) picks = eligible(meta, keyNames, rows, Number.MAX_SAFE_INTEGER, [], stagedAlready, poolOpts);
   if (stagedAlready.length) {
     console.log(`skipping ${stagedAlready.length} already staged and awaiting publish: ${stagedAlready.join(", ")}`);
   }
+  if (SKIP.length) console.log(`skipping ${SKIP.length} by ruling, named on the command line: ${SKIP.join(", ")}`);
+  if (decided.length) {
+    const pts = (s) => rows[s]?.points ?? 0;
+    const shown = [...decided].sort((a, b) => pts(b) - pts(a));
+    console.log(`skipping ${decided.length} held by a decided preflight (frame unreadable; re-fetch the frame, or --retry-held): ${shown.join(", ")}`);
+  }
   console.log(`model:  ${MODEL} on Vertex locations/${LOCATION}, ADC, no api key`);
-  console.log(`picks:  ${picks.length} enriched corners with a frame and no fix render, worst first`);
-  for (const s of picks) console.log(`  ${s.padEnd(26)} ${rows[s]?.points ?? "?"} points`);
+  if (DO_FULL) console.log(`audit:  ${AUDIT_MODEL} on Vertex locations/${AUDIT_LOCATION}, ADC, hazards ${HAZARD_VERSION}`);
+  console.log(`pool:   ${POOL}${POOL === "framed" ? ` (${framed.length} framed corners known, ${stagedFrames.length} of them staged)` : ""}`);
+  // The preflight at selection time. Walks the ranked pool, reads each frame
+  // offline, and keeps the first N the gate could ever pass. Refusals are
+  // kept with their reason so the run log and the report carry them.
+  const refusedAtSelection = [];
+  const preflightCache = new Map();
+  if (ATTEMPTABLE && !ONLY.length) {
+    const kept = [];
+    for (const slug of picks) {
+      if (kept.length >= N) break;
+      const { frame, path } = frameFor(slug);
+      if (!frame) {
+        refusedAtSelection.push({ slug, why: "no stored Street View frame" });
+        continue;
+      }
+      const name = CORNERS[slug]?.name || readJsonOr(join(CORNERS_STAGE, `${slug}.json`), null)?.name || rows[slug]?.name || slug.replace(/-and-/, " and ");
+      const before = readRegions(path, `${slug}_in`);
+      const pre = sourceIsCheckable(before, streetNames(name));
+      preflightCache.set(slug, { before, pre });
+      if (pre.checkable) kept.push(slug);
+      else refusedAtSelection.push({ slug, why: `unrenderable: ${pre.why}` });
+    }
+    picks = kept;
+    if (refusedAtSelection.length) {
+      console.log(`refused at selection, ${refusedAtSelection.length} corners ranked above or among the picks (no spend; the unblock is a re-fetched frame):`);
+      for (const r of refusedAtSelection) console.log(`  ${r.slug.padEnd(28)} ${String(rows[r.slug]?.points ?? "?").padStart(6)} points  ${r.why.slice(0, 60)}`);
+    }
+  }
+
+  console.log(`picks:  ${picks.length} corners with a frame and no fix render, worst first${DO_FULL ? ", full lane" : ""}${ATTEMPTABLE ? ", attemptable" : ""}`);
+  for (const s of picks) {
+    console.log(`  ${s.padEnd(28)} ${String(rows[s]?.points ?? "?").padStart(6)} points  ${tierOf(meta, s)}`);
+  }
   console.log();
 
   if (picks.length > DAILY_GENERATION_CAP) {
     console.log(`refusing: ${picks.length} exceeds the site's own DAILY_GENERATION_CAP of ${DAILY_GENERATION_CAP}`);
     process.exit(1);
   }
+
+  // The corner record a lane reads. Registry, then KV, then (full lane only)
+  // the city shard, in which case the corner is promoted into a stored record
+  // exactly as the cron promotes it: the tier tag and the sweep block come
+  // off, and the record is staged for publish before any lane reads it.
+  const env = kvEnv(ROOT);
+  async function cornerFor(slug) {
+    if (CORNERS[slug]) return { corner: CORNERS[slug], promoted: false };
+    const stagedPath = join(CORNERS_STAGE, `${slug}.json`);
+    if (existsSync(stagedPath)) return { corner: readJsonOr(stagedPath, null), promoted: true };
+    if (keySet.has(`corner:${slug}`)) {
+      const raw = kv(["kv", "key", "get", `corner:${slug}`, "--binding", "STORE", "--remote", "--text"]);
+      return { corner: JSON.parse(raw.slice(raw.indexOf("{"))), promoted: false };
+    }
+    if (!DO_FULL) return { corner: null, promoted: false };
+    const city = await cityCornerFor(env, slug);
+    if (!city) return { corner: null, promoted: false };
+    const { tier, sweep: sw, ...promoted } = city;
+    void tier;
+    void sw;
+    writeFileSync(stagedPath, JSON.stringify(promoted));
+    return { corner: promoted, promoted: true };
+  }
+
+  // The plan for the full lane carries the preflight verdict, because that is
+  // the difference between a slot that will be attempted and one that will be
+  // refused for free, and the operator should see it before spending.
   if (!DO_GENERATE && !DO_PUBLISH) {
-    console.log("plan only, nothing called and nothing written");
+    if (DO_FULL) {
+      console.log("preflight (offline OCR of the stored frame, nothing called):");
+      for (const slug of picks) {
+        const { frame, path, from } = frameFor(slug);
+        if (!frame) {
+          console.log(`  ${slug.padEnd(28)} NO FRAME`);
+          continue;
+        }
+        let pre = preflightCache.get(slug)?.pre;
+        if (!pre) {
+          const name = CORNERS[slug]?.name || rows[slug]?.name || (await cornerFor(slug)).corner?.name || slug.replace(/-and-/, " and ");
+          const before = readRegions(path, `${slug}_in`);
+          pre = sourceIsCheckable(before, streetNames(name));
+        }
+        console.log(`  ${slug.padEnd(28)} frame ${from.padEnd(6)} ${pre.checkable ? `checkable (${[pre.watermark && "watermark", pre.street && "signage"].filter(Boolean).join(", ")})` : "UNREADABLE, would be refused before spending"}`);
+      }
+    }
+    console.log("\nplan only, nothing called and nothing written");
     process.exit(0);
   }
 
@@ -480,40 +972,33 @@ if (IS_MAIN) {
     const token = accessToken();
     console.log(`ADC token minted, ${token.length} chars, not stored\n`);
 
+    // Selection-time refusals are outcomes of this run, at no cost.
+    for (const r of refusedAtSelection) {
+      results.push({ slug: r.slug, state: "held", why: r.why, usd: 0, promptTokens: 0, outputTokens: 0, preflight: true, at: new Date().toISOString() });
+    }
+
     for (const [i, slug] of picks.entries()) {
       const staged = join(STAGE, `${slug}.fix.jpg`);
       if (existsSync(staged)) {
         console.log(`  [${i + 1}/${picks.length}] ${slug}: already staged, skipping`);
         continue;
       }
-      const framePath = join(FRAMES, `${slug}.jpg`);
-      if (!existsSync(framePath)) {
-        try {
-          writeFileSync(framePath, kvBytes(`img:${slug}:today`));
-        } catch {
-          /* falls through to the check below */
-        }
-      }
-      let frame = null;
-      try {
-        frame = readFileSync(framePath);
-        // A wrangler error page is not a JPEG. Checking the magic bytes is what
-        // stops a failed read being fed to the model as if it were a frame.
-        if (frame.length < 1024 || frame[0] !== 0xff || frame[1] !== 0xd8) frame = null;
-      } catch {
-        frame = null;
-      }
+      const { frame, path: framePath } = frameFor(slug);
       if (!frame) {
         results.push({ slug, state: "skipped", why: "no stored Street View frame" });
         console.log(`  [${i + 1}/${picks.length}] ${slug}: skipped, no usable frame`);
         continue;
       }
 
-      const cornerRaw = kv(["kv", "key", "get", `corner:${slug}`, "--binding", "STORE", "--remote", "--text"]);
-      const corner = JSON.parse(cornerRaw.slice(cornerRaw.indexOf("{")));
+      const { corner, promoted } = await cornerFor(slug);
+      if (!corner) {
+        results.push({ slug, state: "skipped", why: "no corner record and no shard row" });
+        console.log(`  [${i + 1}/${picks.length}] ${slug}: skipped, no corner record`);
+        continue;
+      }
       const prompt = FIX_PROMPT(corner.name, corner.fix?.name || "continental crosswalks and corner daylighting");
 
-      const before = readRegions(framePath, `${slug}_in`);
+      const before = preflightCache.get(slug)?.before || readRegions(framePath, `${slug}_in`);
       const wantStreets = streetNames(corner.name);
 
       // Refuse before spending. A corner whose source frame is unreadable in
@@ -526,74 +1011,119 @@ if (IS_MAIN) {
         continue;
       }
 
-      let done = null;
-      let tok = { promptTokens: 0, outputTokens: 0 };
-      let held = null;
+      const frameB64 = frame.toString("base64");
+      let audit = null;
+      let hazardsRender = null;
 
-      for (let attempt = 1; attempt <= MAX_ATTEMPTS && !done; attempt += 1) {
-        let out;
-        try {
-          out = await render(token, frame.toString("base64"), prompt);
-        } catch (e) {
-          held = `render error: ${e.message}`;
-          // A quota refusal is a rate window, not a spent allowance. Back off
-          // and try again rather than burning the corner on one bad minute.
-          if (/exhaust|quota|RESOURCE/i.test(String(e.message)) && attempt < MAX_ATTEMPTS) {
-            const wait = backoffMs(attempt);
-            console.log(`      quota refusal on attempt ${attempt}, waiting ${Math.round(wait / 1000)}s`);
-            await sleep(wait);
-            continue;
+      if (DO_FULL) {
+        // Lane 1: the visual audit, then the record corroboration, assembled
+        // by the Worker's own function. Stored only when the model answered:
+        // an audited:false record would pin the corner to "no audit ran" and
+        // block the retry that a later window could make.
+        let auditOut = null;
+        let auditErr = null;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS && !auditOut; attempt += 1) {
+          try {
+            auditOut = await auditViaVertex(token, frameB64, corner);
+          } catch (e) {
+            auditErr = e.message;
+            if (/exhaust|quota|RESOURCE|429/i.test(String(e.message)) && attempt < MAX_ATTEMPTS) {
+              const wait = backoffMs(attempt);
+              console.log(`      audit: quota refusal on attempt ${attempt}, waiting ${Math.round(wait / 1000)}s`);
+              await sleep(wait);
+            } else break;
           }
-          break;
         }
-        tok = { promptTokens: tok.promptTokens + out.promptTokens, outputTokens: tok.outputTokens + out.outputTokens };
-        const cand = join(STAGE, `${slug}.attempt${attempt}.jpg`);
-        writeFileSync(cand, Buffer.from(out.b64, "base64"));
-        const after = readRegions(cand, `${slug}_out${attempt}`);
-        const gate = await checkLegibility({
-          inputRead: before,
-          renderRead: after,
-          // The signage signal was dead until this was passed. checkLegibility
-          // only compares the upper band against text it independently knows
-          // belongs there, and with no street names supplied it abstained every
-          // time, so the gate had been running on the watermark alone.
-          expectStreets: wantStreets,
-        });
-        if (gate.verdict === "pass") {
-          writeFileSync(staged, Buffer.from(out.b64, "base64"));
-          done = { attempt, gate };
+        if (auditOut) {
+          const evidence = await evidenceFor(corner);
+          const record = {
+            ...assemble(auditOut.flags, evidence),
+            // Provenance on the record itself: which model looked, through
+            // what, and when. The Worker's path writes none of these because
+            // the Worker is the default; a batch says so.
+            model: AUDIT_MODEL,
+            via: `vertex:${AUDIT_LOCATION}`,
+            lane: "batch-full",
+            at: new Date().toISOString(),
+            flags: auditOut.flags,
+            notes: auditOut.notes,
+          };
+          writeFileSync(join(HAZARDS_STAGE, `${slug}.json`), JSON.stringify(record));
+          audit = {
+            ok: true,
+            model: AUDIT_MODEL,
+            via: `vertex:${AUDIT_LOCATION}`,
+            at: record.at,
+            flags: auditOut.flags,
+            confirmed: record.confirmed,
+            candidates: record.candidates,
+            reported: record.reported,
+            usd: auditUsd(auditOut.promptTokens, auditOut.outputTokens),
+            promptTokens: auditOut.promptTokens,
+            outputTokens: auditOut.outputTokens,
+          };
+          console.log(`      audit: ${record.confirmed} confirmed, ${record.candidates} candidate, ${record.reported} reported`);
         } else {
-          held = `${gate.reasons.join("; ")}`;
+          audit = { ok: false, why: `audit error: ${auditErr}`, usd: 0 };
+          console.log(`      audit: FAILED, ${String(auditErr).slice(0, 80)}`);
         }
+
+        // Lane 2: the hazards overlay, through the same gate.
+        hazardsRender = await renderGated({
+          token, frame, prompt: HAZARD_RENDER_PROMPT(corner.name), before, wantStreets, slug,
+          tag: "hazards", stagedPath: join(STAGE, `${slug}.hazards.jpg`),
+        });
+        console.log(
+          hazardsRender.state === "passed"
+            ? `      hazards render: passed attempt ${hazardsRender.attempt}, checked [${hazardsRender.gate.checked.join(",")}]`
+            : `      hazards render: HELD, ${String(hazardsRender.why).slice(0, 80)}`,
+        );
+        await sleep(SPACING_MS);
       }
+
+      // Lane 3: the proposed fix.
+      const fix = await renderGated({
+        token, frame, prompt, before, wantStreets, slug, tag: "fix", stagedPath: staged,
+      });
 
       // Spacing between corners, on top of the per attempt backoff above. The
       // five quota holds on 2026-08-20 all landed inside the same minute.
       if (i < picks.length - 1) await sleep(SPACING_MS);
 
-      const usd = Math.round(((tok.promptTokens / 1e6) * 0.3 + (tok.outputTokens / 1e6) * 2.5) * 1e6) / 1e6;
-      if (done) {
+      const usd = Math.round(((fix.usd || 0) + (hazardsRender?.usd || 0) + (audit?.usd || 0)) * 1e6) / 1e6;
+      const tok = {
+        promptTokens: (fix.promptTokens || 0) + (hazardsRender?.promptTokens || 0) + (audit?.promptTokens || 0),
+        outputTokens: (fix.outputTokens || 0) + (hazardsRender?.outputTokens || 0) + (audit?.outputTokens || 0),
+      };
+      const laneBits = DO_FULL
+        ? { lane: "full", promoted, audit, hazardsRender: hazardsRender && { ...hazardsRender, gate: hazardsRender.gate || undefined }, fixUsd: fix.usd }
+        : {};
+      const full = DO_FULL && audit?.ok && hazardsRender?.state === "passed" && fix.state === "passed";
+
+      if (fix.state === "passed") {
         writeFileSync(
           join(STAGE, `${slug}.meta.json`),
           JSON.stringify({
             slug,
             model: MODEL,
             via: `vertex:${LOCATION}`,
-            attempt: done.attempt,
-            checked: done.gate.checked,
-            unchecked: done.gate.unchecked,
-            promotedFrom: "enriched",
+            attempt: fix.attempt,
+            checked: fix.gate.checked,
+            unchecked: fix.gate.unchecked,
+            promotedFrom: tierOf(meta, slug),
+            lane: full ? "full" : "fix-only",
             at: new Date().toISOString(),
             usd,
           }),
         );
-        results.push({ slug, state: "passed", attempt: done.attempt, usd, ...tok, gate: done.gate, at: new Date().toISOString() });
+        results.push({ slug, state: "passed", attempt: fix.attempt, usd, ...tok, gate: fix.gate, at: new Date().toISOString(), ...laneBits });
         console.log(
-          `  [${i + 1}/${picks.length}] ${slug}: passed attempt ${done.attempt}, checked [${done.gate.checked.join(",")}] unchecked [${done.gate.unchecked.join(",")}]`,
+          `  [${i + 1}/${picks.length}] ${slug}: fix passed attempt ${fix.attempt}, checked [${fix.gate.checked.join(",")}] unchecked [${fix.gate.unchecked.join(",")}]` +
+            (DO_FULL ? `  -> ${full ? "FULL LANE, audited" : "partial, promoted-from-enriched"}` : ""),
         );
       } else {
-        results.push({ slug, state: "held", why: held, usd, ...tok, at: new Date().toISOString() });
-        console.log(`  [${i + 1}/${picks.length}] ${slug}: HELD, ${String(held).slice(0, 90)}`);
+        results.push({ slug, state: "held", why: fix.why, usd, ...tok, at: new Date().toISOString(), ...laneBits });
+        console.log(`  [${i + 1}/${picks.length}] ${slug}: fix HELD, ${String(fix.why).slice(0, 90)}` + (DO_FULL && hazardsRender?.state === "passed" ? "  -> hazards only, promoted-from-enriched" : ""));
       }
     }
     // Merge, never replace. This is burn 26 in the sibling tool, and it was
@@ -613,37 +1143,123 @@ if (IS_MAIN) {
     );
     appendRenderRun({
       at: new Date().toISOString(),
-      label: ONLY.length ? `re-render of ${ONLY.length} named corners` : `pass over ${picks.length} corners`,
+      label: (ONLY.length ? `re-render of ${ONLY.length} named corners` : `pass over ${picks.length} corners`) + (DO_FULL ? ", full lane" : ""),
       corners: results.length,
-      calls: results.reduce((a, r) => a + (r.attempt || 0), 0),
+      calls: results.reduce((a, r) => a + (r.attempt || r.attempts || 0) + (r.hazardsRender?.attempt || r.hazardsRender?.attempts || 0) + (r.audit?.ok ? 1 : 0), 0),
       promptTokens: results.reduce((a, r) => a + (r.promptTokens || 0), 0),
       outputTokens: results.reduce((a, r) => a + (r.outputTokens || 0), 0),
       estUsd: Math.round(results.reduce((a, r) => a + (r.usd || 0), 0) * 1e6) / 1e6,
       model: MODEL,
+      ...(DO_FULL ? { auditModel: AUDIT_MODEL } : {}),
     });
   }
 
   // ---------------------------------------------------------------- publish
 
   let published = 0;
+  let audited = 0;
   let kvWrites = 0;
   let publishNote = null;
 
   if (DO_PUBLISH) {
-    const rows = results.length
-      ? results
-      : existsSync(join(STAGE, "_results.json"))
-        ? JSON.parse(readFileSync(join(STAGE, "_results.json"), "utf8"))
-        : [];
-    const byslug = new Map(rows.map((r) => [r.slug, r]));
+    const rowsNow = results.length ? results : readRenderResults();
+    const byslug = new Map(rowsNow.map((r) => [r.slug, r]));
 
-    const files = stagedRenderFiles(readdirSync(STAGE));
-    const slugs = files.map(slugOfRender);
-    console.log(`\npublishing ${slugs.length} render${slugs.length === 1 ? "" : "s"}`);
+    const names = readdirSync(STAGE);
+    const fixFiles = stagedRenderFiles(names);
+    const hazFiles = stagedHazardFiles(names);
+    const fixSlugs = new Set(fixFiles.map(slugOfRender));
+    const hazSlugs = new Set(hazFiles.map(slugOfHazardRender));
+    const slugs = [...new Set([...fixSlugs, ...hazSlugs])].sort();
+    console.log(`\npublishing ${fixFiles.length} fix render${fixFiles.length === 1 ? "" : "s"}, ${hazFiles.length} hazards render${hazFiles.length === 1 ? "" : "s"}`);
 
+    // Stops on the daily cap, like every other lane. Returns false when the
+    // cap is hit so the caller can stop rather than spend more failed calls.
+    let capped = false;
+    const putFile = (key, file) => {
+      if (capped) return false;
+      try {
+        kv(["kv", "key", "put", key, "--path", file, "--binding", "STORE", "--remote"]);
+        kvWrites += 1;
+        return true;
+      } catch (e) {
+        const msg = String(e.message || e);
+        if (KV_CAP_SPENT.test(msg)) {
+          capped = true;
+          publishNote = "the account's daily KV write allowance is spent; the staged state on disk is correct and a republish after the 00:00 UTC reset carries the rest";
+          console.log(`  ${key}: REFUSED, daily KV write allowance spent`);
+        } else {
+          console.log(`  ${key}: FAILED, ${msg.slice(0, 90)}`);
+        }
+        return false;
+      }
+    };
+    const putBulk = (entries, label) => {
+      if (capped || !entries.length) return false;
+      const f = join(STAGE, `.bulk-${label}-${entries.length}.json`);
+      writeFileSync(f, JSON.stringify(entries));
+      try {
+        kv(["kv", "bulk", "put", f, "--binding", "STORE", "--remote"]);
+        kvWrites += entries.length;
+        return true;
+      } catch (e) {
+        const msg = String(e.message || e);
+        capped = KV_CAP_SPENT.test(msg);
+        publishNote = capped
+          ? `${label}: the daily KV write allowance is spent; nothing in this step was written and a republish after the 00:00 UTC reset carries it`
+          : `${label}: bulk write failed: ${msg.slice(0, 160)}`;
+        console.log(`\n${label.toUpperCase()} NOT WRITTEN: ${publishNote}`);
+        return false;
+      }
+    };
+
+    // Records before bytes, bytes before status. A status claiming a render
+    // that is not stored is a broken image on a live page; a record with no
+    // status pointing at it is invisible and harmless, so that is the safer
+    // order to fail in.
+    //
+    // 1. Promoted corner records and their scores: the corner the lanes read.
+    const cornerEntries = [];
+    const scoreEntries = [];
+    if (DO_FULL || existsSync(CORNERS_STAGE)) {
+      for (const slug of slugs) {
+        const cf = join(CORNERS_STAGE, `${slug}.json`);
+        if (existsSync(cf) && !keySet.has(`corner:${slug}`)) {
+          cornerEntries.push({ key: `corner:${slug}`, value: readFileSync(cf, "utf8") });
+        }
+        // A promoted scored corner has no score record; the audited index
+        // reads one for its grade. Computed by the Worker's own function.
+        if (existsSync(cf) && !keySet.has(`score:${slug}`)) {
+          const sf = join(SCORES_STAGE, `${slug}.json`);
+          if (!existsSync(sf)) {
+            try {
+              const c = readJsonOr(cf, null);
+              const sc = await computeScore(c);
+              writeFileSync(sf, JSON.stringify(sc));
+            } catch (e) {
+              console.log(`  ${slug}: score not computed, ${String(e.message || e).slice(0, 80)}`);
+            }
+          }
+          if (existsSync(sf)) scoreEntries.push({ key: `score:${slug}`, value: readFileSync(sf, "utf8") });
+        }
+      }
+    }
+    if (cornerEntries.length && putBulk(cornerEntries, "corners")) console.log(`  ${cornerEntries.length} promoted corner record${cornerEntries.length === 1 ? "" : "s"} written`);
+    if (scoreEntries.length && putBulk(scoreEntries, "scores")) console.log(`  ${scoreEntries.length} score record${scoreEntries.length === 1 ? "" : "s"} written (${SCORE_VERSION})`);
+
+    // 2. Hazards records, for the corners whose audit ran.
+    const hazardEntries = [];
+    if (existsSync(HAZARDS_STAGE)) {
+      for (const slug of slugs) {
+        const hf = join(HAZARDS_STAGE, `${slug}.json`);
+        const row = byslug.get(slug);
+        if (existsSync(hf) && row?.audit?.ok) hazardEntries.push({ key: `hazards:${slug}`, value: readFileSync(hf, "utf8") });
+      }
+    }
+    if (hazardEntries.length && putBulk(hazardEntries, "hazards")) console.log(`  ${hazardEntries.length} hazards record${hazardEntries.length === 1 ? "" : "s"} written`);
+
+    // 3. Bytes, then 4. status, per corner.
     if (slugs.length) {
-      // Read the existing imgstatus for each, so the merge cannot drop a state
-      // the corner already had.
       const keyFile = join(STAGE, `.imgkeys-${slugs.length}.json`);
       writeFileSync(keyFile, JSON.stringify(slugs.map((x) => `imgstatus:${x}`)));
       let existing = {};
@@ -654,116 +1270,138 @@ if (IS_MAIN) {
         console.log(`  could not read existing imgstatus, treating all as new: ${String(e.message || e).slice(0, 90)}`);
       }
 
-      // Two writes per render: the bytes, then the record that says the bytes
-      // exist and where they came from. The bytes go first. A record claiming a
-      // render that is not stored is a broken image on a live page; bytes with
-      // no record are invisible and harmless, so that is the safer order to
-      // fail in.
       const statusEntries = [];
-      for (const f of files) {
-        const slug = slugOfRender(f);
+      const auditedSlugs = [];
+      const promotedSlugs = [];
+      for (const slug of slugs) {
+        if (capped) break;
         const row = byslug.get(slug) || {};
-        if (row.state === "held") {
+        const hasFix = fixSlugs.has(slug);
+        const hasHaz = hazSlugs.has(slug);
+        if (hasFix && row.state === "held") {
           // Cannot happen through stagedRenderFiles, which selects only
           // `.fix.jpg` and a held render never gets one. Asserted anyway,
           // because "cannot happen" is what the letter publish said too.
-          console.log(`  ${slug}: REFUSING, the run log says this render was held`);
+          console.log(`  ${slug}: REFUSING, the run log says this fix render was held`);
           publishNote = `refused to publish ${slug}, held in the run log`;
           continue;
         }
-        try {
-          kv(["kv", "key", "put", `img:${slug}:fix`, "--path", join(STAGE, f), "--binding", "STORE", "--remote"]);
-          kvWrites += 1;
-        } catch (e) {
-          const msg = String(e.message || e);
-          const capped = KV_CAP_SPENT.test(msg);
-          console.log(`  ${slug}: image write ${capped ? "REFUSED, daily KV allowance spent" : `FAILED, ${msg.slice(0, 90)}`}`);
-          publishNote = capped
-            ? "the account's daily KV write allowance is spent; nothing was published and the staged renders are unchanged"
-            : `image write failed for ${slug}`;
-          if (capped) break;
+        if (hasHaz && row.hazardsRender?.state === "held") {
+          console.log(`  ${slug}: REFUSING, the run log says this hazards render was held`);
+          publishNote = `refused to publish ${slug}, hazards render held in the run log`;
           continue;
         }
+        // Bytes already in KV are not re-put: a republish after a capped
+        // window must carry only what is missing.
+        let okFix = !hasFix || keySet.has(`img:${slug}:fix`);
+        let okHaz = !hasHaz || keySet.has(`img:${slug}:hazards`);
+        if (hasHaz && !okHaz) okHaz = putFile(`img:${slug}:hazards`, join(STAGE, `${slug}.hazards.jpg`));
+        if (hasFix && !okFix) okFix = putFile(`img:${slug}:fix`, join(STAGE, `${slug}.fix.jpg`));
+        if (capped) break;
         let prior = existing[`imgstatus:${slug}`] ?? null;
         if (typeof prior === "string") { try { prior = JSON.parse(prior); } catch { prior = null; } }
-        statusEntries.push({
-          key: `imgstatus:${slug}`,
-          value: JSON.stringify(
-            promotedStatus(prior, {
-              at: Date.now(),
-              model: MODEL,
-              via: `vertex:${LOCATION}`,
-              attempt: row.attempt ?? null,
-              usd: row.usd ?? 0,
-              gate: row.gate || null,
-            }),
-          ),
-        });
+        const { kind, status } = statusFor(
+          prior,
+          row,
+          { fix: hasFix && okFix, hazards: hasHaz && okHaz },
+          { at: Date.now(), model: MODEL, via: `vertex:${LOCATION}` },
+        );
+        if (!kind) {
+          console.log(`  ${slug}: nothing publishable (fix ${hasFix ? row.state : "none"}, hazards ${hasHaz ? row.hazardsRender?.state : "none"})`);
+          continue;
+        }
+        statusEntries.push({ key: `imgstatus:${slug}`, value: JSON.stringify(status) });
+        if (kind === "audited") auditedSlugs.push(slug);
+        else promotedSlugs.push(slug);
         published += 1;
-        console.log(`  ${slug}: published, provenance promoted-from-enriched`);
+        console.log(`  ${slug}: ${kind === "audited" ? "published, provenance audited (full lane)" : "published, provenance promoted-from-enriched"}`);
       }
 
-      if (statusEntries.length) {
-        const bulk = join(STAGE, `.imgbulk-${statusEntries.length}.json`);
-        writeFileSync(bulk, JSON.stringify(statusEntries));
-        try {
-          kv(["kv", "bulk", "put", bulk, "--binding", "STORE", "--remote"]);
-          kvWrites += statusEntries.length;
-        } catch (e) {
+      if (statusEntries.length && !capped) {
+        if (!putBulk(statusEntries, "status")) {
           // The bytes are already stored and the record that points at them is
           // not. That is the recoverable direction, but it must be said out
           // loud rather than crashing: an image with no status record is
           // invisible to the site, which is harmless and also not what the run
           // just claimed to have done.
-          const msg = String(e.message || e);
           published = 0;
-          publishNote = KV_CAP_SPENT.test(msg)
+          auditedSlugs.length = 0;
+          promotedSlugs.length = 0;
+          publishNote = capped
             ? "the image bytes were stored but the status records were refused: the daily KV write allowance is spent. Nothing is visible on the site until a republish after the 00:00 UTC reset."
-            : `status write failed: ${msg.slice(0, 160)}`;
-          console.log(`\nSTATUS NOT WRITTEN: ${publishNote}`);
+            : publishNote;
+        }
+      }
+      audited = auditedSlugs.length;
+
+      // 5. The rosters, one write. Full-lane corners join the audited roster
+      // and leave enriched; a promoted scored corner joins enriched. The same
+      // rule the cron applies, from the same record.
+      if (!capped && (auditedSlugs.length || promotedSlugs.length)) {
+        try {
+          const m = kv(["kv", "key", "get", "city:meta", "--binding", "STORE", "--remote", "--text"]);
+          const live = JSON.parse(m.slice(m.indexOf("{")));
+          const aud = new Set(live.audited || []);
+          const enr = new Set(live.enriched || []);
+          for (const s of auditedSlugs) { aud.add(s); enr.delete(s); }
+          for (const s of promotedSlugs) if (!aud.has(s)) enr.add(s);
+          const next = {
+            ...live,
+            audited: [...aud].sort(),
+            enriched: [...enr].sort(),
+            totalAudited: aud.size,
+            totalEnriched: enr.size,
+          };
+          const changed = next.audited.length !== (live.audited || []).length || next.enriched.length !== (live.enriched || []).length;
+          if (changed) {
+            const mf = join(STAGE, ".citymeta.json");
+            writeFileSync(mf, JSON.stringify(next));
+            if (putFile("city:meta", mf)) console.log(`  city:meta rosters: audited ${aud.size}, enriched ${enr.size}`);
+          }
+        } catch (e) {
+          console.log(`  city:meta NOT updated: ${String(e.message || e).slice(0, 120)}`);
         }
       }
     }
 
     // The ledger, one record holding a line per render, held ones included.
-    const ledger = buildRenderLedger(rows, { now: new Date().toISOString(), runs: readRenderRuns() });
-    const lf = join(STAGE, ".renderledger.json");
-    writeFileSync(lf, JSON.stringify([{ key: "budget:renders", value: JSON.stringify(ledger) }]));
-    try {
-      kv(["kv", "bulk", "put", lf, "--binding", "STORE", "--remote"]);
-      kvWrites += 1;
-      console.log(`  budget:renders written, ${ledger.published} published of ${ledger.attempted} attempted, $${(ledger.estUsd || 0).toFixed(4)}`);
-    } catch (e) {
-      // The daily KV write allowance is account wide and resets at 00:00 UTC.
-      // Hitting it is an ordinary operating condition on the free plan, not a
-      // fault, and it used to end this tool in a raw Node stack trace with the
-      // real message buried in a stringified stderr dump. Say what happened and
-      // what it means: the staged state on disk is correct and republishing
-      // after the reset is all that is needed.
-      const msg = String(e.message || e);
-      publishNote = KV_CAP_SPENT.test(msg)
-        ? "the account's daily KV write allowance is spent, so the ledger was not updated; the staged results are correct and a republish after the 00:00 UTC reset will carry them"
-        : `ledger write failed: ${msg.slice(0, 160)}`;
-      console.log(`\nLEDGER NOT WRITTEN: ${publishNote}`);
+    if (!capped) {
+      const ledger = buildRenderLedger(rowsNow, { now: new Date().toISOString(), runs: readRenderRuns() });
+      const lf = join(STAGE, ".renderledger.json");
+      writeFileSync(lf, JSON.stringify([{ key: "budget:renders", value: JSON.stringify(ledger) }]));
+      try {
+        kv(["kv", "bulk", "put", lf, "--binding", "STORE", "--remote"]);
+        kvWrites += 1;
+        console.log(`  budget:renders written, ${ledger.published} published of ${ledger.attempted} attempted, $${(ledger.estUsd || 0).toFixed(4)}`);
+      } catch (e) {
+        const msg = String(e.message || e);
+        publishNote = KV_CAP_SPENT.test(msg)
+          ? "the account's daily KV write allowance is spent, so the ledger was not updated; the staged results are correct and a republish after the 00:00 UTC reset will carry them"
+          : `ledger write failed: ${msg.slice(0, 160)}`;
+        console.log(`\nLEDGER NOT WRITTEN: ${publishNote}`);
+      }
     }
   }
 
-  const src = results.length
-    ? results
-    : existsSync(join(STAGE, "_results.json"))
-      ? JSON.parse(readFileSync(join(STAGE, "_results.json"), "utf8"))
-      : [];
+  const src = results.length ? results : readRenderResults();
   const passed = src.filter((r) => r.state === "passed");
   const held = src.filter((r) => r.state === "held");
   const usd = src.reduce((a, r) => a + (r.usd || 0), 0);
 
   console.log("\n| metric | value |");
   console.log("|---|---|");
-  console.log(`| renders attempted | ${src.length} |`);
-  console.log(`| passed the legibility gate | ${passed.length} |`);
-  console.log(`| held | ${held.length} |`);
+  console.log(`| corners attempted | ${src.length} |`);
+  console.log(`| fix render passed the legibility gate | ${passed.length} |`);
+  console.log(`| fix render held | ${held.length} |`);
+  if (DO_FULL || src.some((r) => r.lane === "full")) {
+    const fullRows = src.filter((r) => r.lane === "full");
+    console.log(`| full lane: audit ran | ${fullRows.filter((r) => r.audit?.ok).length} of ${fullRows.length} |`);
+    console.log(`| full lane: hazards render passed | ${fullRows.filter((r) => r.hazardsRender?.state === "passed").length} of ${fullRows.length} |`);
+    console.log(`| full lane: completed all three | ${fullRows.filter((r) => r.audit?.ok && r.hazardsRender?.state === "passed" && r.state === "passed").length} of ${fullRows.length} |`);
+  }
   console.log(`| estimated spend | $${usd.toFixed(4)} |`);
   console.log(`| published to kv | ${published} |`);
+  if (audited) console.log(`| published as audited | ${audited} |`);
   console.log(`| kv writes consumed | ${kvWrites} |`);
   if (held.length) {
     console.log("\nheld, with reasons and the frame kept for diagnosis:");

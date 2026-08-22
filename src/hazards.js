@@ -79,19 +79,48 @@ function toBase64(buf) {
   return btoa(out);
 }
 
+// The words the audit asks, and the shape it may answer in. Exported so the
+// offline batch (tools/promote_corners.mjs --full, under Vertex ADC) asks the
+// same question in the same words with the same schema, and only the transport
+// differs. Two copies of a prompt drift; one prompt with two callers cannot.
+export const AUDIT_PROMPT = (c) =>
+  `This is a real Street View photograph of ${c.name} in San Francisco. ` +
+  "You are performing a pedestrian safety audit of what is visible in this specific photograph. " +
+  "For each of the four conditions below, answer whether you can actually see evidence of it in " +
+  "this image. Answer false when you cannot see it, when the view is obstructed, or when you are " +
+  "unsure. Do not assume a condition is present because the intersection looks busy. " +
+  "Conditions: faded_crosswalk (crosswalk markings that are worn, faded, missing, or not high " +
+  "visibility), turning_conflict (a place where turning vehicles cross the pedestrian path), " +
+  "lighting (visibly inadequate or absent street lighting), curb_sidewalk (damaged, broken, or " +
+  "obstructed curb or sidewalk). Return only JSON.";
+
+export const AUDIT_SCHEMA = {
+  type: "OBJECT",
+  properties: Object.fromEntries(
+    HAZARDS.map((h) => [
+      h.key,
+      {
+        type: "OBJECT",
+        properties: {
+          present: { type: "BOOLEAN" },
+          note: { type: "STRING" },
+        },
+        required: ["present"],
+      },
+    ]),
+  ),
+  required: HAZARDS.map((h) => h.key),
+};
+
+// What the model said, reduced to the four booleans and nothing else. Shared by
+// both transports so a note, an extra key or a string "true" is handled the
+// same way whichever path asked.
+export function flagsFrom(parsed) {
+  return Object.fromEntries(HAZARDS.map((h) => [h.key, Boolean(parsed?.[h.key]?.present)]));
+}
+
 // The only model call in this file. It reports observations; it never labels.
 export async function auditFrame(todayBytes, c, env) {
-  const prompt =
-    `This is a real Street View photograph of ${c.name} in San Francisco. ` +
-    "You are performing a pedestrian safety audit of what is visible in this specific photograph. " +
-    "For each of the four conditions below, answer whether you can actually see evidence of it in " +
-    "this image. Answer false when you cannot see it, when the view is obstructed, or when you are " +
-    "unsure. Do not assume a condition is present because the intersection looks busy. " +
-    "Conditions: faded_crosswalk (crosswalk markings that are worn, faded, missing, or not high " +
-    "visibility), turning_conflict (a place where turning vehicles cross the pedestrian path), " +
-    "lighting (visibly inadequate or absent street lighting), curb_sidewalk (damaged, broken, or " +
-    "obstructed curb or sidewalk). Return only JSON.";
-
   const r = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${AUDIT_MODEL}:generateContent`,
     {
@@ -102,29 +131,13 @@ export async function auditFrame(todayBytes, c, env) {
           {
             parts: [
               { inlineData: { mimeType: "image/jpeg", data: toBase64(todayBytes) } },
-              { text: prompt },
+              { text: AUDIT_PROMPT(c) },
             ],
           },
         ],
         generationConfig: {
           responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: Object.fromEntries(
-              HAZARDS.map((h) => [
-                h.key,
-                {
-                  type: "OBJECT",
-                  properties: {
-                    present: { type: "BOOLEAN" },
-                    note: { type: "STRING" },
-                  },
-                  required: ["present"],
-                },
-              ]),
-            ),
-            required: HAZARDS.map((h) => h.key),
-          },
+          responseSchema: AUDIT_SCHEMA,
         },
       }),
     },
@@ -132,14 +145,11 @@ export async function auditFrame(todayBytes, c, env) {
   if (!r.ok) throw new Error(`gemini audit ${r.status}`);
   const d = await r.json();
   const text = (d?.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
-  const parsed = JSON.parse(text);
-  return Object.fromEntries(
-    HAZARDS.map((h) => [h.key, Boolean(parsed?.[h.key]?.present)]),
-  );
+  return flagsFrom(JSON.parse(text));
 }
 
 // Counts the record has for each hazard. No model, no judgement, just queries.
-async function evidenceFor(c) {
+export async function evidenceFor(c) {
   const circle = `within_circle(point, ${c.lat}, ${c.lon}, ${RADIUS})`;
   const since1 = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString().slice(0, 19);
   const since5 = new Date(Date.now() - 5 * 365 * 24 * 3600 * 1000).toISOString().slice(0, 19);
@@ -211,14 +221,11 @@ function detailFor(h, ev) {
   return bits.join(", ") || "no supporting records within 80 meters";
 }
 
-export async function corroborate(c, todayBytes, env) {
-  // The audit and the record queries do not depend on each other, so they run
-  // together. If the audit fails, the record half still produces REPORTED rows.
-  const [flags, evidence] = await Promise.all([
-    auditFrame(todayBytes, c, env).catch(() => null),
-    evidenceFor(c),
-  ]);
-
+// The assembly, with no model and no network in it. Given what the model saw
+// (or null, when the audit call failed) and what the record holds, produce the
+// stored hazards record. The Worker's corroborate() and the offline batch both
+// end here, which is what makes a batch-audited record the same record.
+export function assemble(flags, evidence) {
   const items = [];
   for (const h of HAZARDS) {
     const ev = evidence[h.key];
@@ -247,4 +254,14 @@ export async function corroborate(c, todayBytes, env) {
     candidates: items.filter((i) => i.verdict === "CANDIDATE").length,
     reported: items.filter((i) => i.verdict === "REPORTED").length,
   };
+}
+
+export async function corroborate(c, todayBytes, env) {
+  // The audit and the record queries do not depend on each other, so they run
+  // together. If the audit fails, the record half still produces REPORTED rows.
+  const [flags, evidence] = await Promise.all([
+    auditFrame(todayBytes, c, env).catch(() => null),
+    evidenceFor(c),
+  ]);
+  return assemble(flags, evidence);
 }

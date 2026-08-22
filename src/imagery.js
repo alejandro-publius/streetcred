@@ -61,7 +61,9 @@ export function tierFromImagery(status, provenance) {
 
 const MODEL = "gemini-3.1-flash-image";
 
-const HAZARD_PROMPT = (name) =>
+// Exported so the offline batch (tools/promote_corners.mjs --full) draws the same
+// overlay the cron draws, with the same words. One prompt, two callers.
+export const HAZARD_PROMPT = (name) =>
   `This is a real street-level photo of the intersection of ${name} in San Francisco. ` +
   "Annotate it as a professional traffic-safety audit: overlay semi-transparent RED " +
   "hatching on sub-standard or faded pedestrian crosswalk markings, and semi-transparent " +

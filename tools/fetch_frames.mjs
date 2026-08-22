@@ -189,11 +189,17 @@ if (IS_MAIN) {
     const files = readdirSync(STAGE).filter((f) => f.endsWith(".jpg") && !f.startsWith(".") && !f.startsWith("_"));
     console.log(`\npublishing ${files.length} frames`);
     let wrote = 0;
+    // The slugs whose bytes actually landed. The index used to be built from
+    // `files.slice(0, wrote)`, which assumes every failure is at the tail: on
+    // 2026-08-22 one put in the middle failed on a transient CLI error, the
+    // index listed that corner as stored and dropped the last corner that was.
+    const landed = [];
     for (const f of files) {
       const slug = f.replace(/\.jpg$/, "");
       try {
         kv(["kv", "key", "put", `img:${slug}:today`, "--path", join(STAGE, f), "--binding", "STORE", "--remote"]);
         wrote += 1;
+        landed.push(slug);
       } catch (e) {
         const msg = String(e.message || e);
         if (/free usage limit|10048/i.test(msg)) {
@@ -210,7 +216,7 @@ if (IS_MAIN) {
     // bytes already in KV. Merged with whatever is already listed, because this
     // tool publishes a set and the daily cron accumulates its own.
     if (wrote) {
-      const listed = files.slice(0, wrote).map((f) => f.replace(/\.jpg$/, ""));
+      const listed = landed;
       let existing = [];
       try {
         const o = kv(["kv", "key", "get", "img:index", "--binding", "STORE", "--remote", "--text"]);

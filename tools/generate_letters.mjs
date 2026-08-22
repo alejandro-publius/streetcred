@@ -72,6 +72,29 @@ const LIMIT = Number(argOf("limit", "0")) || 0;
 // A named subset, for re-running exactly the corners a fix should have
 // unblocked without paying for the ones that already passed.
 const ONLY = (argOf("only", "") || "").split(",").map((x) => x.trim()).filter(Boolean);
+// Re-verify before drafting. A corner that already holds a verified letter is
+// checked against its CURRENT lane states first, and only drafted again when
+// that check fails. The batch audit changes a corner's hazards record, and a
+// letter written before the audit may still be true afterwards: it said
+// nothing about a visual audit because none had run. Keeping a true letter is
+// cheaper than drafting a new one and is never a worse letter published.
+const REVERIFY = has("--reverify");
+
+// Records staged by the batch audit but not yet published
+// (tools/promote_corners.mjs --full). Read ahead of KV for the same corner,
+// because they are what the corner's page will serve once the window opens,
+// and a letter conditioned on the pre-audit record would disagree with it.
+const HAZARDS_STAGE = join(ROOT, "scratch", "hazards");
+const CORNERS_STAGE = join(ROOT, "scratch", "corners");
+const stagedRecord = (dir, slug) => {
+  const f = join(dir, `${slug}.json`);
+  if (!existsSync(f)) return null;
+  try {
+    return JSON.parse(readFileSync(f, "utf8"));
+  } catch {
+    return null;
+  }
+};
 
 // The Workers free plan allows 1,000 KV writes a day, account wide, resetting
 // 00:00 UTC. The site spends some of that on its own crons, so the run reserves
@@ -186,7 +209,11 @@ function fleet() {
   const meta = bulkGet(["city:meta"])["city:meta"];
   if (!meta) throw new Error("city:meta is missing, so there is no authoritative roster to read");
   const slugs = [...new Set([...(meta.audited || []), ...(meta.enriched || [])])].sort();
-  const chosen = ONLY.length ? slugs.filter((s) => ONLY.includes(s)) : slugs;
+  // A named corner outside the roster is admitted only when the batch has
+  // staged a promoted record for it: that is a scored corner on its way into
+  // the roster, and its letter belongs in the same publish.
+  const promotedOutside = ONLY.filter((s) => !slugs.includes(s) && stagedRecord(CORNERS_STAGE, s));
+  const chosen = ONLY.length ? [...slugs.filter((s) => ONLY.includes(s)), ...promotedOutside].sort() : slugs;
   return { meta, slugs: LIMIT ? chosen.slice(0, LIMIT) : chosen };
 }
 
@@ -198,6 +225,7 @@ async function laneData(slugs) {
   const keys = [];
   for (const s of slugs) {
     keys.push(`corner:${s}`, `score:${s}`, `press:${s}`, `voices:${s}`, `timeline:${s}`, `hazards:${s}`);
+    if (REVERIFY) keys.push(`letter:verified:${s}`);
   }
   const rec = {};
   // The bulk get endpoint refuses more than 100 keys per request, which it
@@ -211,7 +239,13 @@ async function laneData(slugs) {
 }
 
 function cornerOf(slug, rec) {
-  return CORNERS[slug] || rec[`corner:${slug}`] || null;
+  return CORNERS[slug] || rec[`corner:${slug}`] || stagedRecord(CORNERS_STAGE, slug) || null;
+}
+
+// The hazards record a letter is conditioned on: staged beats stored, because
+// staged is what the page will serve after the publish this letter joins.
+export function hazardsOf(slug, rec, staged = stagedRecord(HAZARDS_STAGE, slug)) {
+  return staged || rec[`hazards:${slug}`] || null;
 }
 
 // Which staged files become KV entries. A draft that failed the verifier twice
@@ -260,6 +294,14 @@ export function mergeResults(priorRows, freshRows) {
   const by = new Map((priorRows || []).map((r) => [r.slug, r]));
   for (const fresh of freshRows || []) {
     const was = by.get(fresh.slug);
+    // A re-verified letter is not a new run. The prior row keeps its
+    // attempts and its spend, and gains the fact that it was checked again;
+    // a kept letter with no prior row is a stored letter this log never saw,
+    // recorded as passed at zero cost because that is what it is.
+    if (fresh.state === "kept") {
+      by.set(fresh.slug, was ? { ...was, reverified: true } : { ...fresh, state: "passed", reverified: true });
+      continue;
+    }
     by.set(fresh.slug, was ? { ...fresh, reruns: (was.reruns || 0) + 1 } : fresh);
   }
   return [...by.values()].sort((a, b) => String(a.slug).localeCompare(String(b.slug)));
@@ -383,14 +425,16 @@ if (IS_MAIN) {
       }
 
       const stats = await getStats(c).catch(() => null);
+      const stagedHazards = stagedRecord(HAZARDS_STAGE, slug);
       const ctx = {
         stats,
         score: rec[`score:${slug}`] || null,
         news: rec[`press:${slug}`] || null,
         voices: rec[`voices:${slug}`] || null,
         timeline: rec[`timeline:${slug}`] || null,
-        hazards: rec[`hazards:${slug}`] || null,
+        hazards: hazardsOf(slug, rec, stagedHazards),
       };
+      if (stagedHazards) console.log(`  [${n}/${slugs.length}] ${slug}: conditioning on the STAGED hazards record (batch audit, not yet published)`);
 
       const built = buildLetterPrompt(c, ctx);
       const district = resolvedDistrict(c, stats);
@@ -412,6 +456,26 @@ if (IS_MAIN) {
       let attempts = 0;
       let tokens = { promptTokens: 0, outputTokens: 0 };
       let err = null;
+
+      // Re-verify first, when asked and when a letter exists. The stored
+      // letter is the one the site serves; a staged one is newer and wins.
+      if (REVERIFY) {
+        const stagedLetter = (() => {
+          const f = join(STAGE, `${slug}.json`);
+          try { return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null; } catch { return null; }
+        })();
+        const stored = stagedLetter || rec[`letter:verified:${slug}`] || null;
+        if (stored?.text) {
+          const again = verifyLetter(stored.text, inputSet);
+          if (again.ok) {
+            results.push({ slug, state: "kept", attempts: 0, usd: 0, promptTokens: 0, outputTokens: 0, addressee: addresseeFor(district), reverified: true, from: stagedLetter ? "staged" : "stored" });
+            console.log(`  [${n}/${slugs.length}] ${slug}: existing letter re-verified against current lanes, kept (${stagedLetter ? "staged" : "stored"}), no call made`);
+            continue;
+          }
+          const why = [...new Map(again.failures.map((f) => [f.kind, f])).values()].map((f) => f.kind).join(", ");
+          console.log(`  [${n}/${slugs.length}] ${slug}: existing letter fails against current lanes (${why}), drafting`);
+        }
+      }
 
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         attempts = attempt;
@@ -547,7 +611,13 @@ if (IS_MAIN) {
     // tools/letters.test.mjs has asserted that stagedLetterFiles rejects
     // `.keys-123.json` since the day it was written. The test was right and
     // nothing called the function it was testing.
-    const staged = stagedLetterFiles(readdirSync(STAGE));
+    // A named subset publishes only its own letters. Every publish used to
+    // re-put the whole staged fleet, which is idempotent and also 123 writes
+    // against a 1,000 a day allowance to republish letters KV already holds.
+    const staged = stagedLetterFiles(readdirSync(STAGE)).filter(
+      (f) => !ONLY.length || ONLY.includes(f.replace(/\.json$/, "")),
+    );
+    if (ONLY.length) console.log(`\npublishing ${staged.length} of the named corners' letters only`);
     const prior = existsSync(join(STAGE, "_results.json"))
       ? JSON.parse(readFileSync(join(STAGE, "_results.json"), "utf8"))
       : results;
@@ -584,10 +654,13 @@ if (IS_MAIN) {
     // The same function the tests exercise. It used to be a second, parallel
     // copy of this object literal, which meant tools/letters.test.mjs was
     // guarding a function the publish path never called.
+    // The ledger counts every verified letter the fleet holds, not the subset
+    // this publish carries: a --only publish of twenty letters must not make
+    // /status read twenty where the site serves a hundred and forty.
     const ledger = buildLedger(prior, {
       now: new Date().toISOString(),
       runs,
-      letters: entries.length,
+      letters: stagedLetterFiles(readdirSync(STAGE)).length,
       imagery,
     });
     entries.push({ key: "budget:gemini", value: JSON.stringify(ledger) });
@@ -626,6 +699,7 @@ if (IS_MAIN) {
       : [];
 
   const passed = src.filter((r) => r.state === "passed");
+  const kept = src.filter((r) => r.state === "kept");
   const pending = src.filter((r) => r.state === "pending");
   const errored = src.filter((r) => r.state === "error");
   const skipped = src.filter((r) => r.state === "skipped");
@@ -635,6 +709,7 @@ if (IS_MAIN) {
   console.log("|---|---|");
   console.log(`| corners attempted | ${src.length} |`);
   console.log(`| passed the verifier | ${passed.length} |`);
+  if (kept.length) console.log(`| existing letter re-verified and kept | ${kept.length} |`);
   console.log(`| stored pending | ${pending.length} |`);
   console.log(`| errored | ${errored.length} |`);
   console.log(`| skipped | ${skipped.length} |`);
