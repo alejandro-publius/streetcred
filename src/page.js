@@ -1057,6 +1057,17 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .voice{background:var(--card);border-radius:11px;padding:15px 17px;margin-bottom:11px}
 .voice p{margin:0;font-family:Lora,Georgia,serif;font-style:italic;font-size:14.5px;line-height:1.6}
 .voice .m{font-size:11.5px;color:var(--dim);margin-top:9px;text-transform:capitalize}
+.casefile{margin:26px 0 8px}
+.cfrows{list-style:none;margin:0;padding:0;border:1px solid var(--line2);border-radius:11px;background:var(--card);overflow:hidden}
+.cfrows li{display:flex;align-items:baseline;gap:10px;padding:8px 14px;font-size:12px;border-top:1px solid var(--line)}
+.cfrows li:first-child{border-top:none}
+.cfrows a{color:var(--ink);text-decoration:none}
+.cfrows a:hover{text-decoration:underline}
+.cfchip{flex-shrink:0;min-width:86px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.cfdate{margin-left:auto;font-size:11px;color:var(--dim);white-space:nowrap}
+.cfpend{opacity:.62}
+.cfpend .cfdate{font-style:italic}
+.cfyou .cfchip,.cfyou a{color:var(--accent)}
 .apichip{display:inline-block;font-size:10.5px;color:var(--dim);border:1px solid var(--line3);border-radius:999px;
   padding:2px 9px;margin-top:8px;text-decoration:none;text-transform:none}
 .apichip:hover{color:var(--ink);border-color:var(--ink)}
@@ -1644,6 +1655,24 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
   </div>
 </section>
 
+<section class="casefile" id="casefile" aria-label="Case file: what has happened at this corner, dated from stored records">
+  <div class="eyebrow"><span>Case file</span><span class="lanenums">every date read from a stored record, none invented</span></div>
+  <ol class="cfrows">
+    <li id="cf-scored" class="cfdone"><span class="cfchip">DataSF</span><a href="#scorewrap">Scored from the city's own records</a><span class="cfdate">${
+      c.sweep?.sweepDate ? esc(c.sweep.sweepDate) : "date not recorded"
+    }</span></li>
+    <li id="cf-photo" class="cfpend"><span class="cfchip">Google Maps</span><a href="#hero">Photographed</a><span class="cfdate">checking the stored frame</span></li>
+    <li id="cf-press" class="cfpend"><span class="cfchip">Exa</span><a href="#presstape">Press read</a><span class="cfdate">checking stored coverage</span></li>
+    <li id="cf-voices" class="cfpend"><span class="cfchip">Apify</span><a href="#voices">Residents heard</a><span class="cfdate">checking stored scrapes</span></li>
+    <li id="cf-audited" class="${c.cotd ? "cfdone" : "cfpend"}"><span class="cfchip">Gemini</span><a href="#hz">Visual audit</a><span class="cfdate">${
+      c.cotd ? esc(c.cotd) : "checking the stored audit"
+    }</span></li>
+    <li id="cf-fix" class="cfpend"><span class="cfchip">Gemini</span><a href="#hero">Fix drawn</a><span class="cfdate">checking the stored render</span></li>
+    <li id="cf-letter" class="cfpend"><span class="cfchip">The gate</span><a href="#letterpanel">Letter verified</a><span class="cfdate">checking the stored letter</span></li>
+    <li id="cf-sent" class="cfyou"><span class="cfchip">You</span><a href="#letterpanel">Sent: that part is yours</a><span class="cfdate">the letter is drafted, never sent by us</span></li>
+  </ol>
+</section>
+
 <div class="cols">
   <div>
     <div class="tape" id="presstape">
@@ -1759,6 +1788,30 @@ ${FOOTER()}
 
 <script>
 ${PACIFIC_DAY_JS}
+
+// The case file. Rows are server-rendered; each lane payload settles its row
+// as it arrives. cfSet writes a row only from a value the payload actually
+// carried, and cfDate refuses any date beyond today in America/Los_Angeles:
+// a stored date is displayed, a missing one is said to be missing, a future
+// one is treated as missing, and nothing is ever invented here.
+function cfDate(ts){
+  var d = ptDay(ts);
+  if(!d) return "";
+  return d <= ptDay(Date.now()) ? d : "";
+}
+function cfSet(row, dated, note){
+  var li = el("cf-" + row);
+  if(!li) return;
+  li.classList.remove("cfpend","cfdone");
+  li.classList.add(dated ? "cfdone" : "cfpend");
+  li.querySelector(".cfdate").textContent = note;
+}
+function cfLane(row, ts, fallbackDone, pendingNote){
+  var d = cfDate(ts);
+  if(d) cfSet(row, true, d);
+  else if(fallbackDone) cfSet(row, true, "stored, date not recorded");
+  else cfSet(row, false, pendingNote);
+}
 // Kept byte-identical to PROMOTED_NOTE in src/imagery.js. tools/provenance.test.mjs
 // asserts the two match, because a caption that drifts from the server's own
 // definition of the claim is a caption nobody is checking.
@@ -1983,6 +2036,17 @@ function applyImagery(d){
 
 function loadImagery(){
   fetch("/api/imagery" + X).then(r => r.json()).then(d => {
+    // Case file rows this payload settles.
+    cfLane("photo", d && d.today ? d.at : null, Boolean(d && d.today), "no photograph stored yet");
+    var fx = d && d.render && d.render.fix;
+    if(fx && (cfDate(fx.at) || fx.model)){
+      cfSet("fix", true, (cfDate(fx.at) || "date not recorded") + (fx.model ? ", " + fx.model : ""));
+    } else cfLane("fix", d && d.fix ? d.at : null, Boolean(d && d.fix), "no fix render yet");
+    var au = d && d.audit;
+    if(au && cfDate(au.at)) cfSet("audited", true, cfDate(au.at) + (au.model ? ", " + au.model : ""));
+    else if(!document.getElementById("cf-audited").classList.contains("cfdone")){
+      cfLane("audited", null, false, "the visual audit has not run here yet");
+    }
     applyImagery(d);
     const settled = !d.status || d.status !== "pending";
     if(settled) return;
@@ -2627,6 +2691,14 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
 // first report: Exa recall is not ground truth, and an empty year means this
 // search found nothing that year, not that nothing happened.
 LANE_LOADERS.timeline = () => fetch("/api/timeline" + X).then(r => r.json()).then(t => {
+  (function(){
+    var yrs = (t && t.years || []).filter(function(y){ return y && y.count > 0; });
+    if(yrs.length){
+      var first = yrs[0].year, last = yrs[yrs.length - 1].year;
+      cfSet("press", true, "first " + first + ", latest " + last + (cfDate(t.builtAt) ? ", read " + cfDate(t.builtAt) : ""));
+    } else if(cfDate(t && t.builtAt)) cfSet("press", true, "read " + cfDate(t.builtAt) + ", nothing found");
+    else cfSet("press", false, "press history not read here yet");
+  })();
   const years = t && t.years;
   // "The strip has nothing" is an answer the composer is waiting on just as
   // much as a full decade is, so it is reported on this path too.
@@ -2740,6 +2812,12 @@ LANE_LOADERS.connections = () => fetch("/api/connections" + X).then(r => r.json(
 }).catch(() => {});
 
 LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d => {
+  (function(){
+    var comm = cfDate(d && d.commissionedAt), ing = cfDate(d && d.collected);
+    if(comm || ing){
+      cfSet("voices", true, (comm ? "commissioned " + comm : "") + (comm && ing ? ", " : "") + (ing ? "ingested " + ing : ""));
+    } else cfSet("voices", false, "no scrape commissioned here yet");
+  })();
   const items = d.items || [];
   const tag = el("voicestag");
   if (d.commissioned && !items.length) {
@@ -2844,6 +2922,13 @@ LANE_LOADERS.precedents = () => fetch("/data/precedents.json").then(r => r.json(
 }).catch(() => {});
 
 LANE_LOADERS.letter = () => fetch("/api/letter" + X).then(r => r.json()).then(d => {
+  (function(){
+    var ok = d && d.verified && (d.source === "verified-cache" || d.source === "live");
+    var chk = cfDate(d && (d.checkedAt || d.generatedAt));
+    if(ok && chk) cfSet("letter", true, "verified " + chk + (d.verifyVersion ? ", gate " + d.verifyVersion : ""));
+    else if(ok) cfSet("letter", true, "verified, date not recorded");
+    else cfSet("letter", false, "no verified letter serves here yet");
+  })();
   const copyBtn = el("copy"), dlBtn = el("download");
   // Not drafted, and not pretending otherwise. A sample letter is the one
   // artifact on this site somebody might actually send, so a corner without a

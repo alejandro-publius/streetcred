@@ -214,6 +214,14 @@ export async function imageryFor(c, env, ctx, opts = {}) {
       // Travels to the client so the caption and the tier chip can both tell
       // the truth about a render that did not come from a full audit.
       provenance: provenanceOf(existing),
+      // Stored facts the case file renders: when the record was written, the
+      // per-render model attribution when the record carries one, and the
+      // audit block a batch-audited corner stores. Never synthesized here; a
+      // record without them sends null and the client renders the honest
+      // undated state.
+      at: Number.isFinite(existing.at) ? existing.at : null,
+      render: existing.render && typeof existing.render === "object" ? existing.render : null,
+      audit: existing.audit && typeof existing.audit === "object" ? existing.audit : null,
     };
   }
   if (existing?.status === "failed") {

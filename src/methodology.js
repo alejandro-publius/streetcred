@@ -261,7 +261,7 @@ is arithmetic over city records (<code>src/hazards.js</code>):</p>
 </ul>
 <p>The audit is advisory context. It never moves the grade.</p>
 
-<h2>The letter verification guarantee</h2>
+<h2 id="gate">The letter verification guarantee</h2>
 <p>Every letter is checked by <code>src/verify.js</code> before it is shown: every number against the
 corner's own records, the addressee against the Supervisor table, every street named against the
 intersection and its cited coverage, every cited domain against the sources actually fetched. A draft

@@ -19,7 +19,7 @@ set -uo pipefail
 ORIGIN="${STREETCRED_ORIGIN:-https://streetcred.thealexschroeder.workers.dev}"
 cd "$(dirname "$0")/.."
 
-SUITES=(tools/audited_live.mjs tools/audited_page_live.mjs)
+SUITES=(tools/audited_live.mjs tools/audited_page_live.mjs tools/casefile_live.mjs)
 rc=0
 for s in "${SUITES[@]}"; do
   echo "=== ${s#tools/} against ${ORIGIN} ==="

@@ -362,6 +362,14 @@ ${BASE_CSS}
 .cotdi:hover{color:var(--ink);border-color:var(--line3)}
 .cotdi i{width:7px;height:7px;border-radius:50%;display:block;background:var(--dim)}
 .cotdc{font-size:10.5px;color:var(--dim);letter-spacing:.03em}
+.caseline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.caseline li{display:flex;align-items:center;gap:10px;font-size:12.5px;line-height:1.5}
+.caseline a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line2)}
+.caseline a:hover{border-color:var(--ink)}
+.cfn{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:50%;
+  background:var(--ink);color:#fff;font-weight:700;font-size:10.5px;flex-shrink:0}
+.cfinfra{margin:16px 0 0;padding-top:12px;border-top:1px solid var(--line);font-size:11.5px;color:var(--dim);
+  display:flex;align-items:center;gap:10px}
 .gA{background:var(--green)}
 .gB{background:rgba(120,140,93,.62)}
 .gC{background:var(--blue)}
@@ -577,16 +585,18 @@ ${
 </div>
 
 <div class="panel">
-  <div class="phs"><h2>Powered by</h2></div>
+  <div class="phs"><h2>How a corner becomes a case</h2></div>
   <div class="pbody">
-  <div class="stack">
-    <div><span class="lg"><img src="/logos/gemini.svg" alt="Google Gemini" width="24" height="24" loading="lazy"><b>Gemini</b></span>Audits the real Street View frame for hazards, renders the fix, writes the letter</div>
-    <div><span class="lg"><img src="/logos/exa.svg" alt="Exa" width="77" height="24" loading="lazy"><b>Exa</b></span>Finds current press coverage of this intersection, cited</div>
-    <div><span class="lg"><img src="/logos/apify.svg" alt="Apify" width="87" height="24" loading="lazy"><b>Apify</b></span>Scrapes what residents say on Reddit and Google Maps</div>
-    <div><span class="lg"><img src="/logos/googlemaps.svg" alt="Google Maps" width="24" height="24" loading="lazy"><b>Google Maps</b></span>Street View frames, the corner thumbnail, and the city map</div>
-    <div><span class="lg"><img src="/logos/cloudflare.svg" alt="Cloudflare" width="52" height="24" loading="lazy"><b>Cloudflare</b></span>Workers serve the page, KV holds corners, imagery and grades</div>
-    <div><span class="lg"><b>DataSF</b></span>Collisions and 311, queried by radius around the corner</div>
-  </div>
+  <ol class="caseline" aria-label="The pipeline, in causal order">
+    <li><span class="cfn">1</span><span class="lg"><b>DataSF</b></span><a href="/methodology">scores it from the city's own records</a></li>
+    <li><span class="cfn">2</span><span class="lg"><img src="/logos/googlemaps.svg" alt="Google Maps" width="24" height="24" loading="lazy"><b>Google Maps</b></span><a href="/c/16th-mission">photographs it</a></li>
+    <li><span class="cfn">3</span><span class="lg"><img src="/logos/exa.svg" alt="Exa" width="77" height="24" loading="lazy"><b>Exa</b></span><a href="/watchlist">reads twelve years of news about it</a></li>
+    <li><span class="cfn">4</span><span class="lg"><img src="/logos/apify.svg" alt="Apify" width="87" height="24" loading="lazy"><b>Apify</b></span><a href="/c/24th-and-valencia">listens to its residents</a></li>
+    <li><span class="cfn">5</span><span class="lg"><img src="/logos/gemini.svg" alt="Google Gemini" width="24" height="24" loading="lazy"><b>Gemini</b></span><a href="/audited">audits the frame, draws the fix, writes the letter</a></li>
+    <li><span class="cfn">6</span><span class="lg"><b>The gate</b></span><a href="/methodology#gate">a deterministic gate verifies every claim or the letter does not serve</a></li>
+    <li><span class="cfn">7</span><span class="lg"><b>You</b></span><a href="/c/16th-mission#letterpanel">send it: the letter is drafted, never sent by us</a></li>
+  </ol>
+  <p class="cfinfra"><span class="lg"><img src="/logos/cloudflare.svg" alt="Cloudflare" width="52" height="24" loading="lazy"><b>Cloudflare</b></span>Workers serve the page, KV holds corners, imagery and grades</p>
   </div>
 </div>
 
