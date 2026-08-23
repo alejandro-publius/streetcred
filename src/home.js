@@ -7,6 +7,15 @@
 // cost of a single image request.
 
 import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER, STATBAND, HERO_CORNER, PACIFIC_DAY_JS } from "./page.js";
+import { pacificToday } from "./data.js";
+
+// The streak, newest first, with no chip dated beyond today in
+// America/Los_Angeles. The store clamps new entries, so the filter only fires
+// on a record written before that guard existed, and hiding one stale-future
+// chip is better than the homepage claiming an audit that has not happened
+// yet. Exported for the test that pins it.
+export const visibleRuns = (cotd, cap = pacificToday()) =>
+  [...(cotd || [])].filter((e) => e && e.slug && (!e.date || String(e.date) <= cap)).reverse();
 import { TIER_LABEL, TIER_NOTE, CITY_BOUNDS } from "./city.js";
 
 const MAP_W = 640;
@@ -110,7 +119,7 @@ export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview
     .filter((c) => Number.isFinite(c.lat) && Number.isFinite(c.lon))
     .sort((a, b) => b.index - a.index);
   // Newest first. The log is append only, so the last entry is this morning's.
-  const runs = [...cotd].filter((e) => e && e.slug).reverse();
+  const runs = visibleRuns(cotd);
   const today = runs[0] || null;
   const view = ranked.length ? fitView(ranked) : { center: { lat: 37.7749, lon: -122.4194 }, zoom: 12 };
   const title = "StreetCred: every SF intersection, graded";

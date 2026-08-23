@@ -1620,7 +1620,13 @@ export async function auditedIndex(env) {
         // back three mornings, so without the fallback 22 of 23 rows would
         // carry no date at all and the sort would be alphabetical wearing a
         // chronological caption.
-        date: dateBySlug.get(slug) || (Number.isFinite(img.at) ? pacificDayOf(img.at) : null),
+        // A date beyond today in America/Los_Angeles is treated as absent:
+        // an absent date sorts last and reads "no recorded date", which is
+        // true; a future one would be a claim about an audit yet to happen.
+        date: (() => {
+          const d = dateBySlug.get(slug) || (Number.isFinite(img.at) ? pacificDayOf(img.at) : null);
+          return d && String(d) > pacificDay() ? null : d;
+        })(),
         dateKind: dateBySlug.has(slug) ? "audited" : "generated",
         provenance: provenanceOf(img),
         letter: storedLetterServes(letter),

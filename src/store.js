@@ -13,7 +13,7 @@
 // calls, so 25 corners is 50 billed generations. Picked to keep a bad day cheap
 // while leaving room for real traffic; raise it once there is a billing alert
 // worth trusting.
-import { pacificDay } from "./data.js";
+import { pacificDay, pacificToday } from "./data.js";
 
 export const DAILY_GENERATION_CAP = 25;
 
@@ -229,7 +229,17 @@ export async function getCotdLog(env) {
 
 export async function appendCotdLog(env, entry) {
   const log = await getCotdLog(env);
-  log.push(entry);
+  // No stored audit date may exceed today in America/Los_Angeles. The stamp
+  // is pacificToday() at the writer today, so this cannot fire; it exists so
+  // a future change to UTC stamping, or a caller passing its own date, cannot
+  // put tomorrow on the streak. Clamped rather than refused, because losing
+  // the record of a run that happened is worse than correcting its label,
+  // and the original value is kept beside the correction.
+  const cap = pacificToday();
+  const stamped = entry?.date && String(entry.date) > cap
+    ? { ...entry, date: cap, dateWas: entry.date }
+    : entry;
+  log.push(stamped);
   // Newest last, trimmed to a season. A streak nobody can see is not a streak,
   // but neither is one that needs a scrollbar.
   await rawPut(env, "cotd:log", JSON.stringify(log.slice(-120)));
