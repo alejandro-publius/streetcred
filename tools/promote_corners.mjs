@@ -46,6 +46,7 @@ import { CORNERS, canonicalSlug } from "../src/data.js";
 import { HAZARD_VERSION, AUDIT_PROMPT, AUDIT_SCHEMA, flagsFrom, evidenceFor, assemble } from "../src/hazards.js";
 import { HAZARD_PROMPT, AUDITED } from "../src/imagery.js";
 import { computeScore, SCORE_VERSION } from "../src/score.js";
+import { getStats } from "../src/index.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const STAGE = join(ROOT, "scratch", "imagery");
@@ -110,6 +111,12 @@ const RETRY_HELD = has("--retry-held");
 // over the head of the queue on 2026-08-22 would have refused 17 of 25 slots
 // before spending and attempted 8.
 const ATTEMPTABLE = has("--attemptable");
+// Lane-level skip-existing, for resuming a full-lane batch that lost some
+// lanes to a fault. A staged hazards record is a bought audit and a staged
+// hazards render is a bought render: with --topup the run reuses both from
+// the prior row and buys only what is missing, which is the same rule
+// skip-existing already applies to a staged fix render.
+const TOPUP = has("--topup");
 // Corners excluded by a standing ruling rather than by the pipeline, named on
 // the command line so the exclusion is in the run log and not in the code.
 const SKIP = (argOf("skip", "") || "").split(",").map((x) => x.trim()).filter(Boolean);
@@ -176,11 +183,31 @@ function kvBytes(key) {
   });
 }
 
-function accessToken() {
+function mintToken() {
   return execFileSync(GCLOUD, ["auth", "application-default", "print-access-token"], {
     encoding: "utf8",
     timeout: 120_000,
   }).trim();
+}
+
+// An ADC access token lives about an hour. The 2026-08-22 batch minted one at
+// the top and ran for four hours: every model call after minute sixty was
+// refused "invalid authentication credentials", and 22 of 25 corners lost
+// their renders to a credential that had simply aged out. Minted on demand
+// now, re-minted at 45 minutes, and dropped on the first auth refusal so the
+// retry runs on a fresh one.
+const TOKEN_LIFE_MS = 45 * 60 * 1000;
+let TOKEN = { value: null, at: 0 };
+function accessToken() {
+  if (!TOKEN.value || Date.now() - TOKEN.at > TOKEN_LIFE_MS) {
+    TOKEN = { value: mintToken(), at: Date.now() };
+    console.log(`      ADC token minted, ${TOKEN.value.length} chars, not stored`);
+  }
+  return TOKEN.value;
+}
+export const AUTH_STALE = /invalid authentication|UNAUTHENTICATED|ACCESS_TOKEN_EXPIRED|401/i;
+function dropToken() {
+  TOKEN = { value: null, at: 0 };
 }
 
 // ------------------------------------------------------------------ pool
@@ -694,9 +721,11 @@ async function auditViaVertex(token, frameB64, corner) {
 // Text pricing for the audit call, the letter fleet's figures.
 const auditUsd = (p, o) => Math.round(((p / 1e6) * 0.3 + (o / 1e6) * 2.5) * 1e6) / 1e6;
 
+const TRANSIENT_RENDER = /fetch failed|no image in response|vertex 5\d\d|ECONNRESET|ETIMEDOUT|socket hang up|UNAVAILABLE|DEADLINE_EXCEEDED|INTERNAL/i;
+
 // One render through the gate, up to MAX_ATTEMPTS, with the quota backoff.
 // Shared by the two generated states so they cannot be gated differently.
-async function renderGated({ token, frame, prompt, before, wantStreets, slug, tag, stagedPath }) {
+async function renderGated({ frame, prompt, before, wantStreets, slug, tag, stagedPath }) {
   let done = null;
   let tok = { promptTokens: 0, outputTokens: 0 };
   let held = null;
@@ -705,12 +734,30 @@ async function renderGated({ token, frame, prompt, before, wantStreets, slug, ta
     attempts = attempt;
     let out;
     try {
-      out = await render(token, frame.toString("base64"), prompt);
+      out = await render(accessToken(), frame.toString("base64"), prompt);
     } catch (e) {
       held = `render error: ${e.message}`;
-      if (/exhaust|quota|RESOURCE/i.test(String(e.message)) && attempt < MAX_ATTEMPTS) {
+      // Two kinds of failure are retried, and they are named apart because
+      // they wait for different reasons. A quota refusal is a rate window. A
+      // transient failure is the network dropping the call ("fetch failed"),
+      // the service answering 5xx, or the model returning a text part and no
+      // image, which on 2026-08-22 cost two corners their renders at no
+      // charge and no second try. Neither is a verdict on the frame.
+      const msg = String(e.message);
+      if (AUTH_STALE.test(msg) && attempt < MAX_ATTEMPTS) {
+        console.log(`      ${tag}: stale credential on attempt ${attempt}, re-minting`);
+        dropToken();
+        continue;
+      }
+      if (/exhaust|quota|RESOURCE|429/i.test(msg) && attempt < MAX_ATTEMPTS) {
         const wait = backoffMs(attempt);
         console.log(`      ${tag}: quota refusal on attempt ${attempt}, waiting ${Math.round(wait / 1000)}s`);
+        await sleep(wait);
+        continue;
+      }
+      if (TRANSIENT_RENDER.test(msg) && attempt < MAX_ATTEMPTS) {
+        const wait = Math.min(60_000, 10_000 * attempt);
+        console.log(`      ${tag}: transient failure on attempt ${attempt} (${msg.slice(0, 50)}), waiting ${Math.round(wait / 1000)}s`);
         await sleep(wait);
         continue;
       }
@@ -969,8 +1016,6 @@ if (IS_MAIN) {
   const results = [];
 
   if (DO_GENERATE) {
-    const token = accessToken();
-    console.log(`ADC token minted, ${token.length} chars, not stored\n`);
 
     // Selection-time refusals are outcomes of this run, at no cost.
     for (const r of refusedAtSelection) {
@@ -1014,19 +1059,30 @@ if (IS_MAIN) {
       const frameB64 = frame.toString("base64");
       let audit = null;
       let hazardsRender = null;
+      const priorRow = TOPUP ? priorRows.find((r) => r.slug === slug) : null;
 
       if (DO_FULL) {
         // Lane 1: the visual audit, then the record corroboration, assembled
         // by the Worker's own function. Stored only when the model answered:
         // an audited:false record would pin the corner to "no audit ran" and
         // block the retry that a later window could make.
+        // Bought already: the staged record and the prior row carry the audit.
+        if (priorRow?.audit?.ok && existsSync(join(HAZARDS_STAGE, `${slug}.json`))) {
+          audit = { ...priorRow.audit, reused: true };
+          console.log(`      audit: staged from ${audit.at}, reused (${audit.confirmed}c/${audit.candidates}k/${audit.reported}r)`);
+        }
         let auditOut = null;
         let auditErr = null;
-        for (let attempt = 1; attempt <= MAX_ATTEMPTS && !auditOut; attempt += 1) {
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS && !auditOut && !audit; attempt += 1) {
           try {
-            auditOut = await auditViaVertex(token, frameB64, corner);
+            auditOut = await auditViaVertex(accessToken(), frameB64, corner);
           } catch (e) {
             auditErr = e.message;
+            if (AUTH_STALE.test(String(e.message)) && attempt < MAX_ATTEMPTS) {
+              console.log(`      audit: stale credential on attempt ${attempt}, re-minting`);
+              dropToken();
+              continue;
+            }
             if (/exhaust|quota|RESOURCE|429/i.test(String(e.message)) && attempt < MAX_ATTEMPTS) {
               const wait = backoffMs(attempt);
               console.log(`      audit: quota refusal on attempt ${attempt}, waiting ${Math.round(wait / 1000)}s`);
@@ -1034,7 +1090,7 @@ if (IS_MAIN) {
             } else break;
           }
         }
-        if (auditOut) {
+        if (auditOut && !audit) {
           const evidence = await evidenceFor(corner);
           const record = {
             ...assemble(auditOut.flags, evidence),
@@ -1063,37 +1119,48 @@ if (IS_MAIN) {
             outputTokens: auditOut.outputTokens,
           };
           console.log(`      audit: ${record.confirmed} confirmed, ${record.candidates} candidate, ${record.reported} reported`);
-        } else {
+        } else if (!audit) {
           audit = { ok: false, why: `audit error: ${auditErr}`, usd: 0 };
           console.log(`      audit: FAILED, ${String(auditErr).slice(0, 80)}`);
         }
 
-        // Lane 2: the hazards overlay, through the same gate.
-        hazardsRender = await renderGated({
-          token, frame, prompt: HAZARD_RENDER_PROMPT(corner.name), before, wantStreets, slug,
+        // Lane 2: the hazards overlay, through the same gate. A staged
+        // overlay is a bought render and is reused with its attribution.
+        if (priorRow?.hazardsRender?.state === "passed" && existsSync(join(STAGE, `${slug}.hazards.jpg`))) {
+          hazardsRender = { ...priorRow.hazardsRender, reused: true };
+          console.log(`      hazards render: staged, reused (attempt ${hazardsRender.attempt})`);
+        } else hazardsRender = await renderGated({
+          frame, prompt: HAZARD_RENDER_PROMPT(corner.name), before, wantStreets, slug,
           tag: "hazards", stagedPath: join(STAGE, `${slug}.hazards.jpg`),
         });
-        console.log(
-          hazardsRender.state === "passed"
-            ? `      hazards render: passed attempt ${hazardsRender.attempt}, checked [${hazardsRender.gate.checked.join(",")}]`
-            : `      hazards render: HELD, ${String(hazardsRender.why).slice(0, 80)}`,
-        );
-        await sleep(SPACING_MS);
+        if (!hazardsRender.reused) {
+          console.log(
+            hazardsRender.state === "passed"
+              ? `      hazards render: passed attempt ${hazardsRender.attempt}, checked [${hazardsRender.gate.checked.join(",")}]`
+              : `      hazards render: HELD, ${String(hazardsRender.why).slice(0, 80)}`,
+          );
+          await sleep(SPACING_MS);
+        }
       }
 
       // Lane 3: the proposed fix.
       const fix = await renderGated({
-        token, frame, prompt, before, wantStreets, slug, tag: "fix", stagedPath: staged,
+        frame, prompt, before, wantStreets, slug, tag: "fix", stagedPath: staged,
       });
 
       // Spacing between corners, on top of the per attempt backoff above. The
       // five quota holds on 2026-08-20 all landed inside the same minute.
       if (i < picks.length - 1) await sleep(SPACING_MS);
 
-      const usd = Math.round(((fix.usd || 0) + (hazardsRender?.usd || 0) + (audit?.usd || 0)) * 1e6) / 1e6;
+      // A reused lane's money is in the run log entry that bought it; adding
+      // it to tonight's entry would bill it twice. The lane object keeps its
+      // own usd for the per-corner record either way.
+      const spentNow = (x) => (x && !x.reused ? x.usd || 0 : 0);
+      const usd = Math.round((spentNow(fix) + spentNow(hazardsRender) + spentNow(audit)) * 1e6) / 1e6;
+      const tokOf = (x, f) => (x && !x.reused ? x[f] || 0 : 0);
       const tok = {
-        promptTokens: (fix.promptTokens || 0) + (hazardsRender?.promptTokens || 0) + (audit?.promptTokens || 0),
-        outputTokens: (fix.outputTokens || 0) + (hazardsRender?.outputTokens || 0) + (audit?.outputTokens || 0),
+        promptTokens: tokOf(fix, "promptTokens") + tokOf(hazardsRender, "promptTokens") + tokOf(audit, "promptTokens"),
+        outputTokens: tokOf(fix, "outputTokens") + tokOf(hazardsRender, "outputTokens") + tokOf(audit, "outputTokens"),
       };
       const laneBits = DO_FULL
         ? { lane: "full", promoted, audit, hazardsRender: hazardsRender && { ...hazardsRender, gate: hazardsRender.gate || undefined }, fixUsd: fix.usd }
@@ -1259,6 +1326,9 @@ if (IS_MAIN) {
     if (hazardEntries.length && putBulk(hazardEntries, "hazards")) console.log(`  ${hazardEntries.length} hazards record${hazardEntries.length === 1 ? "" : "s"} written`);
 
     // 3. Bytes, then 4. status, per corner.
+    const statusEntries = [];
+    const auditedSlugs = [];
+    const promotedSlugs = [];
     if (slugs.length) {
       const keyFile = join(STAGE, `.imgkeys-${slugs.length}.json`);
       writeFileSync(keyFile, JSON.stringify(slugs.map((x) => `imgstatus:${x}`)));
@@ -1270,9 +1340,6 @@ if (IS_MAIN) {
         console.log(`  could not read existing imgstatus, treating all as new: ${String(e.message || e).slice(0, 90)}`);
       }
 
-      const statusEntries = [];
-      const auditedSlugs = [];
-      const promotedSlugs = [];
       for (const slug of slugs) {
         if (capped) break;
         const row = byslug.get(slug) || {};
@@ -1361,6 +1428,55 @@ if (IS_MAIN) {
         } catch (e) {
           console.log(`  city:meta NOT updated: ${String(e.message || e).slice(0, 120)}`);
         }
+      }
+    }
+
+    // 6. The warmed roster list (hin:list), one write. The cron adds a row
+    // for the corner it audits so the board, the city map and /api/board (the
+    // watchdog's baseline) carry it by morning; a batch-audited corner is owed
+    // the same row. No cotd date on it: that field records the morning cron.
+    if (!capped && audited) {
+      try {
+        const raw = kv(["kv", "key", "get", "hin:list", "--binding", "STORE", "--remote", "--text"]);
+        const list = JSON.parse(raw.slice(raw.indexOf("[")));
+        const have = new Set(list.map((c) => c.slug));
+        const want = slugs.filter((s) => !have.has(s) && statusEntries.some((e) => e.key === `imgstatus:${s}` && JSON.parse(e.value).provenance === AUDITED));
+        const added = [];
+        for (const slug of want) {
+          const { corner } = await cornerFor(slug);
+          if (!corner) continue;
+          let score = null;
+          const sf = join(SCORES_STAGE, `${slug}.json`);
+          if (existsSync(sf)) score = readJsonOr(sf, null);
+          else if (keySet.has(`score:${slug}`)) {
+            const sr = kv(["kv", "key", "get", `score:${slug}`, "--binding", "STORE", "--remote", "--text"]);
+            score = JSON.parse(sr.slice(sr.indexOf("{")));
+            if (score?.version !== SCORE_VERSION) score = null;
+          }
+          const stats = await getStats(corner).catch(() => null);
+          added.push({
+            slug,
+            name: corner.name,
+            lat: corner.lat,
+            lon: corner.lon,
+            district: stats?.district ?? corner.district ?? null,
+            index: score?.index ?? 0,
+            grade: score?.grade ?? "A",
+            counts: score?.counts ?? {},
+            points: score?.points ?? rows[slug]?.points ?? 0,
+            collisions: stats?.crashes ?? 0,
+            fatal: stats?.fatal ?? 0,
+            auditedBy: "batch-full",
+          });
+        }
+        if (added.length) {
+          const merged = [...list, ...added].sort((a, b) => b.index - a.index || (b.points || 0) - (a.points || 0));
+          const hf = join(STAGE, ".hinlist.json");
+          writeFileSync(hf, JSON.stringify(merged));
+          if (putFile("hin:list", hf)) console.log(`  hin:list: ${added.length} row${added.length === 1 ? "" : "s"} added, ${merged.length} total`);
+        }
+      } catch (e) {
+        console.log(`  hin:list NOT updated: ${String(e.message || e).slice(0, 120)}`);
       }
     }
 
