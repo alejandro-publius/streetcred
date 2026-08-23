@@ -911,7 +911,7 @@ if (IS_MAIN) {
   const stagedAlready = stagedRenderFiles(readdirSync(STAGE)).map(slugOfRender);
   const poolOpts = { pool: POOL, framed, stagedFrames, decided: [...decided, ...SKIP] };
   let picks = ONLY.length
-    ? eligible(meta, keyNames, rows, 0, ONLY, stagedAlready, poolOpts)
+    ? eligible(meta, keyNames, rows, 0, ONLY, TOPUP ? [] : stagedAlready, poolOpts)
     : eligible(meta, keyNames, rows, ATTEMPTABLE ? 0 : N, [], stagedAlready, poolOpts);
   if (ATTEMPTABLE && !ONLY.length) picks = eligible(meta, keyNames, rows, Number.MAX_SAFE_INTEGER, [], stagedAlready, poolOpts);
   if (stagedAlready.length) {
@@ -1024,7 +1024,8 @@ if (IS_MAIN) {
 
     for (const [i, slug] of picks.entries()) {
       const staged = join(STAGE, `${slug}.fix.jpg`);
-      if (existsSync(staged)) {
+      const fixStaged = existsSync(staged);
+      if (fixStaged && !TOPUP) {
         console.log(`  [${i + 1}/${picks.length}] ${slug}: already staged, skipping`);
         continue;
       }
@@ -1143,10 +1144,14 @@ if (IS_MAIN) {
         }
       }
 
-      // Lane 3: the proposed fix.
-      const fix = await renderGated({
-        frame, prompt, before, wantStreets, slug, tag: "fix", stagedPath: staged,
-      });
+      // Lane 3: the proposed fix. Staged and previously passed means bought:
+      // reused with its attribution, like the other two lanes.
+      const fix = fixStaged && priorRow?.state === "passed"
+        ? { state: "passed", attempt: priorRow.attempt ?? null, gate: priorRow.gate ?? null, usd: priorRow.fixUsd ?? priorRow.usd ?? 0, promptTokens: 0, outputTokens: 0, reused: true }
+        : await renderGated({
+            frame, prompt, before, wantStreets, slug, tag: "fix", stagedPath: staged,
+          });
+      if (fix.reused) console.log(`      fix render: staged, reused (attempt ${fix.attempt})`);
 
       // Spacing between corners, on top of the per attempt backoff above. The
       // five quota holds on 2026-08-20 all landed inside the same minute.
