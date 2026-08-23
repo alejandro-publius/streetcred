@@ -1443,7 +1443,9 @@ if (IS_MAIN) {
     if (!capped && audited) {
       try {
         const raw = kv(["kv", "key", "get", "hin:list", "--binding", "STORE", "--remote", "--text"]);
-        const list = JSON.parse(raw.slice(raw.indexOf("[")));
+        // Wrangler prints the value with its own trailing chatter; slice to
+        // the outermost brackets rather than trusting the tail.
+        const list = JSON.parse(raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1));
         const have = new Set(list.map((c) => c.slug));
         const want = slugs.filter((s) => !have.has(s) && statusEntries.some((e) => e.key === `imgstatus:${s}` && JSON.parse(e.value).provenance === AUDITED));
         const added = [];
