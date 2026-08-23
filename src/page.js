@@ -70,7 +70,11 @@ export const STATBAND = ({ scored = 0, audited = 0, headlines = 0, headlinesAsOf
     `<a class="sbcell" href="${href}"><span class="sbnum">${value}</span><span class="sblabel">${label}</span><span class="sbnote">${note}</span></a>`;
   return `<section class="statband" aria-label="StreetCred at a glance">
   ${cell("/methodology", n(scored), "intersections graded", "from the city's own records")}
-  ${cell("/", n(audited), "fully audited", "every evidence lane checked")}
+  ${
+    // The surface that proves this number is the audited index, row for row.
+    // It linked to "/" for a while, which is the page the band is on.
+    cell("/audited", n(audited), "fully audited", "every evidence lane checked")
+  }
   ${
     // The figure was a snapshot written by a tool run and nothing updated it,
     // so it read the same all day while the batch lane found hundreds more.
