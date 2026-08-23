@@ -2042,11 +2042,12 @@ function loadImagery(){
     if(fx && (cfDate(fx.at) || fx.model)){
       cfSet("fix", true, (cfDate(fx.at) || "date not recorded") + (fx.model ? ", " + fx.model : ""));
     } else cfLane("fix", d && d.fix ? d.at : null, Boolean(d && d.fix), "no fix render yet");
+    // A dated audit block always settles the row. The negative belongs to
+    // the hazards lane, which is the record of whether an audit ran at all:
+    // writing "has not run" from here mislabelled the flagship, whose audit
+    // predates both the cotd stamp and the stored audit block.
     var au = d && d.audit;
     if(au && cfDate(au.at)) cfSet("audited", true, cfDate(au.at) + (au.model ? ", " + au.model : ""));
-    else if(!document.getElementById("cf-audited").classList.contains("cfdone")){
-      cfLane("audited", null, false, "the visual audit has not run here yet");
-    }
     applyImagery(d);
     const settled = !d.status || d.status !== "pending";
     if(settled) return;
@@ -2358,6 +2359,13 @@ LANE_LOADERS.cred = () => fetch("/api/cred" + X).then(r => r.json()).then(d => {
 // not, and which the record raised on its own. Deterministic server side, so
 // this is display only.
 LANE_LOADERS.hazards = () => fetch("/api/hazards" + X).then(r => r.json()).then(d => {
+  (function(){
+    var li = el("cf-audited");
+    if(li && !li.classList.contains("cfdone")){
+      if(d && d.audited) cfSet("audited", true, cfDate(d.at) || "stored, date not recorded");
+      else cfSet("audited", false, "the visual audit has not run here yet");
+    }
+  })();
   const items = d.items || [];
   // Feed the hero's alt text: the audit image's description names what the
   // audit actually flagged at this corner, not a generic phrase.
