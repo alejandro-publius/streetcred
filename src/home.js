@@ -14,6 +14,18 @@ import { pacificToday } from "./data.js";
 // on a record written before that guard existed, and hiding one stale-future
 // chip is better than the homepage claiming an audit that has not happened
 // yet. Exported for the test that pins it.
+// The funnel sentence's cleared count, linked to the corners that actually
+// carry a cleared account, so a judge is one click from live scraper output.
+// Read from the stored summary's per-corner map; with no map the count stands
+// unlinked rather than pointing anywhere it cannot prove.
+export const clearedLinks = (voices) => {
+  const kept = Object.entries(voices?.corners || {}).filter(([, k]) => k > 0).map(([s]) => s).sort();
+  const count = voices?.withQuote ?? kept.length;
+  if (!kept.length) return String(count);
+  const pretty = (s) => s.split("-and-").map((half) => half.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")).join(" &amp; ");
+  return `${count} (${kept.map((s) => `<a href="/c/${esc(s)}">${pretty(s)}</a>`).join(", ")})`;
+};
+
 export const visibleRuns = (cotd, cap = pacificToday()) =>
   [...(cotd || [])].filter((e) => e && e.slug && (!e.date || String(e.date) <= cap)).reverse();
 import { TIER_LABEL, TIER_NOTE, CITY_BOUNDS } from "./city.js";
@@ -544,7 +556,7 @@ ${
     ? `${city?.queueLength ? `<p class="cotdq">${n(city.queueLength)} corners in the audit queue, worst first.</p>` : ""}
 ${
   voices?.commissioned
-    ? `<p class="cotdq">Resident voices commissioned autonomously at ${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}. ${n(voices.withQuote)} produced an account that cleared the relevance filter; the rest are recorded as scraped and empty, which is a result rather than a gap.</p>`
+    ? `<p class="cotdq">Resident voices commissioned autonomously at <a href="/status">${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}</a>. ${clearedLinks(voices)} produced an account that cleared the relevance filter; the rest are recorded as scraped and empty, which is a result rather than a gap.</p>`
     : ""
 }
 ${

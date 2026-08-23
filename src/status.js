@@ -297,10 +297,15 @@ ${(spend.costs || [])
 ${
   spend?.invoice
     ? `<p class="note">The ledger above is written per run from what each run reported; the invoice line
-is the provider's own figure for the cycle and is the one that settles. They disagreed once, on
-${esc(day(spend.invoice.at))}: a corner topped up with a second scraper had its first
-run counted twice, overstating the ledger by about $${Number(spend.invoice.overstatedUsd || 0).toFixed(2)}.
-The counting was fixed rather than the history rewritten, which is what a ledger is for.</p>`
+is the provider's own figure for the cycle and is the one that settles. As of
+${esc(day(spend.invoice.at))} the two differ by about $${Math.abs(Number(spend.invoice.overstatedUsd || 0)).toFixed(2)}:
+${
+  Number(spend.invoice.overstatedUsd || 0) >= 0
+    ? `the ledger reads high. It happened once before, when a corner topped up with a second scraper had its
+first run counted twice; the counting was fixed rather than the history rewritten, which is what a ledger is for.`
+    : `the ledger reads low, because runs commissioned and not yet ingested have spent money the ledger has not
+been told about. The next morning ingest reconciles them.`
+}</p>`
     : ""
 }
 

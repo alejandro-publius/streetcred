@@ -1057,6 +1057,9 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .voice{background:var(--card);border-radius:11px;padding:15px 17px;margin-bottom:11px}
 .voice p{margin:0;font-family:Lora,Georgia,serif;font-style:italic;font-size:14.5px;line-height:1.6}
 .voice .m{font-size:11.5px;color:var(--dim);margin-top:9px;text-transform:capitalize}
+.apichip{display:inline-block;font-size:10.5px;color:var(--dim);border:1px solid var(--line3);border-radius:999px;
+  padding:2px 9px;margin-top:8px;text-decoration:none;text-transform:none}
+.apichip:hover{color:var(--ink);border-color:var(--ink)}
 .empty{margin:0;font-size:13.5px;color:var(--dim);line-height:1.55}
 
 /* The ask's summary row.
@@ -2785,10 +2788,21 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
   var vn = el("voicenums");
   if(vn && typeof d.candidates === "number") vn.textContent = items.length + " kept from " + d.candidates + " read";
   mark("voicestag", d.source);
-  el("voices").innerHTML = items.map(v =>
-    '<div class="voice"><p>&ldquo;' + esc(v.text) + '&rdquo;</p><div class="m">' +
+  // Which Apify actor produced a quote's source, the same ids the
+  // commissioning path starts. The chip renders only when the stored record
+  // carries the metadata: an item source these ids do not name, or a record
+  // with no collected date, gets no chip rather than an invented one.
+  var APIFY_ACTORS = {google_maps: "compass/crawler-google-places", reddit: "trudax/reddit-scraper-lite"};
+  el("voices").innerHTML = items.map(v => {
+    var actor = APIFY_ACTORS[v.source];
+    var chip = actor && d.collected
+      ? '<br><a class="apichip" href="https://apify.com/' + actor + '" target="_blank" rel="noopener">via Apify, ' +
+        actor + ', scraped ' + esc(d.collected) + '</a>'
+      : '';
+    return '<div class="voice"><p>&ldquo;' + esc(v.text) + '&rdquo;</p><div class="m">' +
     esc(String(v.source).replace("_"," ")) + (v.stars ? " &middot; " + v.stars + "&#9733;" : "") +
-    (v.when ? " &middot; " + esc(v.when) : "") + '</div></div>').join("") +
+    (v.when ? " &middot; " + esc(v.when) : "") + chip + '</div></div>';
+  }).join("") +
     // Said out loud, because it is the unusual part: nobody asked for this
     // scrape and nobody was present when it ran.
     (d.commissioned
