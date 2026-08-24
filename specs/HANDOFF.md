@@ -795,7 +795,47 @@ read behind it.
 
 StreetCred is feature-frozen until 2026-08-25, breakage only. The two crons
 keep running by design and stopping them counts as breakage, not as a feature.
-Queued for the other side of it:
+Queued for the other side of it, the first two in priority order, decided
+2026-08-24 from a competitor scan and held out of the freeze:
+
+- **POST-JUDGING TASK 1: the letter handoff, with no recipient.** The verified
+  letter is the flagship artifact and it dead-ends at a clipboard. Add one
+  button beside Copy and Download: "Open in your mail app", firing a `mailto:`
+  with **no recipient**, subject pre-filled, body pre-filled with the stored
+  verified letter, plus a plain link to the Board of Supervisors' own public
+  contact page so the resident looks the address up themselves. Microcopy:
+  "Addressed to your Supervisor by name. You choose the recipient and you send
+  it. StreetCred never sends mail."
+
+  **Do NOT implement the version that embeds staff email addresses.** That was
+  the first proposal and it breaks a standing rule stated at `src/data.js:108`:
+  "Names only. No email addresses anywhere in this product: nothing here is
+  ever sent to a real official." Eleven `@sfgov.org` aliases in the repo would
+  also rot with the next board turnover and put the letter lane's whole
+  "every figure verified" claim behind a bounced address. The no-recipient
+  version closes the same loop, survives turnover, and is a stronger honesty
+  story than the current dead end rather than a weaker one. About 1.5 hours.
+
+- **POST-JUDGING TASK 2: the "what we did not verify here" box.** A compact
+  panel on every corner page naming, from stored records only, what this
+  corner's evidence does NOT cover: no visual audit where the hazards record
+  is absent or `audited: false`, no press check where `press:{slug}` is
+  missing (as distinct from searched and empty), no resident scrape where no
+  `voicerun` exists, no exposure normalization anywhere, and the render's
+  gate `unchecked` regions where a fix exists. Every line reads off a stored
+  field, exactly like the case file, and a corner with nothing missing renders
+  nothing. It is the most on-brand feature on the queue: the site's whole
+  claim is that it does not overstate what it checked, and right now the
+  overstatement is only prevented lane by lane rather than said in one place.
+  About 2 hours.
+
+  Runner-ups from the same scan, in order: the 311 deep-link pre-fill panel
+  (about 3 hours), `llms.txt` plus `agents.md` for agent readiness (about 1.5),
+  district report cards (the best durable feature and far too big for a
+  freeze window). A geolocation "grade the corner I am standing on" button
+  over the deployed `/api/nearest` was scoped at about 2.5 hours as a judging
+  demo mechanic; if judging has passed by the time this is read, it is worth
+  far less and drops below every item above it.
 
 - **Show the cadence gap, not just the count.** The ledger already behaves
   correctly and there is nothing to repair: `cotd:log` is append-only and the
