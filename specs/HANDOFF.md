@@ -813,7 +813,7 @@ check to run before believing anything else in this file.
    press tick. Green means: a new entry at the end of `cotd:log` dated Monday,
    the homepage hero and the newest streak chip naming that same corner (the
    live cell asserts it), `apifyruns:2026-09` opening at 2 rather than
-   inheriting August's 54, and the watchlist run block reporting 29 of 29. The
+   inheriting August's 56, and the watchlist run block reporting 29 of 29. The
    month boundary is the part worth watching: the Apify counter is keyed by
    month and has never rolled over under this code.
 3. Everything else in the queue below, unchanged.
