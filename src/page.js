@@ -2821,6 +2821,9 @@ LANE_LOADERS.connections = () => fetch("/api/connections" + X).then(r => r.json(
 }).catch(() => {});
 
 LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d => {
+  // "1 accounts" was on every single-candidate corner, which is all four that
+  // carry a quote. One helper, used by every sentence in this lane.
+  var acct = function(nn){ return nn + (Number(nn) === 1 ? " account" : " accounts"); };
   // The filter, stated in numbers from this corner's own stored funnel. It
   // renders wherever a scrape was commissioned, zero-kept corners included:
   // "0 of 41 cleared" is the finding, not a gap, and the NONE FOUND state
@@ -2831,7 +2834,15 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
     var kept = (d.items || []).length;
     f.innerHTML = 'Apify scraped public reviews and forums for this corner. Only accounts specifically ' +
       'about this intersection and street safety were kept: <b>' + kept + '</b> of <b>' + d.candidates +
-      '</b> cleared the filter.';
+      '</b> cleared the filter.' +
+      // Withheld here rather than at the scrape: the account cleared the
+      // ingest filter and then named a different crossing, which the page
+      // checks against the city's own street index before showing anything.
+      (d.suppressed
+        ? ' ' + esc(d.suppressed) + (Number(d.suppressed) === 1 ? ' account' : ' accounts') +
+          ' cleared that filter and then named a different crossing, so ' +
+          (Number(d.suppressed) === 1 ? 'it is' : 'they are') + ' not shown.'
+        : '');
     f.hidden = false;
   })();
   (function(){
@@ -2843,11 +2854,14 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
   const items = d.items || [];
   const tag = el("voicestag");
   if (d.commissioned && !items.length) {
-    tag.textContent = "none on topic"; tag.classList.add("pending");
+    tag.textContent = d.suppressed ? "none on this corner" : "none on topic";
+    tag.classList.add("pending");
     el("voices").innerHTML =
-      '<p class="empty">The scrapers ran here and found no account that describes the street itself.</p>' +
+      (d.suppressed
+        ? '<p class="empty">The scrapers ran here and every surviving account turned out to describe a different crossing, so none is shown as evidence for this one.</p>'
+        : '<p class="empty">The scrapers ran here and found no account that describes the street itself.</p>') +
       '<p class="pcauto">Commissioned autonomously on ' + esc(ptDay(d.commissionedAt)) +
-      ', ' + esc(d.candidates || 0) + ' accounts read. An empty lane that actually ran is worth more than a full one that guessed.</p>';
+      ', ' + esc(acct(d.candidates || 0)) + ' read. An empty lane that actually ran is worth more than a full one that guessed.</p>';
     return;
   }
   if (d.note && !items.length) {
@@ -2887,7 +2901,14 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
   }
   var vn = el("voicenums");
   if(vn && typeof d.candidates === "number") vn.textContent = items.length + " kept from " + d.candidates + " read";
-  mark("voicestag", d.source);
+  // The tag is this lane's verdict, and by the time this line runs the lane
+  // has a surviving account: every zero-kept path above has already returned
+  // with its own honest tag. It used to call mark(), which returns early for
+  // a live or cached source and left the server-rendered default in place, so
+  // a corner with a quote that cleared the filter published the verdict
+  // "scraped", which describes the run rather than the result.
+  tag.textContent = "kept";
+  tag.classList.remove("pending", "sample");
   // Which Apify actor produced a quote's source, the same ids the
   // commissioning path starts. The chip renders only when the stored record
   // carries the metadata: an item source these ids do not name, or a record
@@ -2906,9 +2927,10 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
     // Said out loud, because it is the unusual part: nobody asked for this
     // scrape and nobody was present when it ran.
     (d.commissioned
-      ? '<p class="pcauto">Resident voices commissioned autonomously: the morning run started both scrapers for this corner on ' +
+      ? '<p class="pcauto">Commissioned autonomously: the morning run started both scrapers for this corner on ' +
         esc(ptDay(d.commissionedAt)) + ' and the next run ingested ' +
-        esc(d.candidates || 0) + ' accounts, of which these survived the relevance filter.</p>'
+        esc(acct(d.candidates || 0)) + ', of which ' + esc(items.length) +
+        ' survived the relevance filter.</p>'
       : '');
 });
 

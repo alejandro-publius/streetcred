@@ -43,7 +43,7 @@ import {
   cityCornerFor, getCityMeta, getRankPage, cityStats, cityScore, cityCred,
   coverageDiscs, coverageRadiusM,
   cityNews, cityVoices, cityTimeline, cityRun, cityHazards, cityLetter,
-  TIERS, tierOf, RANK_PAGE_SIZE, tagTiers, putCityMeta,
+  TIERS, tierOf, RANK_PAGE_SIZE, tagTiers, putCityMeta, getCityStreets,
 } from "./city.js";
 import { evidenceLine } from "./page.js";
 import { imageryFor, provenanceOf, PROMOTED_FROM_ENRICHED } from "./imagery.js";
@@ -62,7 +62,7 @@ import { METHODOLOGY } from "./methodology.js";
 import { WATCHLIST_PAGE } from "./watchlistpage.js";
 import { AUDITED_PAGE } from "./auditedpage.js";
 import { buildWatchlist, buildConnections, reciprocal, WATCHLIST_VERSION, runCounts } from "./press.js";
-import { commissionVoices, ingestVoices } from "./voices.js";
+import { commissionVoices, ingestVoices, cornerTokens, namesForeignCrossing } from "./voices.js";
 import { CHANGES } from "./changes.js";
 import { STATUS } from "./status.js";
 
@@ -573,14 +573,56 @@ async function getNews(c, env) {
 // and would have woken up silently the first time somebody added those two
 // variables, which is the wrong way for a data path to change. Removed rather
 // than left dormant; the audit trail is in git.
+// A published account has to be about the corner it is published on.
+//
+// The relevance scorer runs at ingest and cannot be re-run without touching
+// stored records, so this bar runs on the way out instead: the stored record
+// is left exactly as the scrape and the scorer wrote it, and the page is not
+// allowed to show a quote about somewhere else. Where the two disagree, the
+// payload says so, and the count under the lane header falls with it because
+// that sentence counts the items it is handed.
+//
+// An unavailable street index is reported, never treated as a pass: a bar
+// that answers "fine" when it could not look is gotcha 22.
+async function checkVoiceItems(payload, c, env) {
+  const items = payload?.items || [];
+  if (!items.length) return payload;
+  const streets = await getCityStreets(env).catch(() => null);
+  if (!streets?.size) return { ...payload, crossCheck: "unavailable" };
+  const tokens = cornerTokens(c);
+  const kept = [];
+  const dropped = [];
+  for (const v of items) {
+    let foreign = false;
+    try {
+      foreign = namesForeignCrossing(v.text, tokens, streets);
+    } catch {
+      return { ...payload, crossCheck: "unavailable" };
+    }
+    (foreign ? dropped : kept).push(v);
+  }
+  if (!dropped.length) return { ...payload, crossCheck: "checked" };
+  return {
+    ...payload,
+    items: kept,
+    crossCheck: "checked",
+    // What was withheld and why, so the empty state can say it in words
+    // rather than looking like a scrape that found nothing.
+    suppressed: dropped.length,
+    suppressedReason: "named a different crossing",
+    // With nothing left, this is an empty lane and has to render as one.
+    source: kept.length ? payload.source : "empty",
+  };
+}
+
 async function getVoices(c, env, origin) {
   // Voices the cron commissioned and ingested live in KV. The baked assets
   // predate that path and stay authoritative for the two corners that were
   // scraped by hand before the demo.
   const stored = await getVoicesStored(env, c.slug).catch(() => null);
-  if (stored?.items?.length) return { ...stored, source: "cache" };
+  if (stored?.items?.length) return checkVoiceItems({ ...stored, source: "cache" }, c, env);
   const baked = await bakedVoices(c, env, origin);
-  if (baked.items?.length) return baked;
+  if (baked.items?.length) return checkVoiceItems(baked, c, env);
   // A commissioned run that came back with nothing is a real result and says
   // so, rather than falling back to the generic empty state that means nobody
   // has ever looked.

@@ -169,6 +169,53 @@ export function scoreText(text, cornerTokens = []) {
   return 3 * harm + 2 * road + 2 * safety + weak + 2 * named;
 }
 
+// Does this text name a crossing that is not this one?
+//
+// scoreText admits a quote naming ONE of a corner's two streets on purpose: a
+// quote about Valencia Street belongs on 24th and Valencia, and the comment
+// there calls that the corridor case. What that rule cannot see is the
+// difference between a quote about this corridor and a quote about a
+// DIFFERENT crossing that happens to share one street name with this one.
+//
+// On 2026-08-24 three of the four published quotes were the second kind: a
+// driver at 4th and King published under 4th and Ellis, a truck at Polk and
+// Geary published under Polk and Willow, and a neckdown on Kirkham between
+// 9th and 10th Avenue published under 9th and Mission, which is the 19th
+// Street versus 19th Avenue confusion gotcha 23 already names, arriving
+// through the voices lane instead of the press lane.
+//
+// The bar: if the text names a crossing at all, that crossing has to be this
+// one. A quote that names no crossing is untouched, which is what keeps the
+// corridor case working.
+//
+// `streets` is the city's own 2,219-name index, lowercase with street types
+// stripped, the same shape cornerTokens produces. It is required rather than
+// optional: a bar that reads its own data and treats a failed read as a pass
+// is a bar that switches itself off, which is gotcha 22, so the caller has to
+// handle an unavailable index rather than this returning a quiet false.
+export function namesForeignCrossing(text, tokens, streets) {
+  if (!streets || !streets.size) throw new Error("namesForeignCrossing needs the city street index");
+  const mine = new Set((tokens || []).filter(Boolean));
+  if (!mine.size) return false;
+  const low = String(text || "").toLowerCase();
+  // "a & b", "a and b", and "between a and b", which is the same shape with a
+  // different word in front of it.
+  const re = /\b([a-z0-9]+)\s*(?:&|and)\s*([a-z0-9]+)\b/g;
+  for (const m of low.matchAll(re)) {
+    const a = m[1];
+    const b = m[2];
+    if (a === b) continue;
+    // Both sides have to be real SF street names, or this is ordinary prose
+    // like "cars and trucks" rather than a crossing.
+    if (!streets.has(a) || !streets.has(b)) continue;
+    // Named in full and it is this crossing: the strongest possible match.
+    if (mine.has(a) && mine.has(b)) continue;
+    // Any other pair of real streets is a location that is not this one.
+    return true;
+  }
+  return false;
+}
+
 export const cornerTokens = (c) =>
   String(c.name || "")
     .toLowerCase()
