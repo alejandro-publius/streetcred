@@ -31,6 +31,7 @@ import {
   radarBudget, countRadarDetection, getMonitors, putMonitors, getRadarFeed, pushRadarFeed, putRadarUnknown,
   recountPressCitations, getPressCitations, CITATION_CACHE_S,
   recountAuditTiers, getAuditTiers, AUDIT_TIER_CACHE_S,
+  getFrameIndex,
 } from "./store.js";
 import {
   judge, resultsFrom, monitorIdFrom, RADAR_VERSION,
@@ -2523,31 +2524,24 @@ export default {
           if (!log.length) return null;
           const newest = log[log.length - 1];
 
-          // The hero features the newest corner that actually has both frames,
-          // not simply the newest corner. The embed's whole point is the drag
-          // slider, and a slider needs two panes: featuring a corner whose
-          // imagery lane has not returned puts a pending card where the product
-          // demonstration should be. Bounded walk backwards, because the log is
-          // long and this runs on every homepage load.
-          const WALK = 20;
-          let featured = null;
-          let fimg = null;
-          for (let i = log.length - 1; i >= 0 && i >= log.length - WALK; i -= 1) {
-            const img = await getImageryStatus(env, log[i].slug).catch(() => null);
-            const st = img?.states || [];
-            if (st.includes("hazards") && st.includes("fix")) {
-              featured = log[i];
-              fimg = img;
-              break;
-            }
-          }
-          // Nothing in living memory has both frames. Fall back to the newest
-          // rather than showing nothing: a text-only hero is worse than a
-          // slider and better than a hole.
-          if (!featured) {
-            featured = newest;
-            fimg = await getImageryStatus(env, newest.slug).catch(() => null);
-          }
+          // The hero is the newest audit. Full stop.
+          //
+          // It used to walk back up to twenty entries for the newest corner
+          // carrying BOTH generated frames, because the embed's point is the
+          // drag slider and a slider needs two panes. That reasoning is about
+          // the demo, and it cost the page its honesty: with the Worker's
+          // imagery key billing-blocked, no corner the cron has audited since
+          // 2026-08-18 has a render, so the card read "Corner of the day, 19th
+          // and Mission, audited 2026-08-18" directly above streak chips
+          // showing today's corner. One page, two answers to what did we audit
+          // most recently, and the wrong one was the headline.
+          //
+          // A corner with only its photograph renders as its photograph:
+          // HERO_CORNER drops the handle rather than showing a slider with a
+          // missing pane. That is a weaker card and a true one. It also drops
+          // twenty KV reads from every homepage load.
+          const featured = newest;
+          const fimg = await getImageryStatus(env, newest.slug).catch(() => null);
 
           const [ec, escore, ecred] = await Promise.all([
             cornerBySlug(env, featured.slug).catch(() => null),
@@ -2556,10 +2550,18 @@ export default {
           ]);
           const states = fimg?.states || [];
           const base = `/gen/${featured.slug}`;
+          // A corner whose frame was published in the city bulk fetch has
+          // bytes in KV and no imgstatus record at all, which is the shape
+          // imageryFor already handles by consulting img:index. Without the
+          // same fallback here the hero declared "No photograph is stored for
+          // this corner" about a corner whose own page was serving the
+          // photograph, which is the newest-audit case every morning.
+          const framed = fimg ? null : await getFrameIndex(env).catch(() => null);
+          const hasToday = fimg ? fimg.status !== "nocoverage" : Boolean(framed?.slugs?.has(featured.slug));
           // A frame is only offered if it is actually stored. The embed never
           // borrows another corner's imagery and never re-shows yesterday's.
           const frames = {
-            today: fimg && fimg.status !== "nocoverage" ? `${base}/today.jpg` : null,
+            today: hasToday ? `${base}/today.jpg` : null,
             hazards: states.includes("hazards") ? `${base}/hazards.jpg` : null,
             fix: states.includes("fix") ? `${base}/fix.jpg` : null,
           };

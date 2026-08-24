@@ -53,3 +53,28 @@ test("the client clamp ships in every corner page script", () => {
     assert.ok(html.includes("d <= ptDay(Date.now())"), "cfDate refuses a future date");
   }
 });
+
+test("corner of the day is the newest audit, and its date equals the newest streak chip", async () => {
+  // One page must not give two answers to what was audited most recently. The
+  // hero used to walk back for a corner carrying both generated frames, which
+  // with imagery billing-blocked meant it showed 2026-08-18 above chips
+  // showing today.
+  const hero = home.slice(home.indexOf('class="herocorner"'), home.indexOf('class="herocorner"') + 1200);
+  // The caption varies with the run's status ("this morning, DATE, with some
+  // lanes degraded" on a partial), so match the date wherever it sits.
+  const heroDate = (hero.match(/Audited autonomously[^<]*?(\d{4}-\d{2}-\d{2})/) || [])[1];
+  const chips = [...home.matchAll(/class="cotdi" href="\/c\/([^"]+)" title="[^,]+, (\d{4}-\d{2}-\d{2})"/g)]
+    .map((m) => ({ slug: m[1], date: m[2] }));
+  assert.ok(chips.length, "the streak chips must render");
+  const newest = chips.reduce((a, b) => (b.date > a.date ? b : a), chips[0]);
+  assert.ok(heroDate, "the hero must state the date it was audited");
+  assert.equal(heroDate, newest.date, `hero says ${heroDate}, newest chip says ${newest.date}`);
+  const heroSlug = (hero.match(/href="\/c\/([a-z0-9-]+)"/) || [])[1];
+  assert.equal(heroSlug, newest.slug, "and it is that same corner");
+  // The hero must not claim a photograph is missing when the corner's own
+  // page serves one: the frame index is the shared source of that answer.
+  if (hero.includes("No photograph is stored")) {
+    const api = await fetch(`${ORIGIN}/api/imagery?x=${heroSlug}`).then((r) => r.json()).catch(() => null);
+    assert.ok(!api?.today, `hero says no photograph but /api/imagery serves ${api?.today}`);
+  }
+});
