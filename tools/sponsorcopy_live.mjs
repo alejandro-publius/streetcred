@@ -26,7 +26,20 @@ for (const slug of SAMPLE) {
     const stored = kv(`voices:${slug}`);
     assert.equal(api.commissioned, true, "sampled corners must be commissioned");
     assert.equal(api.candidates, stored.candidates, "scraped count served equals stored");
-    assert.equal((api.items || []).length, (stored.items || []).length, "kept count served equals stored");
+    // The accounting, not a bare equality. Since 2026-08-24 the served payload
+    // withholds an account that names a different crossing (the stored record
+    // is deliberately untouched, so the two can differ by exactly what was
+    // withheld and by nothing else). Asserting the sum is stricter than the
+    // old equality: it catches an invented number in either direction AND a
+    // withheld account that is not declared.
+    const served = (api.items || []).length;
+    const suppressed = api.suppressed || 0;
+    assert.equal(served + suppressed, (stored.items || []).length,
+      "served accounts plus withheld accounts must equal what the record holds");
+    if (suppressed) {
+      assert.equal(api.crossCheck, "checked", "a withheld account means the check actually ran");
+      assert.ok(api.suppressedReason, "a withheld account has to say why");
+    }
   });
 }
 
