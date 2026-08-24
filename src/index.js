@@ -62,7 +62,7 @@ import { METHODOLOGY } from "./methodology.js";
 import { WATCHLIST_PAGE } from "./watchlistpage.js";
 import { AUDITED_PAGE } from "./auditedpage.js";
 import { buildWatchlist, buildConnections, reciprocal, WATCHLIST_VERSION, runCounts } from "./press.js";
-import { commissionVoices, ingestVoices, cornerTokens, namesForeignCrossing } from "./voices.js";
+import { commissionVoices, ingestVoices, cornerTokens, namesForeignCrossing, cornerSides, matchLevel } from "./voices.js";
 import { CHANGES } from "./changes.js";
 import { STATUS } from "./status.js";
 
@@ -590,6 +590,7 @@ async function checkVoiceItems(payload, c, env) {
   const streets = await getCityStreets(env).catch(() => null);
   if (!streets?.size) return { ...payload, crossCheck: "unavailable" };
   const tokens = cornerTokens(c);
+  const sides = cornerSides(c);
   const kept = [];
   const dropped = [];
   for (const v of items) {
@@ -599,9 +600,15 @@ async function checkVoiceItems(payload, c, env) {
     } catch {
       return { ...payload, crossCheck: "unavailable" };
     }
-    (foreign ? dropped : kept).push(v);
+    // Which of the two streets this account actually names, carried beside
+    // the account so the page can label a corridor quote as one. Annotated on
+    // the way out like the check itself: the stored record is untouched.
+    (foreign ? dropped : kept).push(foreign ? v : { ...v, match: matchLevel(v.text, sides) });
   }
-  if (!dropped.length) return { ...payload, crossCheck: "checked" };
+  // `kept`, not `payload.items`: the annotated copies are the point, and
+  // returning the originals here dropped every match label on exactly the
+  // corners that have a quote to label.
+  if (!dropped.length) return { ...payload, items: kept, crossCheck: "checked" };
   return {
     ...payload,
     items: kept,

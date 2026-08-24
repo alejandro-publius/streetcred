@@ -169,6 +169,38 @@ export function scoreText(text, cornerTokens = []) {
   return 3 * harm + 2 * road + 2 * safety + weak + 2 * named;
 }
 
+// Which of a corner's two streets a quote actually names.
+//
+// Counted per SIDE, not per token, and that is not fussiness: cornerTokens
+// flattens "Cyril Magnin and Eddy" to ["cyril","magnin","eddy"], so a quote
+// naming only Cyril Magnin would match two tokens and read as though it named
+// both streets. Sides are the two things a crossing is made of, and a
+// multi-word side has to be named in full to count.
+export const cornerSides = (c) =>
+  String(c?.name || "")
+    .toLowerCase()
+    .split(/\s+and\s+/)
+    .map((side) =>
+      side
+        .replace(/\b(street|st|avenue|ave|boulevard|blvd|road|rd|drive|dr|way|place|terrace)\b/g, " ")
+        .split(/\s+/)
+        .filter((t) => t.length > 2),
+    )
+    .filter((side) => side.length);
+
+// "crossing" when the quote names both streets, "corridor" when it names one.
+//
+// scoreText already admits both and ranks the first above the second, on
+// purpose. What it never did was say which one a published quote was, so a
+// corridor quote was displayed exactly like testimony about the crossing
+// itself. This is the fact the page needs in order to label it.
+export function matchLevel(text, sides) {
+  const low = String(text || "").toLowerCase();
+  const named = (sides || []).filter((side) => side.every((t) => low.includes(t))).length;
+  if (named >= 2) return "crossing";
+  return named === 1 ? "corridor" : "none";
+}
+
 // Does this text name a crossing that is not this one?
 //
 // scoreText admits a quote naming ONE of a corner's two streets on purpose: a

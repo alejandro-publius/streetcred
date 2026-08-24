@@ -1068,6 +1068,12 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .cfpend{opacity:.62}
 .cfpend .cfdate{font-style:italic}
 .cfyou .cfchip,.cfyou a{color:var(--accent)}
+/* The qualifier on a corridor quote. Deliberately not the accent colour and
+   not a warning: this is a true label on real evidence, in the same register
+   as the provenance chip beside it. */
+.corrchip{display:inline-block;font-size:10.5px;color:var(--dim);background:var(--card);
+  border:1px solid var(--line2);border-radius:999px;padding:2px 9px;margin-top:6px;text-transform:none}
+.corrnote{display:inline-block;font-size:10.5px;color:var(--dim);margin-left:7px;text-transform:none}
 .apichip{display:inline-block;font-size:10.5px;color:var(--dim);border:1px solid var(--line3);border-radius:999px;
   padding:2px 9px;margin-top:8px;text-decoration:none;text-transform:none}
 .apichip:hover{color:var(--ink);border-color:var(--ink)}
@@ -2918,9 +2924,17 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
       ? '<br><a class="apichip" href="https://apify.com/' + actor + '" target="_blank" rel="noopener">via Apify, ' +
         actor + ', scraped ' + esc(d.collected) + '</a>'
       : '';
+    // What this account is evidence ABOUT. A quote naming one of the two
+    // streets is real and relevant and is not testimony about this crossing,
+    // and the page has to say which it is holding rather than let the reader
+    // assume the stronger one.
+    var corridor = v.match === "corridor"
+      ? '<br><span class="corrchip" title="This account names one of the two streets at this corner and not the crossing itself.">corridor evidence</span>' +
+        '<span class="corrnote">about this street, not this exact crossing</span>'
+      : '';
     return '<div class="voice"><p>&ldquo;' + esc(v.text) + '&rdquo;</p><div class="m">' +
     esc(String(v.source).replace("_"," ")) + (v.stars ? " &middot; " + v.stars + "&#9733;" : "") +
-    (v.when ? " &middot; " + esc(v.when) : "") + chip + '</div></div>';
+    (v.when ? " &middot; " + esc(v.when) : "") + chip + corridor + '</div></div>';
   }).join("") +
     // Said out loud, because it is the unusual part: nobody asked for this
     // scrape and nobody was present when it ran.
