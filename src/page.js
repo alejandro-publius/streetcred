@@ -1694,6 +1694,7 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
     </div>
     <div class="panel lane-voices">
       <div class="phs"><h2>Resident voices</h2><span class="lanenums" id="voicenums"></span><span class="tag" id="voicestag">scraped</span></div>
+      <p class="funnel" id="voicesfilter" hidden></p>
       <div class="pbody">
         <p class="funnel" id="voicefunnel" hidden></p>
         <div id="voices"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
@@ -2820,6 +2821,19 @@ LANE_LOADERS.connections = () => fetch("/api/connections" + X).then(r => r.json(
 }).catch(() => {});
 
 LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d => {
+  // The filter, stated in numbers from this corner's own stored funnel. It
+  // renders wherever a scrape was commissioned, zero-kept corners included:
+  // "0 of 41 cleared" is the finding, not a gap, and the NONE FOUND state
+  // below stays exactly as it was.
+  (function(){
+    var f = el("voicesfilter");
+    if(!f || !d || !d.commissioned || typeof d.candidates !== "number") return;
+    var kept = (d.items || []).length;
+    f.innerHTML = 'Apify scraped public reviews and forums for this corner. Only accounts specifically ' +
+      'about this intersection and street safety were kept: <b>' + kept + '</b> of <b>' + d.candidates +
+      '</b> cleared the filter.';
+    f.hidden = false;
+  })();
   (function(){
     var comm = cfDate(d && d.commissionedAt), ing = cfDate(d && d.collected);
     if(comm || ing){

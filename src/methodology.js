@@ -9,6 +9,7 @@ import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER } from "./page.js";
 import { DISTRIBUTION, DISTRIBUTION_DATE } from "./distribution.js";
 import { SERVICE_NAMES } from "./data.js";
 import { WATCHLIST_QUERIES, runCounts } from "./press.js";
+import { TIMELINE_FROM } from "./timeline.js";
 
 const n = DISTRIBUTION.length;
 const med = DISTRIBUTION[Math.floor(0.5 * (n - 1))];
@@ -195,6 +196,20 @@ found says so, the same way the resident-voices funnel does.</p>
 <p><b>A press-checked corner is not an audited corner.</b> It keeps its tier and gains a press section.
 The imagery panel keeps its honest pending state, and the audited count on the homepage does not move
 because a corner was press checked.</p>
+
+<h2 id="exa">How Exa is used</h2>
+
+<p>Five distinct modes, each with living proof:</p>
+
+<ul>
+  <li><b>Per-corner press search</b>: every warmed corner's press lane is a dated, cited search. <a href="/c/16th-mission#presstape">See one live</a>.</li>
+  <li><b>Coverage timelines from ${TIMELINE_FROM} onward</b>, a search per window on the crossing itself. <a href="/c/16th-mission#presstape">Same corner, the year strip</a>.</li>
+  <li><b>findSimilar corner connections</b>, related coverage verified at both ends and written to both corners. <a href="/c/16th-and-potrero">A corner carrying one</a>.</li>
+  <li><b>The citywide watchlist</b>, entity discovery over the city's coverage, with its rejects published beside what it kept. <a href="/watchlist">The watchlist</a>.</li>
+  <li><b>Standing radar monitors</b>, watching for new coverage between runs. <a href="/radar">The radar</a>.</li>
+</ul>
+
+<p>Every Exa call is metered from the provider's own costDollars and logged in the <a href="/status">public ledger</a>.</p>
 
 <h2>The Press Watchlist, and how a corner gets on it</h2>
 <p>Every other lane on this site starts from a corner and asks what is written about it. The watchlist
