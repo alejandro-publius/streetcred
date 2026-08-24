@@ -23,7 +23,7 @@ test("the homepage strip renders all seven steps with their proof links", () => 
   const steps = [...home.matchAll(/<span class="cfn">(\d)<\/span>/g)].map((m) => Number(m[1]));
   assert.deepEqual(steps, [1, 2, 3, 4, 5, 6, 7]);
   for (const href of ["/methodology", "/c/16th-mission", "/watchlist", "/c/24th-and-valencia", "/audited", "/methodology#gate", "/c/16th-mission#letterpanel"]) {
-    assert.ok(home.includes(`<a href="${href}">`), `step link ${href} must render`);
+    assert.ok(home.includes(`<a class="cfrow" href="${href}">`), `step link ${href} must render as its row`);
   }
 });
 

@@ -18,6 +18,17 @@ import { pacificToday } from "./data.js";
 // carry a cleared account, so a judge is one click from live scraper output.
 // Read from the stored summary's per-corner map; with no map the count stands
 // unlinked rather than pointing anywhere it cannot prove.
+
+// Monochrome marks for the pipeline rows that have no product logo: a
+// database for the city's records, a shield for the deterministic gate, a
+// person for the reader. Drawn in currentColor so they take the row's ink
+// and can never read as a brand another sponsor did not get.
+const GLYPH = {
+  db: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg>`,
+  gate: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 2.5l8 3v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10v-6z"/><path d="M8.5 12l2.5 2.5 4.5-4.5"/></svg>`,
+  you: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20.5c1.2-3.8 3.9-5.5 7-5.5s5.8 1.7 7 5.5"/></svg>`,
+};
+
 export const clearedLinks = (voices) => {
   const kept = Object.entries(voices?.corners || {}).filter(([, k]) => k > 0).map(([s]) => s).sort();
   const count = voices?.withQuote ?? kept.length;
@@ -362,14 +373,26 @@ ${BASE_CSS}
 .cotdi:hover{color:var(--ink);border-color:var(--line3)}
 .cotdi i{width:7px;height:7px;border-radius:50%;display:block;background:var(--dim)}
 .cotdc{font-size:10.5px;color:var(--dim);letter-spacing:.03em}
-.caseline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
-.caseline li{display:flex;align-items:center;gap:10px;font-size:12.5px;line-height:1.5}
-.caseline a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line2)}
-.caseline a:hover{border-color:var(--ink)}
-.cfn{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:50%;
-  background:var(--ink);color:#fff;font-weight:700;font-size:10.5px;flex-shrink:0}
-.cfinfra{margin:16px 0 0;padding-top:12px;border-top:1px solid var(--line);font-size:11.5px;color:var(--dim);
-  display:flex;align-items:center;gap:10px}
+.caseline{list-style:none;margin:0;padding:0}
+.caseline li + li{border-top:1px solid var(--line)}
+.cfrow{display:grid;grid-template-columns:20px 24px 108px 1fr;align-items:center;column-gap:12px;
+  padding:8px 6px;text-decoration:none;color:inherit;font-size:12.5px;line-height:1.5;border-radius:8px}
+a.cfrow:hover{background:var(--card)}
+a.cfrow:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.cfn{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;
+  background:var(--ink);color:#fff;font-weight:700;font-size:10.5px}
+.cfnblank{background:transparent}
+.cfmark{width:24px;height:24px;display:grid;place-items:center;color:var(--dim)}
+.cfmark img,.cfmark svg{display:block;max-width:24px;max-height:24px}
+.cfname{font-weight:600}
+.cfdesc{color:var(--ink)}
+.cfinfra{margin:14px 0 0;padding-top:10px;border-top:1px solid var(--line);color:var(--dim)}
+.cfinfra .cfname,.cfinfra .cfdesc{color:var(--dim)}
+.cfinfra .cfrow{padding:0 6px}
+@media (max-width:430px){
+  .cfrow{grid-template-columns:20px 24px 1fr;row-gap:2px}
+  .cfdesc{grid-column:3}
+}
 .gA{background:var(--green)}
 .gB{background:rgba(120,140,93,.62)}
 .gC{background:var(--blue)}
@@ -588,15 +611,15 @@ ${
   <div class="phs"><h2>How a corner becomes a case</h2></div>
   <div class="pbody">
   <ol class="caseline" aria-label="The pipeline, in causal order">
-    <li><span class="cfn">1</span><span class="lg"><b>DataSF</b></span><a href="/methodology">scores it from the city's own records</a></li>
-    <li><span class="cfn">2</span><span class="lg"><img src="/logos/googlemaps.svg" alt="Google Maps" width="24" height="24" loading="lazy"><b>Google Maps</b></span><a href="/c/16th-mission">photographs it</a></li>
-    <li><span class="cfn">3</span><span class="lg"><img src="/logos/exa.svg" alt="Exa" width="77" height="24" loading="lazy"><b>Exa</b></span><a href="/watchlist">reads twelve years of news about it</a></li>
-    <li><span class="cfn">4</span><span class="lg"><img src="/logos/apify.svg" alt="Apify" width="87" height="24" loading="lazy"><b>Apify</b></span><a href="/c/24th-and-valencia">listens to its residents</a></li>
-    <li><span class="cfn">5</span><span class="lg"><img src="/logos/gemini.svg" alt="Google Gemini" width="24" height="24" loading="lazy"><b>Gemini</b></span><a href="/audited">audits the frame, draws the fix, writes the letter</a></li>
-    <li><span class="cfn">6</span><span class="lg"><b>The gate</b></span><a href="/methodology#gate">a deterministic gate verifies every claim or the letter does not serve</a></li>
-    <li><span class="cfn">7</span><span class="lg"><b>You</b></span><a href="/c/16th-mission#letterpanel">send it: the letter is drafted, never sent by us</a></li>
+    <li><a class="cfrow" href="/methodology"><span class="cfn">1</span><span class="cfmark">${GLYPH.db}</span><b class="cfname">DataSF</b><span class="cfdesc">scores it from the city's own records</span></a></li>
+    <li><a class="cfrow" href="/c/16th-mission"><span class="cfn">2</span><span class="cfmark"><img src="/logos/googlemaps.svg" alt="" width="24" height="24" loading="lazy"></span><b class="cfname">Google Maps</b><span class="cfdesc">photographs it</span></a></li>
+    <li><a class="cfrow" href="/watchlist"><span class="cfn">3</span><span class="cfmark"><img src="/logos/exa-icon.svg" alt="" width="20" height="24" loading="lazy"></span><b class="cfname">Exa</b><span class="cfdesc">reads twelve years of news about it</span></a></li>
+    <li><a class="cfrow" href="/c/24th-and-valencia"><span class="cfn">4</span><span class="cfmark"><img src="/logos/apify-icon.svg" alt="" width="24" height="24" loading="lazy"></span><b class="cfname">Apify</b><span class="cfdesc">listens to its residents</span></a></li>
+    <li><a class="cfrow" href="/audited"><span class="cfn">5</span><span class="cfmark"><img src="/logos/gemini.svg" alt="" width="24" height="24" loading="lazy"></span><b class="cfname">Gemini</b><span class="cfdesc">audits the frame, draws the fix, writes the letter</span></a></li>
+    <li><a class="cfrow" href="/methodology#gate"><span class="cfn">6</span><span class="cfmark">${GLYPH.gate}</span><b class="cfname">The gate</b><span class="cfdesc">a deterministic gate verifies every claim or the letter does not serve</span></a></li>
+    <li><a class="cfrow" href="/c/16th-mission#letterpanel"><span class="cfn">7</span><span class="cfmark">${GLYPH.you}</span><b class="cfname">You</b><span class="cfdesc">send it: the letter is drafted, never sent by us</span></a></li>
   </ol>
-  <p class="cfinfra"><span class="lg"><img src="/logos/cloudflare.svg" alt="Cloudflare" width="52" height="24" loading="lazy"><b>Cloudflare</b></span>Workers serve the page, KV holds corners, imagery and grades</p>
+  <p class="cfinfra"><span class="cfrow"><span class="cfn cfnblank" aria-hidden="true"></span><span class="cfmark"><img src="/logos/cloudflare.svg" alt="" width="24" height="24" loading="lazy"></span><b class="cfname">Cloudflare</b><span class="cfdesc">Workers serve the page, KV holds corners, imagery and grades</span></span></p>
   </div>
 </div>
 
