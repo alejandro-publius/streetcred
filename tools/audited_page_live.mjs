@@ -109,11 +109,14 @@ test("the page renders whole: no loading fallbacks, no bare headers", () => {
 });
 
 test("the count the homepage publishes and this page's count agree", async () => {
-  const home = await fetch(`${ORIGIN}/`).then((r) => r.text());
-  // Tag-agnostic on purpose. The count became a link to this very page, and an
-  // extractor keyed to `<span class="covcount">` reported undefined the moment
-  // it did, which reads as a disagreement rather than as a stale regex.
-  const legend = (home.match(/class="covcount"[^>]*>(\d+) corner/) || [])[1];
+  // Cache-busted: the homepage is edge cached and this cell must read the
+  // deploy under test, not the previous one.
+  const home = await fetch(`${ORIGIN}/?cell=covcount`).then((r) => r.text());
+  // Keyed to the covcount class but not to the words around the number. The
+  // word "corner" was part of the extractor once and the word diet removed
+  // it from the legend, which read as a disagreement rather than as a stale
+  // regex, the second time this exact cell failed that exact way.
+  const legend = (home.match(/class="covcount"[^>]*>(\d+)/) || [])[1];
   assert.equal(Number(counts[0]), Number(legend), `audited index says ${counts[0]}, homepage coverage legend says ${legend}`);
   assert.equal(Number(counts[0]), (meta.audited || []).length, "and both must equal the stored roster");
 });
