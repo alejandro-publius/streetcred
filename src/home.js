@@ -29,6 +29,31 @@ const GLYPH = {
   you: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20.5c1.2-3.8 3.9-5.5 7-5.5s5.8 1.7 7 5.5"/></svg>`,
 };
 
+// What the scrapes actually produced, in the site's own vocabulary.
+//
+// The plain sentence counts corners whose scrape kept an account. Once the
+// corner check has run there are three different things to count and merging
+// them reads as a stronger claim than the evidence supports: an account about
+// this exact crossing, an account about one of its streets, and an account
+// that named a different crossing and is withheld. `check` is a stamped
+// snapshot written by tools/recount_voices.mjs; it is deliberately dropped by
+// the next ingest rather than carried forward, because a stale breakdown is
+// worse than none, and this falls back to the plain sentence when it is gone.
+export const voicesFunnel = (voices) => {
+  const c = voices?.check;
+  const num = (v, href) => `<a href="${href}">${Number(v).toLocaleString("en-US")}</a>`;
+  if (!c) {
+    return `${num(voices?.withQuote ?? 0, "/audited")} cleared the relevance filter, the rest recorded as scraped and empty, a result rather than a gap.`;
+  }
+  const bits = [];
+  if (c.crossing) bits.push(`${num(c.crossing, "/audited")} describe the crossing itself`);
+  if (c.corridor) bits.push(`${num(c.corridor, "/c/24th-and-valencia")} ${c.crossing ? "" : "account "}${c.corridor === 1 ? "is" : "are"} published as corridor evidence, about the street rather than the crossing`);
+  if (c.withheld) bits.push(`${c.withheld} named a different crossing and ${c.withheld === 1 ? "is" : "are"} withheld`);
+  const empty = Math.max(0, Number(voices.commissioned || 0) - Number(c.crossing || 0) - Number(c.corridor || 0) - Number(c.withheld || 0));
+  if (empty) bits.push(`the other ${empty} scraped empty, a result rather than a gap`);
+  return `${bits.join("; ")}.`;
+};
+
 export const visibleRuns = (cotd, cap = pacificToday()) =>
   [...(cotd || [])].filter((e) => e && e.slug && (!e.date || String(e.date) <= cap)).reverse();
 import { TIER_LABEL, TIER_NOTE, CITY_BOUNDS } from "./city.js";
@@ -576,7 +601,7 @@ ${
     ? `${city?.queueLength ? `<p class="cotdq">${n(city.queueLength)} corners in the audit queue, worst first.</p>` : ""}
 ${
   voices?.commissioned
-    ? `<p class="cotdq">Resident voices commissioned autonomously at <a href="/status">${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}</a>; <a href="/audited">${n(voices.withQuote ?? 0)}</a> cleared the relevance filter, the rest recorded as scraped and empty, a result rather than a gap.</p>`
+    ? `<p class="cotdq">Resident voices commissioned autonomously at <a href="/status">${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}</a>; ${voicesFunnel(voices)}</p>`
     : ""
 }
 ${

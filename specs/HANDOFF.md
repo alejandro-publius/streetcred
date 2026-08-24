@@ -798,6 +798,20 @@ keep running by design and stopping them counts as breakage, not as a feature.
 Queued for the other side of it, the first two in priority order, decided
 2026-08-24 from a competitor scan and held out of the freeze:
 
+- **POST-JUDGING TASK 0: move the corner check into the ingest scorer.** The
+  bar that decides whether an account is about this crossing
+  (`namesForeignCrossing`) and the label that says which street it names
+  (`matchLevel`) both run on the way OUT, in `checkVoiceItems`, so no stored
+  record was rewritten. That is the right shape for a correction made in a
+  hurry and the wrong shape permanently: `voices:summary` is written at ingest
+  by `recordOutcome`, which counts what the ingest kept, so the homepage
+  breakdown is a stamped snapshot from `tools/recount_voices.mjs` and the next
+  ingest of any corner drops it (the homepage then falls back to the plain
+  sentence, which stays true). Moving both functions into the ingest and
+  rescore paths in `src/voices.js` makes the stored counts correct by
+  construction and the snapshot unnecessary. `--rescore` re-applies a scorer
+  change to datasets already paid for, so this costs nothing but writes.
+
 - **POST-JUDGING TASK 1: the letter handoff, with no recipient.** The verified
   letter is the flagship artifact and it dead-ends at a clipboard. Add one
   button beside Copy and Download: "Open in your mail app", firing a `mailto:`

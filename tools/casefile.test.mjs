@@ -82,3 +82,20 @@ test("a corner with no audit date renders the pending state, never an invented d
   assert.match(html, /<li id="cf-audited" class="cfpend"/);
   assert.ok(html.includes("checking the stored audit"));
 });
+
+test("the funnel sentence counts the three outcomes apart, and falls back cleanly", async () => {
+  const { voicesFunnel } = await import("../src/home.js");
+  const strip = (h) => h.replace(/<[^>]+>/g, "");
+  // The real numbers on 2026-08-24: nothing describes a crossing, one account
+  // is corridor evidence, three named a different crossing.
+  const s = strip(voicesFunnel({ commissioned: 20, withQuote: 1, check: { crossing: 0, corridor: 1, withheld: 3 } }));
+  assert.ok(s.includes("1 account is published as corridor evidence"), s);
+  assert.ok(s.includes("3 named a different crossing and are withheld"), s);
+  assert.ok(s.includes("the other 16 scraped empty"), s);
+  assert.ok(!s.includes("cleared the relevance filter"), "the merged claim is gone while the breakdown exists");
+  // A zero bucket is not printed as a zero.
+  assert.ok(!/\b0\b/.test(s), `no zero buckets: ${s}`);
+  // Without the stamped breakdown it degrades to the plain true sentence.
+  const f = strip(voicesFunnel({ commissioned: 20, withQuote: 1 }));
+  assert.ok(f.includes("1 cleared the relevance filter"), f);
+});
