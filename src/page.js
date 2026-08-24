@@ -2839,9 +2839,7 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
       // ingest filter and then named a different crossing, which the page
       // checks against the city's own street index before showing anything.
       (d.suppressed
-        ? ' ' + esc(d.suppressed) + (Number(d.suppressed) === 1 ? ' account' : ' accounts') +
-          ' cleared that filter and then named a different crossing, so ' +
-          (Number(d.suppressed) === 1 ? 'it is' : 'they are') + ' not shown.'
+        ? ' ' + esc(acct(d.suppressed)) + ' withheld for naming a different crossing.'
         : '');
     f.hidden = false;
   })();

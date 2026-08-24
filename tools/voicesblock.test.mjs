@@ -54,5 +54,6 @@ test("the bar refuses to pass when it cannot read the street index", () => {
 
 test("a withheld account renders as withheld, not as a scrape that found nothing", () => {
   assert.ok(loader.includes("every surviving account turned out to describe a different crossing"));
-  assert.ok(loader.includes("named a different crossing, so"), "the funnel sentence says what was withheld");
+  assert.ok(loader.includes("withheld for naming a different crossing."), "the funnel sentence says what was withheld");
+  assert.ok(!loader.includes("cleared that filter and then"), "the sentence must not say cleared after reporting a zero-cleared count");
 });
