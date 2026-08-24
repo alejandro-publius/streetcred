@@ -10,6 +10,7 @@ import { DISTRIBUTION, DISTRIBUTION_DATE } from "./distribution.js";
 import { SERVICE_NAMES } from "./data.js";
 import { WATCHLIST_QUERIES, runCounts } from "./press.js";
 import { TIMELINE_FROM } from "./timeline.js";
+import { SCORE_RADIUS } from "./score.js";
 
 const n = DISTRIBUTION.length;
 const med = DISTRIBUTION[Math.floor(0.5 * (n - 1))];
@@ -117,7 +118,7 @@ is capped at 8 points, less than one fatality, because a 311 report is paperwork
 a person. An earlier uncapped version let 88 street-condition reports outvote a death; the cap is the
 correction, kept visibly small.</p>
 
-<h2>The census calibration, and its finality</h2>
+<h2 id="percentiles">The census calibration, and its finality</h2>
 <p>A corner's index is a percentile: its position among <b>all ${n.toLocaleString()} real crossings</b>
 in the city, each scored with the formula above by <code>tools/sweep.mjs</code> on ${DISTRIBUTION_DATE}
 and frozen in <code>src/distribution.js</code>. The local counter behind the sweep was verified to match
@@ -126,7 +127,9 @@ Shape of the city: ${zeroes} crossings with no recorded harm at all, median ${me
 percentile ${p90}, maximum ${max} (6th and Mission).</p>
 <p>Grades: A below the 40th percentile, B to the 64th, C to the 79th, D to the 92nd, F at 93 and above.
 An F literally means more reported harm than 93 percent of San Francisco intersections. The index is
-capped at 99 because no corner is worse than itself.</p>
+capped at 99 because no corner is worse than itself. On the leaderboard the number beside each corner
+is the index itself: the grade is the percentile band, and the index is what separates corners inside
+one band, which is why a page of F corners still has an order.</p>
 <p><b>This calibration is declared final.</b> It replaced a 600-sample estimate that agreed with it to
 within a point or two (both medians ${med}). The array does not float with new data, because a grade
 that drifts with nothing changed on the ground is a grade nobody can cite, and people paste these into
@@ -197,6 +200,18 @@ found says so, the same way the resident-voices funnel does.</p>
 The imagery panel keeps its honest pending state, and the audited count on the homepage does not move
 because a corner was press checked.</p>
 
+<h2 id="map">How the map is drawn</h2>
+<p>The city map draws every graded crossing as a heat dot, with the three tiers marked: AUDITED filled,
+ENRICHED outlined, SCORED faint. Past zoom 15 the scored dots are tappable, through the same two-tap
+confirm as tapping the map itself. Unmarked crossings had no reported harm in the record, which is a
+statement about the record and not about the street.</p>
+<p>The audited coverage layer is the ${SCORE_RADIUS}m scoring core around each fully audited corner, drawn per
+corner and never as one outline: a boundary around the audited set would enclose thousands of crossings
+nobody has audited, and the gaps between discs are the truth of how much city remains. One more corner
+joins every morning.</p>
+<p>The Danger Index ranks reported harm, not risk per crossing: no exposure normalization is applied,
+and the <a href="#caveat">exposure caveat below</a> states what that means in full.</p>
+
 <h2 id="exa">How Exa is used</h2>
 
 <p>Five distinct modes, each with living proof:</p>
@@ -257,7 +272,7 @@ site homepage is not an article) and must be recent, since a blog post from 2007
 as anything. Empty stays empty, and nothing fuzzy is shown: of 23 audited corners, four have a
 connection.</p>
 
-<h2>The exposure caveat, in full</h2>
+<h2 id="caveat">The exposure caveat, in full</h2>
 <p>The index ranks <b>reported harm, not risk per crossing</b>. A corner ten thousand people cross daily
 and a corner a hundred people cross daily are ranked on their raw counts. There is no reliable public
 pedestrian-volume dataset at intersection resolution for the whole city; rather than normalize against a

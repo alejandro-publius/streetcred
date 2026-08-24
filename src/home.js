@@ -29,14 +29,6 @@ const GLYPH = {
   you: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20.5c1.2-3.8 3.9-5.5 7-5.5s5.8 1.7 7 5.5"/></svg>`,
 };
 
-export const clearedLinks = (voices) => {
-  const kept = Object.entries(voices?.corners || {}).filter(([, k]) => k > 0).map(([s]) => s).sort();
-  const count = voices?.withQuote ?? kept.length;
-  if (!kept.length) return String(count);
-  const pretty = (s) => s.split("-and-").map((half) => half.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")).join(" &amp; ");
-  return `${count} (${kept.map((s) => `<a href="/c/${esc(s)}">${pretty(s)}</a>`).join(", ")})`;
-};
-
 export const visibleRuns = (cotd, cap = pacificToday()) =>
   [...(cotd || [])].filter((e) => e && e.slug && (!e.date || String(e.date) <= cap)).reverse();
 import { TIER_LABEL, TIER_NOTE, CITY_BOUNDS } from "./city.js";
@@ -511,7 +503,6 @@ ${
   <span class="key"><i style="background:var(--dim)"></i>AUDITED, every lane checked</span>
   <span class="key"><i style="background:none;border:2px solid var(--dim);width:7px;height:7px"></i>ENRICHED, records and index, no visual audit</span>
   <span class="key"><i style="background:var(--dim);opacity:.4;width:5px;height:5px"></i>SCORED, graded against the census</span>
-  <span>Past zoom 15 the scored dots are tappable. Unmarked crossings had no reported harm in the record.</span>
 </p>
 <p class="mapfoot">
   <span class="key"><b class="gk gA">A</b></span>
@@ -519,16 +510,14 @@ ${
   <span class="key"><b class="gk gC">C</b></span>
   <span class="key"><b class="gk gD">D</b></span>
   <span class="key"><b class="gk gF">F</b></span>
-  <span id="mapdata">Map data: Google. Danger Index ranks reported harm, not risk per crossing.</span>
+  <span id="mapdata">Map data: Google.</span>
 </p>${
   discs.length
     ? `
 <p class="mapfoot covfoot" id="covlegend">
-  <span class="key"><i class="covkey covkey-on"></i>Audited coverage: the ${coverRadiusM}m core around each fully audited corner. One more every morning.</span>
-  <a class="covcount" href="/audited">${n(discs.length)} corner${discs.length === 1 ? "" : "s"}${
+  <span class="key"><i class="covkey covkey-on"></i>Audited coverage: the ${coverRadiusM}m core around each fully audited corner (<a class="covcount" href="/audited">${n(discs.length)}</a>${
         coverPending ? `, ${n(coverPending)} awaiting a render` : ""
-      }</a>
-  <span class="covnote">Drawn per corner, never as one outline: a boundary around these would enclose thousands of crossings nobody has audited.</span>
+      }), one more every morning. <a href="/methodology#map">How this map is drawn</a></span>
 </p>`
     : ""
 }`
@@ -543,7 +532,7 @@ ${
     : ""
 }
 <div class="eyebrow"><span>The scoreboard</span><span class="tag">Danger Index, worst first</span></div>
-<p class="boardkey">Ranked by <b>Danger Index</b>, the number beside each corner. The grade is a percentile against the whole census: every corner on this first page sits in the <b>99th percentile</b>, which is why they all read F. The index is what separates them.</p>
+<p class="boardkey">Ranked by <b>Danger Index</b>. Every corner on this page is 99th percentile, which is why they all read F. <a href="/methodology#percentiles">Why percentiles</a></p>
 ${
   board.length
     ? `<div class="board" id="board">
@@ -587,7 +576,7 @@ ${
     ? `${city?.queueLength ? `<p class="cotdq">${n(city.queueLength)} corners in the audit queue, worst first.</p>` : ""}
 ${
   voices?.commissioned
-    ? `<p class="cotdq">Resident voices commissioned autonomously at <a href="/status">${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}</a>. ${clearedLinks(voices)} produced an account that cleared the relevance filter; the rest are recorded as scraped and empty, which is a result rather than a gap.</p>`
+    ? `<p class="cotdq">Resident voices commissioned autonomously at <a href="/status">${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}</a>; <a href="/audited">${n(voices.withQuote ?? 0)}</a> cleared the relevance filter, the rest recorded as scraped and empty, a result rather than a gap.</p>`
     : ""
 }
 ${

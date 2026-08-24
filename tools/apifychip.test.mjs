@@ -7,21 +7,15 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clearedLinks } from "../src/home.js";
+import { HOME } from "../src/home.js";
 import { PAGE } from "../src/page.js";
 import { CORNERS } from "../src/data.js";
 
-test("clearedLinks links each corner carrying an account and only those", () => {
-  const html = clearedLinks({ withQuote: 2, corners: { "24th-and-valencia": 1, "polk-and-willow": 1, "6th-and-mission": 0 } });
-  assert.match(html, /^2 \(/);
-  assert.match(html, /<a href="\/c\/24th-and-valencia">24th &amp; Valencia<\/a>/);
-  assert.match(html, /<a href="\/c\/polk-and-willow">Polk &amp; Willow<\/a>/);
-  assert.ok(!html.includes("6th-and-mission"), "a corner whose scrape kept nothing is not linked");
-});
-
-test("clearedLinks with no per-corner map is a bare count, not a guessed link", () => {
-  assert.equal(clearedLinks({ withQuote: 3 }), "3");
-  assert.equal(clearedLinks(null), "0");
+test("the funnel line: both counts from the summary, the cleared count linked one tap from the corners", () => {
+  const html = HOME([], "", [{ slug: "a", date: "2026-08-20" }], null, false, null, null, { commissioned: 17, withQuote: 4 }, null, null, null, null, null);
+  const want = 'commissioned autonomously at <a href="/status">17 corners</a>; <a href="/audited">4</a> cleared the relevance filter';
+  assert.ok(html.includes(want), "the funnel line renders both counts as links");
+  assert.ok(html.includes("the rest recorded as scraped and empty, a result rather than a gap"));
 });
 
 test("the corner page script carries the chip, gated on stored metadata", () => {
