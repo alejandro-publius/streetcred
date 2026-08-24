@@ -791,12 +791,35 @@ and states that the visual audit has not run. The homepage audited count does
 not move. Searched and empty is stored and shown with the count of articles
 read behind it.
 
-## After the freeze, Aug 25
+## FROZEN 2026-08-24. Read this block first.
 
-StreetCred is feature-frozen until 2026-08-25, breakage only. The two crons
-keep running by design and stopping them counts as breakage, not as a feature.
-Queued for the other side of it, the first two in priority order, decided
-2026-08-24 from a competitor scan and held out of the freeze:
+**Production: `7fc904fd-7c1f-4d5d-8239-95765e700d5d`.**
+
+```
+npx wrangler rollback d8e50565-546f-48a7-9ff8-a87b4ce24524
+```
+
+Feature-frozen from 2026-08-24, breakage only. The three crons keep running by
+design and stopping them counts as breakage, not as a feature. 396 offline
+tests and 35 live cells were green at the freeze, and the live suite is the
+check to run before believing anything else in this file.
+
+**The only open items are these three, in order.**
+
+1. **HANDOFF TASK 0, below: move the corner check into the ingest scorer.** It
+   is the one correction that is currently a snapshot rather than a property of
+   the data, and it is the first thing to do on the other side of the freeze.
+2. **Verify Monday's cron.** 13:10 UTC audit, 13:20 watchlist, quarter-hourly
+   press tick. Green means: a new entry at the end of `cotd:log` dated Monday,
+   the homepage hero and the newest streak chip naming that same corner (the
+   live cell asserts it), `apifyruns:2026-09` opening at 2 rather than
+   inheriting August's 54, and the watchlist run block reporting 29 of 29. The
+   month boundary is the part worth watching: the Apify counter is keyed by
+   month and has never rolled over under this code.
+3. Everything else in the queue below, unchanged.
+
+Queued for the other side of it, decided 2026-08-24 from a competitor scan and
+held out of the freeze:
 
 - **POST-JUDGING TASK 0: move the corner check into the ingest scorer.** The
   bar that decides whether an account is about this crossing
