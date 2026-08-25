@@ -793,14 +793,35 @@ read behind it.
 
 ## FROZEN 2026-08-24. Read this block first.
 
-**Production: `f7981e67-c5ac-46f2-b17d-7c44bbd6b723`**, deployed 2026-08-25,
-the powered-by card. The breakage pass before it is
-`44f5c9ac-cc49-4adb-b6b1-9524bfddc66d`.
+**Production: `6aca7b51-1cef-4e46-b067-89a3279eda39`**, deployed 2026-08-25,
+slider coherence and versioned frame URLs.
 
 ```
-npx wrangler rollback 44f5c9ac-cc49-4adb-b6b1-9524bfddc66d   # drop the card only
+npx wrangler rollback f7981e67-c5ac-46f2-b17d-7c44bbd6b723   # drop coherence only
+npx wrangler rollback 44f5c9ac-cc49-4adb-b6b1-9524bfddc66d   # also drop the powered-by card
 npx wrangler rollback 7fc904fd-7c1f-4d5d-8239-95765e700d5d   # back to the freeze
 ```
+
+**Frames are versioned by their own hash now, and it matters.** `/gen` is cached
+for a week, and the key used to be `/gen/slug/state.jpg` with nothing in it that
+changes when the bytes do. Republishing a frame therefore never reached anyone:
+after london-and-persia was re-fetched at a new heading on 2026-08-25, KV held
+the new photograph and the edge served the old one beside the new render for ten
+hours. The stored pair was correct the entire time.
+
+`imgstatus.frameSha` is the frame's own hash and versions the URL.
+`imgstatus.render.fix.sourceFrameSha` is the hash of the frame that render was
+conditioned on. `coherentPair` compares them and a mismatch takes the slider
+away, leaving two labeled tabs and one line. An absent hash is NOT a mismatch:
+every render made before 2026-08-25 has none, all 48 were checked and all 48 are
+coherent, so unknown means unknown and the pair is offered.
+
+Run `node tools/backfill_framesha.mjs --plan` to re-check them all. It takes
+about eleven minutes: two wrangler round trips per corner and the CLI is slow.
+
+**If you re-fetch a frame, the render must be regenerated or the pair goes
+incoherent.** That is now visible rather than silent: the corner shows tabs and
+says why, and the hero refuses to feature it at all.
 
 **The stripe on the powered-by card is an exception, not a precedent.** `.tape`
 is the hazard signal and it means one thing everywhere else: somebody outside
