@@ -233,6 +233,50 @@ ${BASE_CSS}
    container the bridge reached 29px past each edge of the wrap and gave the
    whole homepage a horizontal scrollbar. Decorative artwork must not be able
    to widen the document. */
+/* Powered by.
+   Hazard tape, reused. The stripe means one thing everywhere else on this site:
+   somebody outside this project is saying this corner is dangerous, which is
+   why it frames the press card and nothing else. It does not mean that here.
+   The operator asked for this treatment on this card deliberately, and the note
+   is in specs/HANDOFF.md rather than only in a commit message, because the next
+   person to add a striped card will read the rule and not the exception.
+
+   It sits in the left column's own whitespace rather than under the pair. The
+   hero card is 635px against the left column's 394 at 1280, so there are 241px
+   of nothing beneath the bridge. Making the hero span both grid rows puts this
+   card inside that gap: row one is the left column's natural height, row two is
+   this card, and the container is still as tall as the hero. Nothing below it
+   moves. A third grid item without the span would have added a row to both
+   columns and pushed the fold by its own height plus the 32px gap.
+
+   Source order is askhero, hero, card, so the single-column layout below 900px
+   needs no reordering at all: the card falls after the hero card on a phone,
+   which is where it was asked for. */
+.pby{margin-bottom:0}
+@media(min-width:901px){
+  .herohead > .herocorner{grid-column:2;grid-row:1 / span 2}
+  .pby{grid-column:1;grid-row:2}
+}
+.pbycard{margin-bottom:0;padding:14px 16px;text-align:center}
+.pbylabel{margin:0;font-size:10px;font-weight:700;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--dim)}
+/* One mark per cell and no text beside it. The wordmarks already carry the
+   names, so a label next to them would be the doubled label the case strip
+   rules refuse. The names are said once, below, where they are also the links. */
+.pbymarks{display:flex;align-items:center;justify-content:center;gap:26px;margin:11px 0 9px}
+.pbymark{display:flex;align-items:center;justify-content:center;height:20px}
+/* Matched on height, not on width. The two wordmarks have different aspect
+   ratios, and matching width would print one of them half the size of the
+   other. */
+.pbymark img{height:20px;width:auto;display:block;opacity:.85}
+.pbynote{margin:0;font-size:11.5px;color:var(--dim);line-height:1.5}
+.pbynote a{color:var(--dim);text-decoration:underline;text-underline-offset:2px}
+.pbynote a:hover{color:var(--ink)}
+@media(max-width:900px){
+  .pbycard{padding:13px 14px}
+  .pbymarks{gap:22px}
+}
+
 .sfmark{position:relative;margin:34px auto 0;padding:26px 0 8px;isolation:isolate;overflow:clip}
 /* Opacity chosen by measurement, not by eye. The counter is small text on
    --dim and starts at 5.04:1 over the bare page, so the bridge has very little
@@ -503,6 +547,16 @@ ${MASTHEAD({ scored, active: "" })}
   </div>
 </section>
 ${HERO_CORNER(embed)}
+<section class="tape pby" aria-label="Powered by">
+  <div class="panel pbycard">
+    <p class="pbylabel">Powered by</p>
+    <div class="pbymarks">
+      <span class="pbymark"><img src="/logos/exa.svg" alt="Exa" width="77" height="24" loading="lazy"></span>
+      <span class="pbymark"><img src="/logos/apify.svg" alt="Apify" width="87" height="24" loading="lazy"></span>
+    </div>
+    <p class="pbynote">Press discovery via <a href="/watchlist">Exa</a>. Resident voices via <a href="/c/24th-and-valencia">Apify</a>.</p>
+  </div>
+</section>
 </div>
 <section class="mine" id="mine" hidden aria-label="Corners you have checked">
   <div class="mhead"><h2>Your corners</h2><span class="mnote">Saved on this device only</span>

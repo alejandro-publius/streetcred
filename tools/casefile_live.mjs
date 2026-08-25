@@ -180,3 +180,79 @@ test("the case strip shows all seven steps on the homepage, no interaction", () 
     );
   }
 });
+
+test("the powered-by card carries both marks, the stripe, and the right links", () => {
+  // Presentation, but three of these are load-bearing. The stripe is the site's
+  // hazard signal and this is the one card that wears it without meaning it, so
+  // if it ever loses the class the card silently becomes an ordinary panel and
+  // nobody notices. The links are the only thing on the card that goes
+  // anywhere. And the marks are the reason it exists.
+  const card = home.slice(home.indexOf('class="tape pby"'), home.indexOf("</section>", home.indexOf('class="tape pby"')));
+  assert.ok(card, "the powered-by card must render on the homepage");
+
+  // The stripe is `.tape`, the same class the press card uses, so the treatment
+  // cannot drift from the one it was copied from.
+  assert.match(card, /class="tape pby"/, "the card must carry the tape stripe class");
+  assert.match(card, /class="panel pbycard"/, "and the panel inner card background");
+
+  // One mark per cell, and the wordmark files rather than the icon files: the
+  // icons carry no name, and a name beside them would be the doubled label the
+  // case strip rules refuse.
+  const marks = [...card.matchAll(/class="pbymark"><img src="([^"]+)"[^>]*alt="([^"]*)"/g)];
+  assert.equal(marks.length, 2, `expected two marks, found ${marks.length}`);
+  assert.deepEqual(
+    marks.map((m) => m[1]),
+    ["/logos/exa.svg", "/logos/apify.svg"],
+    "the wordmark assets, matching the PRESS VIA EXA chip's exa.svg",
+  );
+  assert.deepEqual(marks.map((m) => m[2]), ["Exa", "Apify"], "each mark names itself to a screen reader");
+  // No visible text label beside a mark. The names are said once, in the note.
+  assert.ok(
+    !/class="pbymark">[\s\S]*?<\/span>\s*<b/.test(card),
+    "a mark must not carry a text label beside it",
+  );
+
+  assert.match(card, /class="pbylabel">Powered by</, "the small caps label");
+
+  const links = [...card.matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map((m) => ({ href: m[1], text: m[2] }));
+  assert.deepEqual(
+    links,
+    [
+      { href: "/watchlist", text: "Exa" },
+      { href: "/c/24th-and-valencia", text: "Apify" },
+    ],
+    "Exa links to the watchlist and Apify to the voices corner",
+  );
+
+  // The card is after the hero card in source order, which is the whole of the
+  // mobile rule: below 900px the grid is one column and the card falls after
+  // the hero with no reordering at all.
+  assert.ok(
+    home.indexOf('class="tape pby"') > home.indexOf('class="herocorner"'),
+    "the card must follow the hero card in source order, or mobile puts it above",
+  );
+});
+
+test("the powered-by card does not move the fold at desktop", () => {
+  // Measured on preview at 1280 before deploying: .herohead was 635px without
+  // the card and 636px with it, a 1px rounding difference against a 16px
+  // allowance. This asserts the mechanism that makes that true, because a live
+  // HTML check cannot measure layout.
+  //
+  // The card is a third grid item. Without the span below it would occupy a new
+  // row in BOTH columns and push everything under it by its own height plus the
+  // 32px gap. The hero spanning rows 1 and 2 puts the card inside the 241px of
+  // whitespace the left column already had, so the container stays as tall as
+  // the hero and nothing moves.
+  const css = (home.match(/<style[^>]*>([\s\S]*?)<\/style>/g) || []).join("");
+  assert.match(
+    css,
+    /\.herohead > \.herocorner\{grid-column:2;grid-row:1 \/ span 2\}/,
+    "the hero must span both grid rows, or the card adds a row and moves the fold",
+  );
+  assert.match(css, /\.pby\{grid-column:1;grid-row:2\}/, "and the card sits in the left column's second row");
+  // Both only above the single-column breakpoint, or they would fight the
+  // mobile stack.
+  const desktop = (css.match(/@media\(min-width:901px\)\{([\s\S]*?)\n\}/) || [])[1] || "";
+  assert.ok(desktop.includes("grid-row:1 / span 2"), "the span belongs to the two-column layout only");
+});
