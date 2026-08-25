@@ -1168,6 +1168,14 @@ export const PRESS_BATCH_PER_TICK = 6;
 // the second needs a new period or a raised cap, and reporting either as the
 // other sends somebody to fix the wrong thing.
 export const EXA_CREDITS_SPENT = /\b402\b|credits?/i;
+
+// What both Exa lanes say when the key is refused on balance. One sentence, so
+// the press lane and the watchlist lane cannot describe the same condition two
+// different ways, and it names the remedy because "paused" without one reads as
+// a state somebody else is responsible for.
+export const EXA_PAUSED_NOTE =
+  "the exa key was refused on credit (402); the lane is paused, not broken, and resumes when a " +
+  "funded key is installed with: npx wrangler secret put EXA_API_KEY";
 const PRESS_FRESH_DAYS = 30;
 const PRESS_LANES = 4;
 
@@ -1248,7 +1256,7 @@ export async function pressBatch(env, limit = PRESS_BATCH_PER_NIGHT) {
         // failures would bury the one fact worth reporting.
         if (EXA_CREDITS_SPENT.test(String(e?.message || e))) {
           out.paused = (out.paused || 0) + 1;
-          out.pausedReason = "the exa key was refused on credit (402); the lane is paused, not broken";
+          out.pausedReason = EXA_PAUSED_NOTE;
           rollup.push({
             source: "budget-paused",
             version: PRESS_VERSION,
@@ -2065,6 +2073,12 @@ export async function watchlistRun(env) {
     }
     await putWatchlist(env, w);
     const counts = runCounts(w);
+    // A key refused on balance is a paused lane, not a broken one. The press
+    // lane learned this on 2026-08-22 and this one did not: every search in a
+    // run refuses for the same reason, so the run reported itself failed and
+    // nothing on the site said the word credit. Same rule, same wording, so the
+    // two lanes describe the same condition the same way.
+    const pausedOnCredit = Boolean(counts.failed) && EXA_CREDITS_SPENT.test(String(counts.commonReason || ""));
     const record = {
       at: started,
       ok: counts.failed === 0,
@@ -2075,12 +2089,16 @@ export async function watchlistRun(env) {
       rejected: w.rejected,
       cycle: w.cycle,
       ...(counts.commonReason ? { reason: counts.commonReason } : {}),
+      ...(pausedOnCredit ? { paused: true, pausedReason: EXA_PAUSED_NOTE } : {}),
     };
     await putWatchlistRun(env, record);
     // A run that did not complete every search it attempted is the exact
     // failure this move was made to end, so it is logged loudly rather than
-    // left to be inferred from the page.
-    if (counts.failed) {
+    // left to be inferred from the page. A paused run is said differently,
+    // because "incomplete" invites somebody to go looking for a fault.
+    if (pausedOnCredit) {
+      console.log(`watchlist run paused: ${EXA_PAUSED_NOTE}`);
+    } else if (counts.failed) {
       console.log(
         `watchlist run incomplete: ${counts.completed} of ${counts.attempted} completed, ${counts.failed} cut off`,
       );
@@ -2088,6 +2106,13 @@ export async function watchlistRun(env) {
     return { ok: true, ...record };
   } catch (e) {
     const reason = String(e?.message || e).slice(0, 200);
+    // The whole run refused before any entry completed. Same distinction.
+    if (EXA_CREDITS_SPENT.test(reason)) {
+      const record = { at: started, ok: false, paused: true, pausedReason: EXA_PAUSED_NOTE, reason };
+      await putWatchlistRun(env, record).catch(() => {});
+      console.log(`watchlist run paused: ${EXA_PAUSED_NOTE}`);
+      return { ok: false, ...record };
+    }
     await putWatchlistRun(env, { at: started, ok: false, reason }).catch(() => {});
     console.log(`watchlist run failed: ${reason}`);
     return { ok: false, reason };

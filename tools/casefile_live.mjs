@@ -127,3 +127,56 @@ test("a degraded lane never reads like an outage", () => {
     assert.ok(hero.includes("Records audited; visual lanes pending"), "the replacement copy is the agreed sentence");
   }
 });
+
+test("the case strip shows all seven steps on the homepage, no interaction", () => {
+  // The operator reported this rendering as one line unless you clicked
+  // through. Measured in the page's own context at 390, 768 and 1280 on
+  // 2026-08-25 it does not: seven list items, seven distinct vertical
+  // positions, logo and bold name and description all with non-zero boxes, no
+  // display:none and no clipping. This cell exists so that stays true, and so
+  // the next report of it has something to contradict.
+  const strip = home.slice(home.indexOf('class="caseline"'), home.indexOf("</ol>", home.indexOf('class="caseline"')));
+  assert.ok(strip, "the case strip must render on the homepage");
+
+  const rows = [...strip.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]);
+  assert.equal(rows.length, 7, `expected seven steps, found ${rows.length}`);
+
+  // Every row carries its three parts. A row that lost its description would
+  // still be a row, and the strip would still be seven lines, and it would no
+  // longer say what that step does.
+  rows.forEach((row, i) => {
+    assert.ok(/class="cfmark"/.test(row), `step ${i + 1} has no logo cell`);
+    assert.ok(/<b class="cfname">[^<]+<\/b>/.test(row), `step ${i + 1} has no bold name`);
+    const desc = (row.match(/class="cfdesc">([^<]+)</) || [])[1];
+    assert.ok(desc && desc.trim().length > 8, `step ${i + 1} has no description`);
+  });
+
+  // No interaction: the strip is not inside a details, and no row is hidden.
+  const panel = home.slice(Math.max(0, home.indexOf('class="caseline"') - 400), home.indexOf("</ol>", home.indexOf('class="caseline"')));
+  assert.ok(!/<details/.test(panel), "the strip must not be behind a disclosure");
+  assert.ok(!/<li[^>]+hidden/.test(strip), "no step may be hidden");
+
+  // And nothing in the stylesheet collapses it. A one-line state would need one
+  // of these, so they are the shapes to refuse rather than a guess at intent.
+  const css = (home.match(/<style[^>]*>([\s\S]*?)<\/style>/g) || []).join("");
+  const collapsing = [
+    /\.caseline[^{}]*\{[^}]*display:\s*(?:flex|inline-flex)[^}]*\}/,
+    /\.caseline\s+li[^{}]*\{[^}]*display:\s*(?:none|inline)[^}]*\}/,
+    /\.cfrow[^{}]*\{[^}]*display:\s*none[^}]*\}/,
+    /\.cfdesc[^{}]*\{[^}]*display:\s*none[^}]*\}/,
+    /\.cfname[^{}]*\{[^}]*display:\s*none[^}]*\}/,
+  ];
+  for (const re of collapsing) {
+    assert.ok(!re.test(css), `a stylesheet rule collapses the strip: ${(css.match(re) || [])[0]}`);
+  }
+
+  // The narrow layout stacks the description under the name rather than
+  // truncating it. Both would fit on one line; only one of them is honest.
+  const mobile = (css.match(/@media \(max-width:430px\)\{([\s\S]*?)\n\}/) || [])[1] || "";
+  if (mobile.includes(".cfdesc")) {
+    assert.ok(
+      !/\.cfdesc[^{}]*\{[^}]*text-overflow:\s*ellipsis/.test(mobile),
+      "the mobile layout truncates the description instead of stacking it",
+    );
+  }
+});
