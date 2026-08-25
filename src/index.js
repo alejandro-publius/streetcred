@@ -47,7 +47,7 @@ import {
   TIERS, tierOf, RANK_PAGE_SIZE, tagTiers, putCityMeta, getCityStreets,
 } from "./city.js";
 import { evidenceLine } from "./page.js";
-import { imageryFor, provenanceOf, PROMOTED_FROM_ENRICHED } from "./imagery.js";
+import { imageryFor, provenanceOf, coherentPair, PROMOTED_FROM_ENRICHED } from "./imagery.js";
 import { corroborate, HAZARD_VERSION } from "./hazards.js";
 import { credCheck, isSafetyCoverage, CRED_VERSION } from "./cred.js";
 import { buildManifest, PUBLIC_TRIGGERS } from "./manifest.js";
@@ -1603,12 +1603,17 @@ async function ogFor(c, env) {
   // hands the client the placeholder, because those are the cases where the
   // answer genuinely is not known yet.
   const st = imagery?.states || [];
+  // Versioned by the conditioning frame's hash, so replacing a frame replaces
+  // the URL and a browser or an edge holding last week's copy fetches the new
+  // one. Empty where no hash is stored, which is every record written before
+  // 2026-08-25, and those behave exactly as they did.
+  const vq = imagery?.frameSha ? `?v=${imagery.frameSha}` : "";
   const frames =
     imagery?.status === "ready"
       ? {
-          today: `/gen/${c.slug}/today.jpg`,
-          hazards: st.includes("hazards") ? `/gen/${c.slug}/hazards.jpg` : null,
-          fix: st.includes("fix") ? `/gen/${c.slug}/fix.jpg` : null,
+          today: `/gen/${c.slug}/today.jpg${vq}`,
+          hazards: st.includes("hazards") ? `/gen/${c.slug}/hazards.jpg${vq}` : null,
+          fix: st.includes("fix") ? `/gen/${c.slug}/fix.jpg${vq}` : null,
         }
       : null;
 
@@ -1717,7 +1722,7 @@ export async function auditedIndex(env) {
 // ---------------------------------------------------------------- generated imagery
 
 async function generatedImage(pathname, env, ctx) {
-  const parts = pathname.split("/").filter(Boolean); // gen, slug, state.jpg
+  const parts = pathname.split("?")[0].split("/").filter(Boolean); // gen, slug, state.jpg
   if (parts.length !== 3) return new Response("not found", { status: 404 });
   const slug = canonicalSlug(parts[1]);
   const state = parts[2].replace(/\.jpg$/, "");
@@ -1725,7 +1730,16 @@ async function generatedImage(pathname, env, ctx) {
     return new Response("not found", { status: 404 });
   }
 
-  const key = new Request(`https://streetcred.internal/gen/${slug}/${state}.jpg`);
+  // The version goes in the cache key, which is the whole point of it.
+  //
+  // Without it a republished frame never reaches a browser: the key was
+  // /gen/slug/state.jpg with nothing in it that changes when the bytes do, and
+  // the response is held for a week both here and at the edge. On 2026-08-25
+  // london-and-persia was re-fetched at a new heading, the render was made from
+  // the new frame, and the homepage kept serving the old photograph beside the
+  // new render for ten hours. The pair in KV was correct the whole time.
+  const version = new URLSearchParams(pathname.includes("?") ? pathname.split("?")[1] : "").get("v") || "";
+  const key = new Request(`https://streetcred.internal/gen/${slug}/${state}.jpg${version ? `?v=${version}` : ""}`);
   const hit = await caches.default.match(key);
   if (hit) return hit;
 
@@ -2167,7 +2181,9 @@ export default {
       // Imagery generated at runtime lives in KV, not in the repo. The edge
       // cache sits in front so a corner's bytes are read from KV once per colo.
       if (p.startsWith("/gen/")) {
-        return await generatedImage(p, env, ctx);
+        // The search string travels with it: /gen is versioned by the frame's
+        // hash so that replacing a frame replaces its URL.
+        return await generatedImage(p + url.search, env, ctx);
       }
 
       // The watchdog surface. Deliberately above the corner lookup: none of
@@ -2576,11 +2592,17 @@ export default {
           // hazards frame would put the handle back on a single image.
           const laneComplete = (st) => st.includes("hazards") && st.includes("fix");
 
+          // Complete is not enough. A corner can hold both frames and still not
+          // be a compare: if the photograph was re-fetched after the render was
+          // made, the two panes are two different shots and the slider is
+          // showing a lie about what changed. The hero is the shop window for
+          // this feature, so it takes the newest corner that can actually keep
+          // the promise. See coherentPair in imagery.js.
           let featured = null;
           let fimg = null;
           for (let i = log.length - 1; i >= 0 && i >= log.length - WALK; i -= 1) {
             const img = await getImageryStatus(env, log[i].slug).catch(() => null);
-            if (img?.status === "ready" && laneComplete(img.states || [])) {
+            if (img?.status === "ready" && laneComplete(img.states || []) && coherentPair(img)) {
               featured = log[i];
               fimg = img;
               break;
@@ -2604,6 +2626,7 @@ export default {
           ]);
           const states = fimg?.states || [];
           const base = `/gen/${featured.slug}`;
+          const vq = fimg?.frameSha ? `?v=${fimg.frameSha}` : "";
           // A corner whose frame was published in the city bulk fetch has
           // bytes in KV and no imgstatus record at all, which is the shape
           // imageryFor already handles by consulting img:index. Without the
@@ -2615,9 +2638,9 @@ export default {
           // A frame is only offered if it is actually stored. The embed never
           // borrows another corner's imagery and never re-shows yesterday's.
           const frames = {
-            today: hasToday ? `${base}/today.jpg` : null,
-            hazards: states.includes("hazards") ? `${base}/hazards.jpg` : null,
-            fix: states.includes("fix") ? `${base}/fix.jpg` : null,
+            today: hasToday ? `${base}/today.jpg${vq}` : null,
+            hazards: states.includes("hazards") ? `${base}/hazards.jpg${vq}` : null,
+            fix: states.includes("fix") ? `${base}/fix.jpg${vq}` : null,
           };
           // Where the featured corner's render came from, so the hero can say
           // so under the image. Resolved from the stored record rather than
@@ -2647,6 +2670,11 @@ export default {
             grade: escore?.grade || featured.grade || null,
             evidence: evidenceLine(ecred, ec?.district),
             frames,
+            // The hero only ever features a coherent pair, so this is true by
+            // construction here. It is carried anyway because HERO_CORNER and
+            // the corner page render from the same component, and the corner
+            // page does show incoherent pairs, as tabs.
+            coherent: coherentPair(fimg),
             state: hasGenerated ? "full" : frames.today ? "text-only" : "none",
             // The newer audit whose visual lanes have not landed, for the
             // sub-line. Carries its own date so the card can say "this

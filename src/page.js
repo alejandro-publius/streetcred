@@ -274,14 +274,33 @@ export const HERO_CORNER = (e) => {
   // dragging to; the hazard audit stands in when a corner has that but no
   // render. A corner with only its photograph gets the photograph, never a
   // slider with a missing pane.
-  const compare = frames.today && frames.fix ? "fix" : frames.today && frames.hazards ? "hazards" : null;
+  // A compare needs two frames AND it needs them to be the same photograph.
+  //
+  // The render is conditioned on one specific frame and the frame can be
+  // replaced afterwards: a corner whose Street View shot was re-fetched at a
+  // new heading to get past the legibility gate now has a before and an after
+  // taken from different camera parameters. Overlaying those is not a
+  // comparison, it is two pictures of one intersection with a handle between
+  // them, and the handle is the part that makes the claim. So an incoherent
+  // pair gets tabs, which say what each image is and claim nothing about the
+  // relationship between them.
+  const incoherent = e.coherent === false && Boolean(frames.today && frames.fix);
+  const compare = incoherent
+    ? null
+    : frames.today && frames.fix
+      ? "fix"
+      : frames.today && frames.hazards
+        ? "hazards"
+        : null;
 
   // Chips, in the order they read: back to the slider, the other overlay, the
   // unedited photograph for anyone who wants to see what is actually there.
+  // With no compare, the same chips are the tabs.
   const views = [];
   if (compare) views.push(["Compare", compare]);
   if (frames.hazards && compare !== "hazards") views.push(["Hazards", "hazards"]);
   if (frames.today) views.push(["Today", "today"]);
+  if (incoherent && frames.fix) views.push(["Proposed fix", "fix"]);
   const firstState = views.length ? views[0][1] : null;
 
   const stage = frames.today
@@ -361,6 +380,14 @@ export const HERO_CORNER = (e) => {
       : ""
   }
   ${stage}
+  ${
+    // Why there is no handle here. Said once, in the open, because a reader who
+    // came for the drag comparison and got tabs is owed the reason rather than
+    // being left to think the feature is broken.
+    incoherent
+      ? `<p class="hcincoh">The photograph was re-fetched after this visualization was made; a matched pair is being regenerated.</p>`
+      : ""
+  }
   ${
     // The sentence is about the proposed fix, so it appears when the proposed
     // fix does and not otherwise. On a corner whose render was never generated
@@ -1316,6 +1343,7 @@ footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--line);font-si
 .hcdisclaim{margin:10px 0 0;font-size:11.5px;color:var(--ink);line-height:1.5;
   padding-left:10px;border-left:2px solid var(--accent)}
 .hcpending{margin:8px 0 0;font-size:11.5px;color:var(--dim);line-height:1.5}
+.hcincoh{margin:8px 0 0;font-size:11.5px;color:var(--dim);line-height:1.5}
 .hcev{margin:12px 0 0;font-size:12.5px;color:var(--dim);line-height:1.55}
 
 .hcact{display:flex;align-items:center;gap:16px;margin:16px 0 0;flex-wrap:wrap}
