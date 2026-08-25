@@ -54,27 +54,76 @@ test("the client clamp ships in every corner page script", () => {
   }
 });
 
-test("corner of the day is the newest audit, and its date equals the newest streak chip", async () => {
-  // One page must not give two answers to what was audited most recently. The
-  // hero used to walk back for a corner carrying both generated frames, which
-  // with imagery billing-blocked meant it showed 2026-08-18 above chips
-  // showing today.
-  const hero = home.slice(home.indexOf('class="herocorner"'), home.indexOf('class="herocorner"') + 1200);
-  // The caption varies with the run's status ("this morning, DATE, with some
-  // lanes degraded" on a partial), so match the date wherever it sits.
+test("corner of the day is the newest render-complete audit, and says so when a newer one is pending", async () => {
+  // One page must not give two answers to what was audited most recently. This
+  // rule has been both of its halves and each was wrong alone: featuring the
+  // newest corner with a slider put 2026-08-18 above chips showing today, and
+  // featuring the newest audit full stop put a photograph with a handle on it
+  // where the product demonstration goes. The card features a corner that can
+  // be dragged; a sub-line names the newer audit that cannot be, and links it.
+  const hero = home.slice(home.indexOf('class="herocorner"'), home.indexOf('class="herocorner"') + 1600);
+  const heroSlug = (hero.match(/href="\/c\/([a-z0-9-]+)"/) || [])[1];
   const heroDate = (hero.match(/Audited autonomously[^<]*?(\d{4}-\d{2}-\d{2})/) || [])[1];
+  assert.ok(heroSlug, "the hero must name a corner");
+  assert.ok(heroDate, "the hero must state the date it was audited");
+
   const chips = [...home.matchAll(/class="cotdi" href="\/c\/([^"]+)" title="[^,]+, (\d{4}-\d{2}-\d{2})"/g)]
     .map((m) => ({ slug: m[1], date: m[2] }));
   assert.ok(chips.length, "the streak chips must render");
-  const newest = chips.reduce((a, b) => (b.date > a.date ? b : a), chips[0]);
-  assert.ok(heroDate, "the hero must state the date it was audited");
-  assert.equal(heroDate, newest.date, `hero says ${heroDate}, newest chip says ${newest.date}`);
-  const heroSlug = (hero.match(/href="\/c\/([a-z0-9-]+)"/) || [])[1];
-  assert.equal(heroSlug, newest.slug, "and it is that same corner");
-  // The hero must not claim a photograph is missing when the corner's own
-  // page serves one: the frame index is the shared source of that answer.
+
+  // Which chips actually hold a complete visual lane, asked of the same API the
+  // corner pages answer from rather than inferred from the roster.
+  const lanes = await Promise.all(
+    chips.map(async (c) => {
+      const api = await fetch(`${ORIGIN}/api/imagery?x=${c.slug}`).then((r) => r.json()).catch(() => null);
+      return { ...c, complete: Boolean(api?.fix && api?.hazards) };
+    }),
+  );
+  const complete = lanes.filter((c) => c.complete);
+  const newest = lanes.reduce((a, b) => (b.date > a.date ? b : a), lanes[0]);
+
+  if (complete.length) {
+    const newestComplete = complete.reduce((a, b) => (b.date > a.date ? b : a), complete[0]);
+    assert.equal(
+      heroSlug,
+      newestComplete.slug,
+      `hero features ${heroSlug}, newest render-complete chip is ${newestComplete.slug}`,
+    );
+    assert.equal(heroDate, newestComplete.date, `hero says ${heroDate}, that corner was audited ${newestComplete.date}`);
+  }
+
+  // The sub-line is present exactly when a newer audit exists without imagery,
+  // and it names that corner and links to it. Absent when the hero already is
+  // the newest audit, because then there is nothing being left unsaid.
+  const pendingLine = (hero.match(/class="hcpending">Latest audit[^<]*<a href="\/c\/([a-z0-9-]+)"[^>]*>([^<]+)<\/a>, visual lanes pending/) || []);
+  if (newest.slug !== heroSlug) {
+    assert.ok(pendingLine[1], `a newer audit (${newest.slug}) is not featured, so the sub-line must name it`);
+    assert.equal(pendingLine[1], newest.slug, `sub-line names ${pendingLine[1]}, newest audit is ${newest.slug}`);
+  } else {
+    assert.ok(!pendingLine[1], "the hero is already the newest audit, so no sub-line should appear");
+  }
+
+  // No future dates anywhere on the card, in the timezone the claim is about.
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+  for (const d of hero.match(/\d{4}-\d{2}-\d{2}/g) || []) {
+    assert.ok(d <= today, `hero card carries ${d}, which is after today (${today}) in Pacific`);
+  }
+
+  // The hero must not claim a photograph is missing when the corner's own page
+  // serves one: the frame index is the shared source of that answer.
   if (hero.includes("No photograph is stored")) {
     const api = await fetch(`${ORIGIN}/api/imagery?x=${heroSlug}`).then((r) => r.json()).catch(() => null);
     assert.ok(!api?.today, `hero says no photograph but /api/imagery serves ${api?.today}`);
+  }
+});
+
+test("a degraded lane never reads like an outage", () => {
+  // "with some lanes degraded" on a hero card describes the site as broken. The
+  // corner is not broken and neither is the site: the records lane ran and the
+  // visual lane has not. That is what the copy says now.
+  const hero = home.slice(home.indexOf('class="herocorner"'), home.indexOf('class="herocorner"') + 1600);
+  assert.ok(!hero.includes("lanes degraded"), "the outage phrasing is gone from the hero");
+  if (hero.includes("Records audited")) {
+    assert.ok(hero.includes("Records audited; visual lanes pending"), "the replacement copy is the agreed sentence");
   }
 });

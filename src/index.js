@@ -2524,24 +2524,52 @@ export default {
           if (!log.length) return null;
           const newest = log[log.length - 1];
 
-          // The hero is the newest audit. Full stop.
+          // The hero is the newest audit that has a complete visual lane, and
+          // it says so out loud when a newer one exists without imagery.
           //
-          // It used to walk back up to twenty entries for the newest corner
-          // carrying BOTH generated frames, because the embed's point is the
-          // drag slider and a slider needs two panes. That reasoning is about
-          // the demo, and it cost the page its honesty: with the Worker's
-          // imagery key billing-blocked, no corner the cron has audited since
-          // 2026-08-18 has a render, so the card read "Corner of the day, 19th
-          // and Mission, audited 2026-08-18" directly above streak chips
-          // showing today's corner. One page, two answers to what did we audit
-          // most recently, and the wrong one was the headline.
+          // This has now been both other things and each was wrong on its own.
+          // Featuring the newest corner carrying both frames gave a card
+          // reading "19th and Mission, audited 2026-08-18" directly above
+          // streak chips showing today: one page, two answers to what did we
+          // audit most recently, and the wrong one was the headline. Featuring
+          // the newest audit full stop fixed the contradiction and cost the
+          // card its subject, because the embed is a drag slider and a slider
+          // with one pane is a photograph with a handle on it.
           //
-          // A corner with only its photograph renders as its photograph:
-          // HERO_CORNER drops the handle rather than showing a slider with a
-          // missing pane. That is a weaker card and a true one. It also drops
-          // twenty KV reads from every homepage load.
-          const featured = newest;
-          const fimg = await getImageryStatus(env, newest.slug).catch(() => null);
+          // The rule below is the pair rather than either half. The card
+          // features a corner that can actually be dragged, and a sub-line
+          // names the newer audit whose imagery has not landed and links to it,
+          // so the page still gives exactly one answer to what was audited most
+          // recently. The walk is bounded because the log is long and this runs
+          // on every homepage load; beyond the window the hero falls back to the
+          // newest audit, which is the old behaviour and a true card.
+          const WALK = 20;
+          // A slider needs two panes, so a lane is complete when both are
+          // stored. The fix render is the one that matters and the one the
+          // rule is written about, but featuring a corner holding a fix and no
+          // hazards frame would put the handle back on a single image.
+          const laneComplete = (st) => st.includes("hazards") && st.includes("fix");
+
+          let featured = null;
+          let fimg = null;
+          for (let i = log.length - 1; i >= 0 && i >= log.length - WALK; i -= 1) {
+            const img = await getImageryStatus(env, log[i].slug).catch(() => null);
+            if (img?.status === "ready" && laneComplete(img.states || [])) {
+              featured = log[i];
+              fimg = img;
+              break;
+            }
+          }
+          if (!featured) {
+            featured = newest;
+            fimg = await getImageryStatus(env, newest.slug).catch(() => null);
+          }
+
+          // The newer audit the card is not featuring, if there is one. Not
+          // "the newest audit" unconditionally: when the newest audit is the
+          // featured corner there is nothing to disclose and the sub-line does
+          // not appear at all.
+          const pending = featured.slug === newest.slug ? null : newest;
 
           const [ec, escore, ecred] = await Promise.all([
             cornerBySlug(env, featured.slug).catch(() => null),
@@ -2594,6 +2622,18 @@ export default {
             evidence: evidenceLine(ecred, ec?.district),
             frames,
             state: hasGenerated ? "full" : frames.today ? "text-only" : "none",
+            // The newer audit whose visual lanes have not landed, for the
+            // sub-line. Carries its own date so the card can say "this
+            // morning" only when that is true of it, which is the same rule
+            // the featured corner's own caption follows.
+            pending: pending
+              ? {
+                  slug: pending.slug,
+                  name: pending.name || pending.slug,
+                  date: pending.date,
+                  auditedToday: pending.date === today,
+                }
+              : null,
           };
         })();
 

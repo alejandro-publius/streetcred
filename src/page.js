@@ -338,7 +338,21 @@ export const HERO_CORNER = (e) => {
     e.auditedToday
       ? `Audited autonomously this morning, ${esc(e.date)}`
       : `Audited autonomously ${esc(e.date)}`
-  }${e.partial ? ", with some lanes degraded" : ""}</p>
+  }${e.partial ? ". Records audited; visual lanes pending" : ""}</p>
+  ${
+    // The newer audit this card is not featuring. The card features the newest
+    // corner that can actually be dragged, so on any morning whose imagery has
+    // not landed the newest audit is not the one on screen. Saying so here is
+    // what keeps the page to one answer about what was audited most recently,
+    // and it links, so the claim is checkable in one tap.
+    e.pending
+      ? `<p class="hcpending">${
+          e.pending.auditedToday
+            ? "Latest audit this morning: "
+            : `Latest audit ${esc(e.pending.date)}: `
+        }<a href="/c/${esc(e.pending.slug)}">${esc(e.pending.name)}</a>, visual lanes pending</p>`
+      : ""
+  }
   ${stage}
   ${
     // The sentence is about the proposed fix, so it appears when the proposed
