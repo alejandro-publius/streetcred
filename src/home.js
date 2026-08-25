@@ -7,6 +7,55 @@
 // cost of a single image request.
 
 import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER, STATBAND, HERO_CORNER, PACIFIC_DAY_JS } from "./page.js";
+import { pacificToday } from "./data.js";
+
+// The streak, newest first, with no chip dated beyond today in
+// America/Los_Angeles. The store clamps new entries, so the filter only fires
+// on a record written before that guard existed, and hiding one stale-future
+// chip is better than the homepage claiming an audit that has not happened
+// yet. Exported for the test that pins it.
+// The funnel sentence's cleared count, linked to the corners that actually
+// carry a cleared account, so a judge is one click from live scraper output.
+// Read from the stored summary's per-corner map; with no map the count stands
+// unlinked rather than pointing anywhere it cannot prove.
+
+// Monochrome marks for the pipeline rows that have no product logo: a
+// database for the city's records, a shield for the deterministic gate, a
+// person for the reader. Drawn in currentColor so they take the row's ink
+// and can never read as a brand another sponsor did not get.
+const GLYPH = {
+  db: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg>`,
+  gate: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 2.5l8 3v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10v-6z"/><path d="M8.5 12l2.5 2.5 4.5-4.5"/></svg>`,
+  you: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20.5c1.2-3.8 3.9-5.5 7-5.5s5.8 1.7 7 5.5"/></svg>`,
+};
+
+// What the scrapes actually produced, in the site's own vocabulary.
+//
+// The plain sentence counts corners whose scrape kept an account. Once the
+// corner check has run there are three different things to count and merging
+// them reads as a stronger claim than the evidence supports: an account about
+// this exact crossing, an account about one of its streets, and an account
+// that named a different crossing and is withheld. `check` is a stamped
+// snapshot written by tools/recount_voices.mjs; it is deliberately dropped by
+// the next ingest rather than carried forward, because a stale breakdown is
+// worse than none, and this falls back to the plain sentence when it is gone.
+export const voicesFunnel = (voices) => {
+  const c = voices?.check;
+  const num = (v, href) => `<a href="${href}">${Number(v).toLocaleString("en-US")}</a>`;
+  if (!c) {
+    return `${num(voices?.withQuote ?? 0, "/audited")} cleared the relevance filter, the rest recorded as scraped and empty, a result rather than a gap.`;
+  }
+  const bits = [];
+  if (c.crossing) bits.push(`${num(c.crossing, "/audited")} describe the crossing itself`);
+  if (c.corridor) bits.push(`${num(c.corridor, "/c/24th-and-valencia")} ${c.crossing ? "" : "account "}${c.corridor === 1 ? "is" : "are"} published as corridor evidence, about the street rather than the crossing`);
+  if (c.withheld) bits.push(`${c.withheld} named a different crossing and ${c.withheld === 1 ? "is" : "are"} withheld`);
+  const empty = Math.max(0, Number(voices.commissioned || 0) - Number(c.crossing || 0) - Number(c.corridor || 0) - Number(c.withheld || 0));
+  if (empty) bits.push(`the other ${empty} scraped empty, a result rather than a gap`);
+  return `${bits.join("; ")}.`;
+};
+
+export const visibleRuns = (cotd, cap = pacificToday()) =>
+  [...(cotd || [])].filter((e) => e && e.slug && (!e.date || String(e.date) <= cap)).reverse();
 import { TIER_LABEL, TIER_NOTE, CITY_BOUNDS } from "./city.js";
 
 const MAP_W = 640;
@@ -110,7 +159,7 @@ export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview
     .filter((c) => Number.isFinite(c.lat) && Number.isFinite(c.lon))
     .sort((a, b) => b.index - a.index);
   // Newest first. The log is append only, so the last entry is this morning's.
-  const runs = [...cotd].filter((e) => e && e.slug).reverse();
+  const runs = visibleRuns(cotd);
   const today = runs[0] || null;
   const view = ranked.length ? fitView(ranked) : { center: { lat: 37.7749, lon: -122.4194 }, zoom: 12 };
   const title = "StreetCred: every SF intersection, graded";
@@ -137,8 +186,8 @@ export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview
     typeof c?.points === "number" ? String(Math.round(c.points * 10) / 10) : String(c?.index ?? "");
   const pendingClause = textAudited ? `${n(textAudited)} more with imagery pending, ` : "";
   const scopeLine = scored
-    ? `${n(scored)} intersections graded citywide, ${n(fullyAudited)} fully audited, ${pendingClause}one attempted every morning.`
-    : `${n(fullyAudited)} intersections fully audited, ${pendingClause}one attempted every morning.`;
+    ? `${n(scored)} intersections graded citywide, <a class="subaud" href="/audited">${n(fullyAudited)} fully audited</a>, ${pendingClause}one attempted every morning.`
+    : `<a class="subaud" href="/audited">${n(fullyAudited)} intersections fully audited</a>, ${pendingClause}one attempted every morning.`;
   // The coverage layer, and the two numbers the legend prints. Both are counted
   // off the discs actually drawn rather than off a roster length, so the legend
   // cannot claim a disc the map is not showing.
@@ -184,6 +233,50 @@ ${BASE_CSS}
    container the bridge reached 29px past each edge of the wrap and gave the
    whole homepage a horizontal scrollbar. Decorative artwork must not be able
    to widen the document. */
+/* Powered by.
+   Hazard tape, reused. The stripe means one thing everywhere else on this site:
+   somebody outside this project is saying this corner is dangerous, which is
+   why it frames the press card and nothing else. It does not mean that here.
+   The operator asked for this treatment on this card deliberately, and the note
+   is in specs/HANDOFF.md rather than only in a commit message, because the next
+   person to add a striped card will read the rule and not the exception.
+
+   It sits in the left column's own whitespace rather than under the pair. The
+   hero card is 635px against the left column's 394 at 1280, so there are 241px
+   of nothing beneath the bridge. Making the hero span both grid rows puts this
+   card inside that gap: row one is the left column's natural height, row two is
+   this card, and the container is still as tall as the hero. Nothing below it
+   moves. A third grid item without the span would have added a row to both
+   columns and pushed the fold by its own height plus the 32px gap.
+
+   Source order is askhero, hero, card, so the single-column layout below 900px
+   needs no reordering at all: the card falls after the hero card on a phone,
+   which is where it was asked for. */
+.pby{margin-bottom:0}
+@media(min-width:901px){
+  .herohead > .herocorner{grid-column:2;grid-row:1 / span 2}
+  .pby{grid-column:1;grid-row:2}
+}
+.pbycard{margin-bottom:0;padding:14px 16px;text-align:center}
+.pbylabel{margin:0;font-size:10px;font-weight:700;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--dim)}
+/* One mark per cell and no text beside it. The wordmarks already carry the
+   names, so a label next to them would be the doubled label the case strip
+   rules refuse. The names are said once, below, where they are also the links. */
+.pbymarks{display:flex;align-items:center;justify-content:center;gap:26px;margin:11px 0 9px}
+.pbymark{display:flex;align-items:center;justify-content:center;height:20px}
+/* Matched on height, not on width. The two wordmarks have different aspect
+   ratios, and matching width would print one of them half the size of the
+   other. */
+.pbymark img{height:20px;width:auto;display:block;opacity:.85}
+.pbynote{margin:0;font-size:11.5px;color:var(--dim);line-height:1.5}
+.pbynote a{color:var(--dim);text-decoration:underline;text-underline-offset:2px}
+.pbynote a:hover{color:var(--ink)}
+@media(max-width:900px){
+  .pbycard{padding:13px 14px}
+  .pbymarks{gap:22px}
+}
+
 .sfmark{position:relative;margin:34px auto 0;padding:26px 0 8px;isolation:isolate;overflow:clip}
 /* Opacity chosen by measurement, not by eye. The counter is small text on
    --dim and starts at 5.04:1 over the bare page, so the bridge has very little
@@ -245,7 +338,11 @@ ${BASE_CSS}
 .covfoot{margin-top:-22px;align-items:baseline}
 .covkey{width:13px;height:13px;border-radius:50%;display:block;flex:0 0 13px}
 .covkey-on{background:rgba(20,27,45,.20);border:1.5px solid rgba(20,27,45,.55)}
-.covcount{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}
+.subaud{color:inherit;text-decoration:none;border-bottom:1px solid var(--line2)}
+.subaud:hover{border-bottom-color:var(--ink)}
+.covcount{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600;text-decoration:none;
+  border-bottom:1px solid var(--line2)}
+.covcount:hover{border-bottom-color:var(--ink)}
 .covnote{flex-basis:100%;color:var(--dim);line-height:1.6;max-width:640px}
 /* The layer toggle, sitting in the map's own control column. */
 .covtoggle{font-family:Poppins,system-ui,sans-serif;font-size:11.5px;font-weight:600;
@@ -337,6 +434,26 @@ ${BASE_CSS}
 .cotdi:hover{color:var(--ink);border-color:var(--line3)}
 .cotdi i{width:7px;height:7px;border-radius:50%;display:block;background:var(--dim)}
 .cotdc{font-size:10.5px;color:var(--dim);letter-spacing:.03em}
+.caseline{list-style:none;margin:0;padding:0}
+.caseline li + li{border-top:1px solid var(--line)}
+.cfrow{display:grid;grid-template-columns:20px 24px 108px 1fr;align-items:center;column-gap:12px;
+  padding:8px 6px;text-decoration:none;color:inherit;font-size:12.5px;line-height:1.5;border-radius:8px}
+a.cfrow:hover{background:var(--card)}
+a.cfrow:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.cfn{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;
+  background:var(--ink);color:#fff;font-weight:700;font-size:10.5px}
+.cfnblank{background:transparent}
+.cfmark{width:24px;height:24px;display:grid;place-items:center;color:var(--dim)}
+.cfmark img,.cfmark svg{display:block;max-width:24px;max-height:24px}
+.cfname{font-weight:600}
+.cfdesc{color:var(--ink)}
+.cfinfra{margin:14px 0 0;padding-top:10px;border-top:1px solid var(--line);color:var(--dim)}
+.cfinfra .cfname,.cfinfra .cfdesc{color:var(--dim)}
+.cfinfra .cfrow{padding:0 6px}
+@media (max-width:430px){
+  .cfrow{grid-template-columns:20px 24px 1fr;row-gap:2px}
+  .cfdesc{grid-column:3}
+}
 .gA{background:var(--green)}
 .gB{background:rgba(120,140,93,.62)}
 .gC{background:var(--blue)}
@@ -430,6 +547,16 @@ ${MASTHEAD({ scored, active: "" })}
   </div>
 </section>
 ${HERO_CORNER(embed)}
+<section class="tape pby" aria-label="Powered by">
+  <div class="panel pbycard">
+    <p class="pbylabel">Powered by</p>
+    <div class="pbymarks">
+      <span class="pbymark"><img src="/logos/exa.svg" alt="Exa" width="77" height="24" loading="lazy"></span>
+      <span class="pbymark"><img src="/logos/apify.svg" alt="Apify" width="87" height="24" loading="lazy"></span>
+    </div>
+    <p class="pbynote">Press discovery via <a href="/watchlist">Exa</a>. Resident voices via <a href="/c/24th-and-valencia">Apify</a>.</p>
+  </div>
+</section>
 </div>
 <section class="mine" id="mine" hidden aria-label="Corners you have checked">
   <div class="mhead"><h2>Your corners</h2><span class="mnote">Saved on this device only</span>
@@ -455,7 +582,6 @@ ${
   <span class="key"><i style="background:var(--dim)"></i>AUDITED, every lane checked</span>
   <span class="key"><i style="background:none;border:2px solid var(--dim);width:7px;height:7px"></i>ENRICHED, records and index, no visual audit</span>
   <span class="key"><i style="background:var(--dim);opacity:.4;width:5px;height:5px"></i>SCORED, graded against the census</span>
-  <span>Past zoom 15 the scored dots are tappable. Unmarked crossings had no reported harm in the record.</span>
 </p>
 <p class="mapfoot">
   <span class="key"><b class="gk gA">A</b></span>
@@ -463,16 +589,14 @@ ${
   <span class="key"><b class="gk gC">C</b></span>
   <span class="key"><b class="gk gD">D</b></span>
   <span class="key"><b class="gk gF">F</b></span>
-  <span id="mapdata">Map data: Google. Danger Index ranks reported harm, not risk per crossing.</span>
+  <span id="mapdata">Map data: Google.</span>
 </p>${
   discs.length
     ? `
 <p class="mapfoot covfoot" id="covlegend">
-  <span class="key"><i class="covkey covkey-on"></i>Audited coverage: the ${coverRadiusM}m core around each fully audited corner. One more every morning.</span>
-  <span class="covcount">${n(discs.length)} corner${discs.length === 1 ? "" : "s"}${
+  <span class="key"><i class="covkey covkey-on"></i>Audited coverage: the ${coverRadiusM}m core around each fully audited corner (<a class="covcount" href="/audited">${n(discs.length)}</a>${
         coverPending ? `, ${n(coverPending)} awaiting a render` : ""
-      }</span>
-  <span class="covnote">Drawn per corner, never as one outline: a boundary around these would enclose thousands of crossings nobody has audited.</span>
+      }), one more every morning. <a href="/methodology#map">How this map is drawn</a></span>
 </p>`
     : ""
 }`
@@ -487,7 +611,7 @@ ${
     : ""
 }
 <div class="eyebrow"><span>The scoreboard</span><span class="tag">Danger Index, worst first</span></div>
-<p class="boardkey">Ranked by <b>Danger Index</b>, the number beside each corner. The grade is a percentile against the whole census: every corner on this first page sits in the <b>99th percentile</b>, which is why they all read F. The index is what separates them.</p>
+<p class="boardkey">Ranked by <b>Danger Index</b>. Every corner on this page is 99th percentile, which is why they all read F. <a href="/methodology#percentiles">Why percentiles</a></p>
 ${
   board.length
     ? `<div class="board" id="board">
@@ -531,7 +655,7 @@ ${
     ? `${city?.queueLength ? `<p class="cotdq">${n(city.queueLength)} corners in the audit queue, worst first.</p>` : ""}
 ${
   voices?.commissioned
-    ? `<p class="cotdq">Resident voices commissioned autonomously at ${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}. ${n(voices.withQuote)} produced an account that cleared the relevance filter; the rest are recorded as scraped and empty, which is a result rather than a gap.</p>`
+    ? `<p class="cotdq">Resident voices commissioned autonomously at <a href="/status">${n(voices.commissioned)} corner${voices.commissioned === 1 ? "" : "s"}</a>; ${voicesFunnel(voices)}</p>`
     : ""
 }
 ${
@@ -552,16 +676,18 @@ ${
 </div>
 
 <div class="panel">
-  <div class="phs"><h2>Powered by</h2></div>
+  <div class="phs"><h2>How a corner becomes a case</h2></div>
   <div class="pbody">
-  <div class="stack">
-    <div><span class="lg"><img src="/logos/gemini.svg" alt="Google Gemini" width="24" height="24" loading="lazy"><b>Gemini</b></span>Audits the real Street View frame for hazards, renders the fix, writes the letter</div>
-    <div><span class="lg"><img src="/logos/exa.svg" alt="Exa" width="77" height="24" loading="lazy"><b>Exa</b></span>Finds current press coverage of this intersection, cited</div>
-    <div><span class="lg"><img src="/logos/apify.svg" alt="Apify" width="87" height="24" loading="lazy"><b>Apify</b></span>Scrapes what residents say on Reddit and Google Maps</div>
-    <div><span class="lg"><img src="/logos/googlemaps.svg" alt="Google Maps" width="24" height="24" loading="lazy"><b>Google Maps</b></span>Street View frames, the corner thumbnail, and the city map</div>
-    <div><span class="lg"><img src="/logos/cloudflare.svg" alt="Cloudflare" width="52" height="24" loading="lazy"><b>Cloudflare</b></span>Workers serve the page, KV holds corners, imagery and grades</div>
-    <div><span class="lg"><b>DataSF</b></span>Collisions and 311, queried by radius around the corner</div>
-  </div>
+  <ol class="caseline" aria-label="The pipeline, in causal order">
+    <li><a class="cfrow" href="/methodology"><span class="cfn">1</span><span class="cfmark">${GLYPH.db}</span><b class="cfname">DataSF</b><span class="cfdesc">scores it from the city's own records</span></a></li>
+    <li><a class="cfrow" href="/c/16th-mission"><span class="cfn">2</span><span class="cfmark"><img src="/logos/googlemaps.svg" alt="" width="24" height="24" loading="lazy"></span><b class="cfname">Google Maps</b><span class="cfdesc">photographs it</span></a></li>
+    <li><a class="cfrow" href="/watchlist"><span class="cfn">3</span><span class="cfmark"><img src="/logos/exa-icon.svg" alt="" width="20" height="24" loading="lazy"></span><b class="cfname">Exa</b><span class="cfdesc">reads twelve years of news about it</span></a></li>
+    <li><a class="cfrow" href="/c/24th-and-valencia"><span class="cfn">4</span><span class="cfmark"><img src="/logos/apify-icon.svg" alt="" width="24" height="24" loading="lazy"></span><b class="cfname">Apify</b><span class="cfdesc">listens to its residents</span></a></li>
+    <li><a class="cfrow" href="/audited"><span class="cfn">5</span><span class="cfmark"><img src="/logos/gemini.svg" alt="" width="24" height="24" loading="lazy"></span><b class="cfname">Gemini</b><span class="cfdesc">audits the frame, draws the fix, writes the letter</span></a></li>
+    <li><a class="cfrow" href="/methodology#gate"><span class="cfn">6</span><span class="cfmark">${GLYPH.gate}</span><b class="cfname">The gate</b><span class="cfdesc">a deterministic gate verifies every claim or the letter does not serve</span></a></li>
+    <li><a class="cfrow" href="/c/16th-mission#letterpanel"><span class="cfn">7</span><span class="cfmark">${GLYPH.you}</span><b class="cfname">You</b><span class="cfdesc">send it: the letter is drafted, never sent by us</span></a></li>
+  </ol>
+  <p class="cfinfra"><span class="cfrow"><span class="cfn cfnblank" aria-hidden="true"></span><span class="cfmark"><img src="/logos/cloudflare.svg" alt="" width="24" height="24" loading="lazy"></span><b class="cfname">Cloudflare</b><span class="cfdesc">Workers serve the page, KV holds corners, imagery and grades</span></span></p>
   </div>
 </div>
 

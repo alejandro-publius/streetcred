@@ -146,3 +146,55 @@ test("the backoff path names no official, because it serves no letter", () => {
   // copy a reader sees is the contract, not the function that builds it.
   assert.doesNotMatch(LETTER_PENDING_NOTE, /Mayor|Supervisor/);
 });
+
+// ----------------------------------------------- the "Dear" bypass
+//
+// The salutation pattern required the literal word "Dear", and the addressee
+// check ran inside `if (match)`. A letter opening "Supervisor Dorsey," matched
+// nothing, so the check did not run at all: dropping one word skipped the gate
+// entirely. Four letters in the first fleet of 116 opened exactly that way.
+// Every one of them named the right person, which is how it stayed invisible.
+
+test("a salutation without Dear is still checked, not skipped", () => {
+  const inputs = buildInputSet({
+    corner: { slug: "x", name: "A and B", fix: { name: "f", cost: "$1", grant: "g" } },
+    stats: { crashes: 10, district: 9 },
+    news: { items: [] },
+    voices: { items: [] },
+    district: 9,
+    supervisor: "Jackie Fielder",
+  });
+
+  // Right person, no "Dear": accepted.
+  const right = verifyLetter("Supervisor Jackie Fielder,\n\nCity records show 10 injury collisions.", inputs);
+  assert.ok(!right.failures.some((f) => f.kind === "addressee"), "the correct addressee must not be rejected");
+
+  // Wrong person, no "Dear": this used to pass by omission.
+  const wrong = verifyLetter("Supervisor Bilal Mahmood,\n\nCity records show 10 injury collisions.", inputs);
+  assert.ok(
+    wrong.failures.some((f) => f.kind === "addressee"),
+    "a District 9 corner addressed to another district's supervisor must fail with or without Dear",
+  );
+
+  // And the wrong office, no "Dear".
+  const office = verifyLetter("Mayor Jackie Fielder,\n\nCity records show 10 injury collisions.", inputs);
+  assert.ok(office.failures.some((f) => f.kind === "addressee"), "the office must not vary either");
+});
+
+test("the bare salutation must be its own line, not a phrase mid-sentence", () => {
+  const inputs = buildInputSet({
+    corner: { slug: "x", name: "A and B", fix: { name: "f", cost: "$1", grant: "g" } },
+    stats: { crashes: 10, district: 9 },
+    news: { items: [] },
+    voices: { items: [] },
+    district: 9,
+    supervisor: "Jackie Fielder",
+  });
+  // "I wrote to Supervisor Bilal Mahmood, who referred me on" is prose, not an
+  // addressee, and must not be read as one.
+  const r = verifyLetter(
+    "Dear Supervisor Jackie Fielder,\n\nI wrote to Supervisor Bilal Mahmood, who referred me on.",
+    inputs,
+  );
+  assert.ok(!r.failures.some((f) => f.kind === "addressee"), "the real salutation wins");
+});

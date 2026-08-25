@@ -597,3 +597,48 @@ test("a missing radar budget is not read as a paused radar", async () => {
   const html = RADAR_PAGE({ feed: [], monitors: { list: [] }, budget: null }, "https://example.org", false, 7355);
   assert.ok(!/<p class="rpaused">/.test(html));
 });
+
+// -------------------------------------- the status card's model spend block
+//
+// Two claims the card used to make that the ledger does not support: that every
+// held render was held by the legibility check, when most of them were held
+// because the API never returned an image; and a bare token total on a ledger
+// whose token counts cover only some of its runs.
+
+test("held renders are split by what actually held them", async () => {
+  const { STATUS } = await import("../src/status.js");
+  const html = STATUS([], [], [], "", null, false, 0, null, null, {
+    via: "vertex:us-central1", letters: 116, calls: 246, estUsd: 1.3095,
+    promptTokens: 18047, outputTokens: 64360, tokensCover: "1 of 2 generation runs",
+    imagery: { model: "gemini-3.1-flash-image", attempted: 7, published: 0, held: 7, heldOnGate: 2, heldOnApi: 5, estUsd: 0.0159 },
+  });
+  assert.match(html, /2 by the text-legibility check/);
+  assert.match(html, /5 because the model never returned an image/);
+  assert.doesNotMatch(html, /7 held by the text-legibility check/, "the old claim, which was false for 5 of them");
+});
+
+test("a partial token total says which runs it covers", async () => {
+  const { STATUS } = await import("../src/status.js");
+  const partial = STATUS([], [], [], "", null, false, 0, null, null, {
+    via: "vertex:us-central1", letters: 116, calls: 246, estUsd: 1.3, promptTokens: 18047, outputTokens: 64360,
+    tokensCover: "1 of 2 generation runs",
+  });
+  assert.match(partial, /counted over 1 of 2 generation runs/);
+  assert.match(partial, /a partial total should not be read as a/);
+
+  // When the token counts cover everything, the caveat is noise and is dropped.
+  const whole = STATUS([], [], [], "", null, false, 0, null, null, {
+    via: "vertex:us-central1", letters: 10, calls: 12, estUsd: 0.1, promptTokens: 100, outputTokens: 200,
+    tokensCover: "2 of 2 generation runs",
+  });
+  assert.doesNotMatch(whole, /counted over/);
+});
+
+test("held renders are named as billed, so the check does not look free", async () => {
+  const { STATUS } = await import("../src/status.js");
+  const html = STATUS([], [], [], "", null, false, 0, null, null, {
+    via: "vertex:us-central1", letters: 1, calls: 1, estUsd: 0.1,
+    imagery: { model: "m", attempted: 7, published: 0, held: 7, heldOnGate: 2, heldOnApi: 5, estUsd: 0.0159 },
+  });
+  assert.match(html, /Held renders are billed and counted here/);
+});

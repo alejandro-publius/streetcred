@@ -55,3 +55,6 @@ datasf.svg
   system without a slab face. Source attribution for data.sfgov.org, the
   same as every other mark in the row. Replace with an official file if one
   is ever published.
+exa-icon.svg and apify-icon.svg are viewBox crops of exa.svg and apify.svg
+(the same official files, cropped to their leading icon glyph so a square
+mark container never shows a wordmark beside a text label).

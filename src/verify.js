@@ -34,7 +34,7 @@ const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").tr
 // Everything the letter is permitted to assert, assembled from the same objects
 // the prompt was built from. If a fact is not in here, the letter may not state
 // it, which is the entire contract.
-export function buildInputSet({ corner, stats, score, news, timeline, supervisor, voices, district }) {
+export function buildInputSet({ corner, stats, score, news, timeline, supervisor, voices, district, hazards, signoff }) {
   const numbers = new Set();
   const addNum = (n) => {
     const v = typeof n === "number" ? n : parseInt(n, 10);
@@ -49,12 +49,45 @@ export function buildInputSet({ corner, stats, score, news, timeline, supervisor
   addNum(score?.percentile);
 
   // Constants the prompt states, not model output: the 311 dataset's name, the
-  // five year collision window, the three year report window, the 150 metre
-  // radius. All appear as digits in nearly every draft.
+  // five year collision window, the three year report window, and BOTH radii.
+  // All appear as digits in nearly every draft.
+  //
+  // 80 was missing until 2026-08-20 and it is the prompt's own instruction:
+  // "the Danger Index grade is computed over a tighter 80 metre core". A model
+  // that followed that instruction had its draft rejected for citing a figure
+  // the records do not support, which is the verifier failing a letter for
+  // obeying the prompt. Found by the first offline fleet run, where both
+  // corners in the sample failed on exactly this.
   addNum(311);
   addNum(3);
   addNum(5);
   addNum(150);
+  addNum(80);
+  // The hazard lane counts 311 over twelve months where the stats tiles count
+  // three years, and it says so in h.detail: "3 street-condition 311 reports in
+  // 12 months". The window travels with the number, so the window is a sourced
+  // constant too.
+  addNum(12);
+
+  // The hazard lane's own evidence figures.
+  //
+  // The prompt does not merely mention these, it hands them to the model inside
+  // h.detail and instructs it to "present this as documented": "3
+  // street-condition 311 reports in 12 months", "5 pedestrian crossing
+  // collisions in 5 years". They were never in the sourced set, so a draft that
+  // did exactly what the prompt asked was rejected for citing an unsupported
+  // figure. Sixteen of the first fleet run's twenty-one number failures traced
+  // here. Same class as the missing 80 above, and larger.
+  for (const h of hazards?.items || []) {
+    addNum(h?.reports311);
+    addNum(h?.crossingCollisions);
+  }
+
+  // The district the letter states, from whichever source resolved it. stats
+  // .district was listed; a corner whose district comes off its own record was
+  // not, so "in District 4" failed at exactly those corners.
+  addNum(district);
+  addNum(corner?.district);
 
   addNum(timeline?.firstReportedYear);
   addNum(timeline?.yearsReported);
@@ -104,6 +137,18 @@ export function buildInputSet({ corner, stats, score, news, timeline, supervisor
   // the coverage. Same exclusion the Cred Check's press lane makes.
   const items = news?.items || news || [];
   const citedPressCount = items.filter((i) => !i?.official && i?.corroborates).length;
+  // The timeline lane IS press history: headlines counted per year, from the
+  // same kind of source the press lane reads. A corner can have nothing in the
+  // current press window and still have 25 headlines going back to 2014, and
+  // buildLetterPrompt hands the model exactly that and instructs it to state it.
+  // Counting only the current window made rule 6 reject a sourced claim, which
+  // is the hazards bug one lane over: the prompt licenses evidence the verifier
+  // was never shown.
+  //
+  // Deliberately NOT folded into citedPressCount. That figure feeds the
+  // magnitude rule's `displayed` map, which is about what the PAGE shows, and
+  // the page shows cited press items rather than historical headline counts.
+  const historicalHeadlines = Number.isFinite(timeline?.totalHeadlines) ? timeline.totalHeadlines : 0;
 
   // ------------------------------------------------------------- displayed
   //
@@ -153,6 +198,12 @@ export function buildInputSet({ corner, stats, score, news, timeline, supervisor
     voicesCount,
     pressCount: items.length,
     citedPressCount,
+    historicalHeadlines,
+    // Armed only when the caller supplies it, same as the supervisor rule
+    // above. verifyLetter runs on single-sentence fragments in the test suite
+    // and on whole letters in production, and only the second kind can be
+    // required to be finished.
+    signoff: signoff || null,
     displayed,
   };
 }
@@ -180,6 +231,13 @@ const SUPERVISOR_MENTION = /\bSupervisor\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-
 // Mayor in passing, and flagging that would be a false failure; who it is
 // addressed TO is a different claim and the one a reader acts on.
 const SALUTATION = /^\s*Dear\s+([^,\n]+?)\s*[,:]/m;
+// A letter may open "Supervisor Dorsey," with no "Dear". Four of the 116 in the
+// first fleet did, and every one of them named the right person, which is how
+// this stayed invisible: the addressee check below ran `if (m)` and simply did
+// not execute when the salutation did not match. Omitting one word skipped the
+// entire gate, so a District 9 corner could have been addressed to District 6's
+// supervisor and passed, which is the exact failure the rule was built for.
+const SALUTATION_BARE = /^[ \t]*((?:Supervisor|Mayor)\s+[^,\n]+?)\s*[,:][ \t]*$/m;
 
 // An addressee split into the office and the person, so the two can be checked
 // on their own terms. "Supervisor Mahmood" and "Supervisor Bilal Mahmood" are
@@ -228,6 +286,21 @@ const RESIDENT_WHO =
   /\b(residents?|neighbou?rs?|locals|people who live|those who live|community members?)\b/i;
 const RESIDENT_SAID =
   /\b(describ\w+|say|says|said|report\w*|tell|tells|told|complain\w*|recount\w*|testif\w+|account|accounts|testimony|in their own words|write|writes|wrote)\b/i;
+
+// A sentence that says coverage was NOT found is not a citation.
+//
+// buildLetterPrompt instructs the model, in as many words, to write this when
+// the press lane is empty: "No press coverage was found for this corner." Rule
+// 6 then matched "press coverage" inside that sentence and rejected the letter
+// for obeying the instruction. 31st-and-lawton was held on exactly the string
+// "No press coverage has been found for this specific corner."
+//
+// Bounded on purpose. The negation has to sit within a few words of the noun,
+// so this exempts "no press coverage was found" without exempting "local
+// reporting has covered this corner extensively", which is an assertion that
+// happens to contain the word "no" somewhere earlier in the sentence.
+const PRESS_DENIED =
+  /\b(?:no|not|never|none)\s+(?:\w+\s+){0,3}?(?:press|news|media)\s+coverage\b|\b(?:press|news|media)\s+coverage\b[^.!?]{0,40}?\b(?:has|have|was|were|is|are)\s+(?:not|never)\b|\bno\s+(?:local\s+)?(?:reporting|journalism)\b/i;
 
 // Referring to journalism. Deliberately not "reported", which the records lane
 // also uses ("311 reports"); the tokens here can only mean a newsroom.
@@ -345,13 +418,32 @@ export function verifyLetter(text, inputs) {
     }
   }
 
+  // 4a. Em dashes. The prompt forbids them and the house style forbids them, so
+  // a draft carrying one is a draft that did not follow its instructions, which
+  // is worth knowing about a model even when the sentence around it is true.
+  // En dashes count: the failure mode is a model reaching for typographic
+  // punctuation, and which one it reached for is not the point.
+  for (const m of body.matchAll(/[^\s]*\s*[\u2014\u2013]\s*[^\s]*/g)) {
+    failures.push({
+      token: m[0].trim().slice(0, 60),
+      kind: "emdash",
+      reason: "the letter uses an em or en dash, which the prompt forbids and the house style does not use",
+    });
+    break; // one verdict per letter; the retry fixes all of them or none
+  }
+
   // 4b. The addressee. Who the letter is addressed TO, against the sitting
   // representative of the district this corner resolves to, per the site's own
   // table. Compared on the whole salutation, title included, because "Mayor
   // Daniel Lurie" and "Supervisor Stephen Sherrill" are two different people
   // and "Supervisor Daniel Lurie" is neither.
   if (inputs.addressee) {
-    const m = body.match(SALUTATION);
+    // A body with no salutation at all still skips this check. That is a
+    // narrower hole than the one being closed here and it is deliberately left
+    // open for now: verifyLetter is called on single-sentence fragments in the
+    // test suite and on whole letters in production, and only the second kind
+    // can be required to carry an addressee. Recorded in the post-freeze queue.
+    const m = body.match(SALUTATION) || body.match(SALUTATION_BARE);
     if (m) {
       // Title and name are checked separately, because they fail differently.
       // "Dear Supervisor Mahmood" is correct and ordinary English, so a whole
@@ -372,6 +464,52 @@ export function verifyLetter(text, inputs) {
         });
       }
     }
+  }
+
+  // 4b-ii. A count butting against the literal 311.
+  //
+  // "30 311 reports" has no visual separation at any font size and reads as
+  // 30311. It came from the stored hazard details, which the prompt handed over
+  // verbatim, so the model was copying rather than inventing: 22 of the 124
+  // letters published on 2026-08-21 carried it, 41 times. buildLetterPrompt now
+  // rephrases at the seam, and this rule is what stops a draft that reaches for
+  // the old form anyway.
+  //
+  // Bounded to the literal 311 immediately after a count. "86 street-condition
+  // 311 reports" is fine and must stay fine, because the words between the
+  // number and the 311 are the separation.
+  for (const m of body.matchAll(/\b\d[\d,]*\s+311\b/g)) {
+    failures.push({
+      token: m[0],
+      kind: "collision",
+      reason: `"${m[0]}" reads as one number; write "311 reports: N" or put a word between the count and the 311`,
+    });
+  }
+
+  // 4c. Is the letter finished?
+  //
+  // 25 of the 125 letters published on 2026-08-21 stopped mid-sentence, around
+  // 500 to 600 characters, with no request, no closing and no signoff. One
+  // ended on the words "No exposure". Every one of them passed every rule in
+  // this file, because not one rule asked whether the letter was over.
+  //
+  // The cause was upstream: Gemini 2.5 spends thinking tokens out of
+  // maxOutputTokens, the draft hit the ceiling, and the tool returned the
+  // partial text without reading finishReason. That is fixed where it happened.
+  // This rule exists because the gate should not have depended on it being
+  // fixed: a truncated letter is a letter that does not make its request, and
+  // an evidence product must not serve one whatever the vendor did.
+  //
+  // The signoff is the right terminator to test. The prompt names it exactly
+  // and a complete letter always ends on it, so "ends with the signoff" is a
+  // single check for "reached the end" that no punctuation heuristic matches:
+  // four of the 25 ended on a full stop and were still truncated.
+  if (inputs.signoff && !body.trim().endsWith(inputs.signoff)) {
+    failures.push({
+      token: body.trim().slice(-60),
+      kind: "truncated",
+      reason: `this letter does not end with its signoff, "${inputs.signoff}", so it stopped before it made its request`,
+    });
   }
 
   // 5, 6 and 7. Lane consistency. One pass over the sentences, because all
@@ -396,7 +534,12 @@ export function verifyLetter(text, inputs) {
     // 6. Press coverage. The same argument, one lane over. The domain rule
     // above catches an invented source; this catches an asserted one that was
     // never named, which is the version with no digits in it to check.
-    if (PRESS_MENTION.test(sentence) && !(inputs.citedPressCount > 0)) {
+    // Sourced by EITHER lane. The current press window and the timeline's
+    // headline history are both press evidence, and a letter that states the
+    // documented history is citing something real even when this week's search
+    // returned nothing.
+    const pressSourced = inputs.citedPressCount > 0 || inputs.historicalHeadlines > 0;
+    if (PRESS_MENTION.test(sentence) && !PRESS_DENIED.test(sentence) && !pressSourced) {
       failures.push({
         token: sentence,
         kind: "press",
@@ -460,14 +603,40 @@ export function verifyLetter(text, inputs) {
 // that failed is the difference between a retry that fixes the problem and a
 // retry that reshuffles the same invention into a new sentence.
 export function retryInstruction(result) {
-  const named = result.failures
+  const failures = result.failures || [];
+
+  // Truncation is not an unsupported claim and must not be described as one.
+  //
+  // This function was written for one kind of failure, and every retry got the
+  // same sentence: "rejected for stating something the records do not support
+  // ... rewrite it without that claim." Handed to a draft that ran out of
+  // output tokens, that instruction is incoherent. It names an empty token,
+  // asserts a problem the draft does not have, and asks the model to delete a
+  // claim when what it actually needs to do is finish the letter and be
+  // shorter about it.
+  const cut = failures.filter((f) => f.kind === "truncated");
+  if (cut.length && cut.length === failures.length) {
+    return (
+      `\n\nYour previous draft was cut off before it finished: it stopped mid-letter without ` +
+      `making its request or signing off. Write the whole letter this time, well within the ` +
+      `word limit, and make sure it ends with the exact sign-off line you were given. Prefer ` +
+      `fewer sentences over an unfinished one.`
+    );
+  }
+
+  const named = failures
+    .filter((f) => f.kind !== "truncated")
     .slice(0, 6)
     .map((f) => `"${f.token}" (${f.reason})`)
     .join("; ");
+  const tail = cut.length
+    ? ` Your draft was also cut off before it finished, so write the whole letter and end it ` +
+      `with the exact sign-off line you were given.`
+    : "";
   return (
     `\n\nYour previous draft was rejected by an automatic check for stating something the ` +
     `records do not support: ${named}. Rewrite it without that claim. Do not substitute a ` +
     `different figure for it, and do not restate it in words instead of digits. If a fact is ` +
-    `not in the list above, leave it out entirely.`
+    `not in the list above, leave it out entirely.${tail}`
   );
 }

@@ -791,11 +791,156 @@ and states that the visual audit has not run. The homepage audited count does
 not move. Searched and empty is stored and shown with the count of articles
 read behind it.
 
-## After the freeze, Aug 25
+## FROZEN 2026-08-24. Read this block first.
 
-StreetCred is feature-frozen until 2026-08-25, breakage only. The two crons
-keep running by design and stopping them counts as breakage, not as a feature.
-Queued for the other side of it:
+**Production: `44f5c9ac-cc49-4adb-b6b1-9524bfddc66d`**, deployed 2026-08-25,
+the breakage pass: two live faults fixed, the streak rendered, the Exa lanes
+made honest.
+
+```
+npx wrangler rollback 7fc904fd-7c1f-4d5d-8239-95765e700d5d
+```
+
+That target is the state at the freeze, before anything on 2026-08-25. The
+intermediate `634e520c-d42b-4fc9-b967-63e14cc2fba0` is the corner-of-the-day
+pass, and `d8e50565-546f-48a7-9ff8-a87b4ce24524` was the rollback named at the
+freeze itself.
+
+**The freeze still stands.** Feature-frozen, breakage only. Everything on
+2026-08-25 was breakage: a ReferenceError that took the letter lane down on any
+morning the model answered, a cache short-circuit that stopped the imagery lane
+running at all, a hero card whose slider had one pane, and two Exa lanes
+describing the same paused key as a fault.
+
+**Two live faults, fixed 2026-08-25.**
+
+1. `hz` and `longevityLine` were read in `src/index.js` and defined only inside
+   `buildLetterPrompt`. Two ReferenceErrors, one line apart, on any morning the
+   model actually answered. Masked for five days by gemini 429 and 503 failing
+   earlier in the lane; 2026-08-23 is the one entry in `cotd:log` that reached
+   it. `buildLetterPrompt` returns both facts now and
+   `tools/letterlane.test.mjs` drives the lane past a mocked answering model.
+2. `imageryFor` returned `scoredonly`, a terminal status, for any corner in the
+   frame index. That block is an optimisation about the photograph budget and
+   its return value also meant "no visual audit". A cached frame now means only
+   that the fetch is unnecessary. `tools/framecache.test.mjs` covers both
+   branches.
+
+**When the Exa key runs out.** It is already a `secret_text`, so this is the
+whole procedure and no deploy is needed:
+
+```
+npx wrangler secret put EXA_API_KEY
+```
+
+Both lanes report `paused` rather than `failed` while it is refused, using one
+shared sentence that names that command.
+
+**2026-08-25, held out of the freeze as breakage:** the hero card featured a
+corner whose slider had one pane, and its caption read "with some lanes
+degraded", which describes the site as broken. The card now features the newest
+audit holding a complete visual lane and names the newer pending one in a
+sub-line. Renders were backfilled for the streak: 1st-and-bush passed the gate
+and is AUDITED, 2nd-and-tehama held twice on the watermark and published hazards
+only, and four corners were refused at preflight because their source frames are
+unreadable. See the root-cause note below on why the cron stopped producing
+renders at all after 2026-08-18.
+
+**Why the morning cron degrades its imagery lane (found 2026-08-25, not fixed).**
+Not a credential and not quota. `imageryFor` in `src/imagery.js` short-circuits
+on the frame index:
+
+```js
+const framed = await getFrameIndex(env).catch(() => null);
+if (framed?.slugs?.has(c.slug)) {
+  return { source: "cache", status: "scoredonly", ... hazards: null, fix: null };
+}
+```
+
+The block exists so a scored corner with bulk-fetched bytes does not re-reserve
+the photograph budget, and its return value overloads "the frame is already
+here" with "this corner gets no visual audit". The cron deliberately strips
+`corner.tier` before the lanes run so `skipsAudit` cannot decline, and then this
+fires anyway. The city bulk fetch staged 586 frames around 2026-08-18, which is
+exactly when the streak stopped producing renders: 2026-08-18 is the last
+`imagery=ready` in `cotd:log` and every morning since reads `scoredonly` or
+`failed`. The standing fix is to let that branch return the cached frame and
+continue into the generation lanes rather than returning a terminal status.
+
+Feature-frozen from 2026-08-24, breakage only. The three crons keep running by
+design and stopping them counts as breakage, not as a feature. 396 offline
+tests and 35 live cells were green at the freeze, and the live suite is the
+check to run before believing anything else in this file.
+
+**The only open items are these three, in order.**
+
+1. **HANDOFF TASK 0, below: move the corner check into the ingest scorer.** It
+   is the one correction that is currently a snapshot rather than a property of
+   the data, and it is the first thing to do on the other side of the freeze.
+2. **Verify Monday's cron.** 13:10 UTC audit, 13:20 watchlist, quarter-hourly
+   press tick. Green means: a new entry at the end of `cotd:log` dated Monday,
+   the homepage hero and the newest streak chip naming that same corner (the
+   live cell asserts it), `apifyruns:2026-09` opening at 2 rather than
+   inheriting August's 56, and the watchlist run block reporting 29 of 29. The
+   month boundary is the part worth watching: the Apify counter is keyed by
+   month and has never rolled over under this code.
+3. Everything else in the queue below, unchanged.
+
+Queued for the other side of it, decided 2026-08-24 from a competitor scan and
+held out of the freeze:
+
+- **POST-JUDGING TASK 0: move the corner check into the ingest scorer.** The
+  bar that decides whether an account is about this crossing
+  (`namesForeignCrossing`) and the label that says which street it names
+  (`matchLevel`) both run on the way OUT, in `checkVoiceItems`, so no stored
+  record was rewritten. That is the right shape for a correction made in a
+  hurry and the wrong shape permanently: `voices:summary` is written at ingest
+  by `recordOutcome`, which counts what the ingest kept, so the homepage
+  breakdown is a stamped snapshot from `tools/recount_voices.mjs` and the next
+  ingest of any corner drops it (the homepage then falls back to the plain
+  sentence, which stays true). Moving both functions into the ingest and
+  rescore paths in `src/voices.js` makes the stored counts correct by
+  construction and the snapshot unnecessary. `--rescore` re-applies a scorer
+  change to datasets already paid for, so this costs nothing but writes.
+
+- **POST-JUDGING TASK 1: the letter handoff, with no recipient.** The verified
+  letter is the flagship artifact and it dead-ends at a clipboard. Add one
+  button beside Copy and Download: "Open in your mail app", firing a `mailto:`
+  with **no recipient**, subject pre-filled, body pre-filled with the stored
+  verified letter, plus a plain link to the Board of Supervisors' own public
+  contact page so the resident looks the address up themselves. Microcopy:
+  "Addressed to your Supervisor by name. You choose the recipient and you send
+  it. StreetCred never sends mail."
+
+  **Do NOT implement the version that embeds staff email addresses.** That was
+  the first proposal and it breaks a standing rule stated at `src/data.js:108`:
+  "Names only. No email addresses anywhere in this product: nothing here is
+  ever sent to a real official." Eleven `@sfgov.org` aliases in the repo would
+  also rot with the next board turnover and put the letter lane's whole
+  "every figure verified" claim behind a bounced address. The no-recipient
+  version closes the same loop, survives turnover, and is a stronger honesty
+  story than the current dead end rather than a weaker one. About 1.5 hours.
+
+- **POST-JUDGING TASK 2: the "what we did not verify here" box.** A compact
+  panel on every corner page naming, from stored records only, what this
+  corner's evidence does NOT cover: no visual audit where the hazards record
+  is absent or `audited: false`, no press check where `press:{slug}` is
+  missing (as distinct from searched and empty), no resident scrape where no
+  `voicerun` exists, no exposure normalization anywhere, and the render's
+  gate `unchecked` regions where a fix exists. Every line reads off a stored
+  field, exactly like the case file, and a corner with nothing missing renders
+  nothing. It is the most on-brand feature on the queue: the site's whole
+  claim is that it does not overstate what it checked, and right now the
+  overstatement is only prevented lane by lane rather than said in one place.
+  About 2 hours.
+
+  Runner-ups from the same scan, in order: the 311 deep-link pre-fill panel
+  (about 3 hours), `llms.txt` plus `agents.md` for agent readiness (about 1.5),
+  district report cards (the best durable feature and far too big for a
+  freeze window). A geolocation "grade the corner I am standing on" button
+  over the deployed `/api/nearest` was scoped at about 2.5 hours as a judging
+  demo mechanic; if judging has passed by the time this is read, it is worth
+  far less and drops below every item above it.
 
 - **Show the cadence gap, not just the count.** The ledger already behaves
   correctly and there is nothing to repair: `cotd:log` is append-only and the

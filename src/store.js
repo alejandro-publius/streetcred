@@ -13,7 +13,7 @@
 // calls, so 25 corners is 50 billed generations. Picked to keep a bad day cheap
 // while leaving room for real traffic; raise it once there is a billing alert
 // worth trusting.
-import { pacificDay } from "./data.js";
+import { pacificDay, pacificToday } from "./data.js";
 
 export const DAILY_GENERATION_CAP = 25;
 
@@ -229,7 +229,17 @@ export async function getCotdLog(env) {
 
 export async function appendCotdLog(env, entry) {
   const log = await getCotdLog(env);
-  log.push(entry);
+  // No stored audit date may exceed today in America/Los_Angeles. The stamp
+  // is pacificToday() at the writer today, so this cannot fire; it exists so
+  // a future change to UTC stamping, or a caller passing its own date, cannot
+  // put tomorrow on the streak. Clamped rather than refused, because losing
+  // the record of a run that happened is worse than correcting its label,
+  // and the original value is kept beside the correction.
+  const cap = pacificToday();
+  const stamped = entry?.date && String(entry.date) > cap
+    ? { ...entry, date: cap, dateWas: entry.date }
+    : entry;
+  log.push(stamped);
   // Newest last, trimmed to a season. A streak nobody can see is not a streak,
   // but neither is one that needs a scrollbar.
   await rawPut(env, "cotd:log", JSON.stringify(log.slice(-120)));
@@ -377,6 +387,43 @@ export async function putShareCard(env, slug, bytes) {
 }
 
 // ---------------------------------------------------------------- imagery
+
+// Which corners have a stored Street View frame, as one key.
+//
+// The alternative was an imgstatus record per corner, which is a second write
+// for every frame published: 7,309 frames would have cost 14,618 writes to say
+// something a single list already says. It is read once per isolate and answers
+// for the whole city, so a scored corner's page can serve its stored photograph
+// without a KV read per request and without re-reserving a Maps fetch for bytes
+// that are already in hand.
+//
+// It is an index, not the truth. The bytes under img:{slug}:today are the
+// truth; this only says where to look, and a slug listed here whose bytes are
+// missing degrades to the ordinary not-stored-yet state rather than to a broken
+// image, because /gen answers 404 and the page has an honest empty state.
+export async function getFrameIndex(env) {
+  const raw = await rawGet(env, "img:index");
+  if (!raw) return null;
+  try {
+    const r = JSON.parse(raw);
+    return { ...r, slugs: new Set(r.slugs || []) };
+  } catch {
+    return null;
+  }
+}
+
+export async function putFrameIndex(env, slugs, opts = {}) {
+  const list = [...new Set(slugs)].sort();
+  await rawPut(env, "img:index", JSON.stringify({
+    updated: new Date().toISOString(),
+    count: list.length,
+    // What produced this listing, so a reader can tell a bulk fetch from the
+    // daily cron's own accumulation.
+    source: opts.source || "bulk fetch",
+    slugs: list,
+  }));
+  return list.length;
+}
 
 const imgKey = (slug, state) => `img:${slug}:${state}`;
 
@@ -607,6 +654,96 @@ export async function exaBudget(env) {
   };
 }
 
+// One metering session per invocation, flushed once.
+//
+// The meter was three KV writes per Exa call: reserveExa wrote it, and
+// recordExaSpend wrote exa:spend and then wrote it again. At 683 searches a day
+// that is 2,049 writes on a 1,000 a day allowance, which is why the press tick
+// was consuming the whole day's writes before any publish could run. The counts
+// were never the problem; the write amplification was.
+//
+// A session decides from a snapshot plus what it has accumulated, so the cap is
+// still enforced call by call, and touches KV twice at the end instead of three
+// times per call. Deltas are applied to a FRESH read at flush, not to the
+// snapshot, so a concurrent invocation's writes are not clobbered: exactly the
+// guarantee the per-call version had, over a longer window.
+//
+// The checkpoint bounds what a dead isolate can lose. Without one, an
+// invocation killed near the end of a long batch would lose every measured
+// dollar it had accumulated, and this ledger's whole claim is that it measures.
+export function openExaMeter(env, { checkpointEvery = 25 } = {}) {
+  const zero = () => ({ reservedCents: 0, searches: 0, contentPages: 0, spentCents: 0, spendUsd: 0, deferrals: 0 });
+  let pending = zero();
+  let snapshot = null;
+  let sinceFlush = 0;
+  let flushes = 0;
+
+  const load = async () => {
+    if (!snapshot) snapshot = await readExaMeter(env);
+    return snapshot;
+  };
+
+  const session = {
+    async reserve(searches, contentPages = 0) {
+      const n = Math.max(0, Number(searches) || 0);
+      const pages = Math.max(0, Number(contentPages) || 0);
+      const cost = n * EXA_SEARCH_CENTS + pages * EXA_CONTENTS_CENTS;
+      const m = await load();
+      // The snapshot plus everything this session has already committed to.
+      const used = Math.max(m.spentCents + pending.spentCents, m.reservedCents + pending.reservedCents);
+      if (used + cost > m.capCents) {
+        pending.deferrals += 1;
+        return false;
+      }
+      pending.reservedCents = round2(pending.reservedCents + cost);
+      pending.searches += n;
+      pending.contentPages += pages;
+      sinceFlush += 1;
+      if (sinceFlush >= checkpointEvery) await session.flush();
+      return true;
+    },
+
+    async record(usd) {
+      const n = Number(usd);
+      if (!Number.isFinite(n) || n <= 0) return;
+      pending.spentCents = round2(pending.spentCents + n * 100);
+      pending.spendUsd = Math.round((pending.spendUsd + n) * 1e6) / 1e6;
+      sinceFlush += 1;
+      if (sinceFlush >= checkpointEvery) await session.flush();
+    },
+
+    async flush() {
+      const p = pending;
+      const dirty =
+        p.reservedCents || p.searches || p.contentPages || p.spentCents || p.spendUsd || p.deferrals;
+      if (!dirty) return { writes: 0 };
+      pending = zero();
+      sinceFlush = 0;
+      let writes = 0;
+      if (p.spendUsd > 0) {
+        const cur = parseFloat((await rawGet(env, "exa:spend")) || "0") || 0;
+        await rawPut(env, "exa:spend", String(Math.round((cur + p.spendUsd) * 1e6) / 1e6));
+        writes += 1;
+      }
+      const m = await readExaMeter(env);
+      m.reservedCents = round2(m.reservedCents + p.reservedCents);
+      m.searches += p.searches;
+      m.contentPages += p.contentPages;
+      m.spentCents = round2(m.spentCents + p.spentCents);
+      m.deferrals += p.deferrals;
+      await writeExaMeter(env, m);
+      writes += 1;
+      flushes += 1;
+      // The next reserve decides against what is actually stored now.
+      snapshot = m;
+      return { writes };
+    },
+
+    stats: () => ({ pending: { ...pending }, flushes }),
+  };
+  return session;
+}
+
 // Reserved before the batch runs. Returns false at the cap and records the
 // refusal, so a deferred batch is visible as a deferral rather than as
 // silence.
@@ -732,9 +869,13 @@ export async function bumpPressRollup(env, rec) {
   let r;
   try { r = raw ? JSON.parse(raw) : null; } catch { r = null; }
   const period = (rec.fetchedAt || "").slice(0, 7);
-  if (!r || r.period !== period) r = { period, checked: 0, withCoverage: 0, empty: 0, deferred: 0, costUsd: 0, citations: 0 };
+  if (!r || r.period !== period) r = { period, checked: 0, withCoverage: 0, empty: 0, deferred: 0, paused: 0, costUsd: 0, citations: 0 };
   if (typeof r.citations !== "number") r.citations = 0;
-  if (rec.source === "budget-deferred") r.deferred += 1;
+  if (typeof r.paused !== "number") r.paused = 0;
+  // Our cap reached, versus the provider refusing the key on balance. Counted
+  // apart because they need different repairs.
+  if (rec.source === "budget-paused") r.paused += 1;
+  else if (rec.source === "budget-deferred") r.deferred += 1;
   else {
     r.checked += 1;
     if (rec.source === "live") r.withCoverage += 1;
@@ -768,11 +909,13 @@ export async function bumpPressRollupBulk(env, recs) {
   let r;
   try { r = raw ? JSON.parse(raw) : null; } catch { r = null; }
   const period = (recs.find((x) => x?.fetchedAt)?.fetchedAt || new Date().toISOString()).slice(0, 7);
-  if (!r || r.period !== period) r = { period, checked: 0, withCoverage: 0, empty: 0, deferred: 0, costUsd: 0, citations: 0 };
+  if (!r || r.period !== period) r = { period, checked: 0, withCoverage: 0, empty: 0, deferred: 0, paused: 0, costUsd: 0, citations: 0 };
   if (typeof r.citations !== "number") r.citations = 0;
+  if (typeof r.paused !== "number") r.paused = 0;
   for (const rec of recs) {
     if (!rec) continue;
-    if (rec.source === "budget-deferred") r.deferred += 1;
+    if (rec.source === "budget-paused") r.paused += 1;
+    else if (rec.source === "budget-deferred") r.deferred += 1;
     else {
       r.checked += 1;
       if (rec.source === "live") r.withCoverage += 1;

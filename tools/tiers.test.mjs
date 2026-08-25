@@ -80,7 +80,16 @@ const cityMeta = (totalAudited) => ({
   queueLength: 0,
 });
 
-const subtitleOf = (html) => html.match(/intersections graded citywide[^<]*/)?.[0] ?? "";
+// The subtitle as a reader sees it, with markup stripped. The audited count is
+// a link to /audited now, so `[^<]*` stopped at the opening tag and read the
+// sentence as ending after "citywide,". What these tests are about is the
+// numbers and the wording, not whether a number is also a link.
+const subtitleOf = (html) => {
+  const seg = html.match(/<p class="scope" id="scope">(.*?)<\/p>/s)?.[1] ?? "";
+  const txt = seg.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  const i = txt.indexOf("intersections graded citywide");
+  return i >= 0 ? txt.slice(i) : txt;
+};
 const mapAltOf = (html) => html.match(/alt="Map of San Francisco[^"]*"/)?.[0] ?? "";
 
 // ---------------------------------------------------------------- 1. the predicate

@@ -118,33 +118,35 @@ const page = (discs) =>
     radiusM: 80,
   });
 
-test("the legend states the radius and the count from the discs drawn", () => {
+test("the legend states the radius and the count from the discs drawn, and links how the map is drawn", () => {
   const html = page([
     { slug: "a", lat: 37.78, lon: -122.41, rendered: true },
     { slug: "b", lat: 37.77, lon: -122.42, rendered: true },
     { slug: "c", lat: 37.76, lon: -122.43, rendered: false },
   ]);
   const t = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-  assert.match(t, /Audited coverage: the 80m core around each fully audited corner/);
-  assert.match(t, /One more every morning/);
-  assert.match(t, /3 corners, 1 awaiting a render/);
+  assert.match(t, /Audited coverage: the 80m core around each fully audited corner \( ?3 ?, 1 awaiting a render ?\), one more every morning/);
+  assert.ok(html.includes('href="/methodology#map">How this map is drawn'), "the explanation is one link away");
 });
 
 test("the legend counts the discs, so it cannot claim one the map is not drawing", () => {
   const t = page([{ slug: "a", lat: 37.78, lon: -122.41, rendered: true }])
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ");
-  assert.match(t, /1 corner\b/, "singular, and counted off the array");
+  assert.match(t, /corner \( ?1 ?\), one more every morning/, "counted off the array");
   assert.doesNotMatch(t, /awaiting a render/, "nothing pending means the clause is absent");
 });
 
-test("the legend says the layer is not a boundary", () => {
-  // The whole design rule, stated on the page rather than only in a comment.
-  const t = page([{ slug: "a", lat: 37.78, lon: -122.41, rendered: true }])
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ");
-  assert.match(t, /Drawn per corner, never as one outline/);
-  assert.match(t, /would enclose thousands of crossings nobody has audited/);
+test("the never-one-outline rule moved to /methodology in full", async () => {
+  // The homepage keeps the claim and the link; the design rule is stated in
+  // full where the link lands, so it is still said on the site, not only in
+  // a comment.
+  const { METHODOLOGY } = await import("../src/methodology.js");
+  const m = METHODOLOGY("", false, 7355, null).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(m, /drawn per corner and never as one outline/);
+  assert.match(m, /would enclose thousands of crossings nobody has audited/);
+  const t = page([{ slug: "a", lat: 37.78, lon: -122.41, rendered: true }]);
+  assert.doesNotMatch(t, /never as one outline/, "the full rule no longer crowds the legend");
 });
 
 test("no discs means no legend and no payload, not an empty one", () => {
@@ -206,4 +208,68 @@ test("the coverage layer uses no grade colour", () => {
     assert.ok(!block.includes(grade), `coverage must not use the grade colour ${grade}`);
   }
   assert.match(block, /#141B2D/, "ink is the coverage colour");
+});
+
+// ------------------------------------------- the legibility gate's verdicts
+//
+// The gate had two verdicts and needed three. Returning "pass" when nothing was
+// checkable is the gate reporting a clean bill of health for an examination it
+// never performed, and on an evidence product that publishes a photograph of a
+// named intersection it is the worse of the two possible errors.
+
+test("a render whose source frame was legible and survived passes", async () => {
+  const { checkLegibility } = await import("./lib/legibility.mjs");
+  const r = await checkLegibility({
+    inputRead: { watermark: "Google", signage: "MISSION ST" },
+    renderRead: { watermark: "Google", signage: "MISSION ST" },
+    expectStreets: ["MISSION"],
+  });
+  assert.equal(r.verdict, "pass");
+  assert.deepEqual(r.checked.sort(), ["signage", "watermark"]);
+});
+
+test("a render that destroyed readable text is held", async () => {
+  const { checkLegibility } = await import("./lib/legibility.mjs");
+  const r = await checkLegibility({
+    inputRead: { watermark: "Google", signage: "MISSION ST" },
+    renderRead: { watermark: "=, --> -", signage: "MISSION ST" },
+    expectStreets: ["MISSION"],
+  });
+  assert.equal(r.verdict, "hold");
+  assert.match(r.reasons.join(" "), /watermark/);
+});
+
+test("a render nothing could be checked against abstains, it does not pass", async () => {
+  // 6th-and-mission: the source frame reads nothing at the watermark and pure
+  // OCR noise at the signage band. Both signals abstain. The old gate called
+  // that pass with checked=[] and would have published an unverified render
+  // while recording that the gate cleared it.
+  const { checkLegibility } = await import("./lib/legibility.mjs");
+  const r = await checkLegibility({
+    inputRead: { watermark: "", signage: "N F Ne as. Ce rst aa" },
+    renderRead: { watermark: "", signage: "blur" },
+    expectStreets: ["MISSION"],
+  });
+  assert.equal(r.verdict, "abstain", "not pass");
+  assert.deepEqual(r.checked, [], "because nothing was checkable");
+  assert.match(r.reasons.join(" "), /unverified rather than verified/);
+});
+
+test("only pass publishes; hold and abstain both keep the render off the site", async () => {
+  const { checkLegibility } = await import("./lib/legibility.mjs");
+  const verdicts = [];
+  for (const [inw, outw] of [["Google", "Google"], ["Google", ""], ["", ""]]) {
+    const r = await checkLegibility({ inputRead: { watermark: inw, signage: "" }, renderRead: { watermark: outw, signage: "" } });
+    verdicts.push(r.verdict);
+  }
+  assert.deepEqual(verdicts, ["pass", "hold", "abstain"]);
+  assert.equal(verdicts.filter((v) => v === "pass").length, 1, "exactly one of the three may reach the site");
+});
+
+test("street names are derived from the corner name, longest token first", async () => {
+  const { streetNames } = await import("./promote_corners.mjs");
+  assert.deepEqual(streetNames("Fillmore Street and Lombard Street"), ["FILLMORE", "LOMBARD"]);
+  // "6th" is dropped: it is three characters and OCR finds it in noise.
+  assert.deepEqual(streetNames("Mission Street and 6th Street"), ["MISSION"]);
+  assert.deepEqual(streetNames(""), []);
 });

@@ -1,6 +1,10 @@
 import { CORNERS } from "./data.js";
 import { DISTRIBUTION } from "./score.js";
 import { TIER_LABEL, TIER_NOTE } from "./city.js";
+// Imported rather than restated. The homepage hero and the corner page must
+// make the same claim in the same words, and the client-side copy inside PAGE
+// is pinned to this one by tools/provenance.test.mjs.
+import { PROMOTED_NOTE } from "./imagery.js";
 
 // The citywide distribution strip, built once at module load from the frozen
 // array rather than shipped to the browser as 600 numbers on every page. The
@@ -66,7 +70,11 @@ export const STATBAND = ({ scored = 0, audited = 0, headlines = 0, headlinesAsOf
     `<a class="sbcell" href="${href}"><span class="sbnum">${value}</span><span class="sblabel">${label}</span><span class="sbnote">${note}</span></a>`;
   return `<section class="statband" aria-label="StreetCred at a glance">
   ${cell("/methodology", n(scored), "intersections graded", "from the city's own records")}
-  ${cell("/", n(audited), "fully audited", "every evidence lane checked")}
+  ${
+    // The surface that proves this number is the audited index, row for row.
+    // It linked to "/" for a while, which is the page the band is on.
+    cell("/audited", n(audited), "fully audited", "every evidence lane checked")
+  }
   ${
     // The figure was a snapshot written by a tool run and nothing updated it,
     // so it read the same all day while the batch lane found hundreds more.
@@ -95,6 +103,21 @@ export const STATBAND = ({ scored = 0, audited = 0, headlines = 0, headlinesAsOf
 // the hero embed says it beside the render itself. Two copies of a sentence
 // like this is one copy too many: they drift, and the drift is the product
 // quietly softening its own disclosure.
+// What to say when there is no photograph on the page.
+//
+// "Street View has no photograph of this corner" is a claim about Google's
+// coverage, and it was rendering for every falsy frame: a corner we simply had
+// not fetched yet, a generation still running, a probe that errored. Only one
+// stored status actually establishes absence, and that is the one where the
+// probe ran and came back empty. Everything else is our gap, and our gap must
+// not be reported as somebody else's.
+export const IMAGERY_ABSENT_CONFIRMED = "nocoverage";
+export function emptyImageryNote(status) {
+  if (status === IMAGERY_ABSENT_CONFIRMED) return "Street View has no photograph of this corner.";
+  if (status === "pending" || !status) return "Loading the Street View photograph for this corner.";
+  return "No photograph stored for this corner yet.";
+}
+
 export const AI_DISCLAIMER =
   "The proposed fix is a visualization, not a photograph of anything that exists.";
 
@@ -315,7 +338,28 @@ export const HERO_CORNER = (e) => {
     e.auditedToday
       ? `Audited autonomously this morning, ${esc(e.date)}`
       : `Audited autonomously ${esc(e.date)}`
-  }${e.partial ? ", with some lanes degraded" : ""}</p>
+  }${
+    // The run's own status says a lane degraded; this clause says which, and it
+    // is only true while the visual lane is actually missing. A corner whose
+    // render landed later, through the promote pipeline rather than the cron,
+    // carries a stale "partial" in cotd:log forever, and the card would then
+    // announce pending lanes directly above the slider showing them.
+    e.partial && !frames.fix ? ". Records audited; visual lanes pending" : ""
+  }</p>
+  ${
+    // The newer audit this card is not featuring. The card features the newest
+    // corner that can actually be dragged, so on any morning whose imagery has
+    // not landed the newest audit is not the one on screen. Saying so here is
+    // what keeps the page to one answer about what was audited most recently,
+    // and it links, so the claim is checkable in one tap.
+    e.pending
+      ? `<p class="hcpending">${
+          e.pending.auditedToday
+            ? "Latest audit this morning: "
+            : `Latest audit ${esc(e.pending.date)}: `
+        }<a href="/c/${esc(e.pending.slug)}">${esc(e.pending.name)}</a>, visual lanes pending</p>`
+      : ""
+  }
   ${stage}
   ${
     // The sentence is about the proposed fix, so it appears when the proposed
@@ -327,7 +371,12 @@ export const HERO_CORNER = (e) => {
     // the unedited photograph and on the hazard overlay, both of which have
     // their own honest captions.
     frames.fix
-      ? `<p class="hcdisclaim" id="hcdisc"${compare === "fix" ? "" : " hidden"}>${AI_DISCLAIMER}</p>`
+      ? `<p class="hcdisclaim" id="hcdisc"${compare === "fix" ? "" : " hidden"}>${AI_DISCLAIMER}${
+          // Where this particular render came from. Follows the same visibility
+          // rule as the disclaimer above it, because it is a claim about the
+          // proposed-fix frame and about nothing else on the page.
+          e.provenance === "promoted-from-enriched" ? ` ${PROMOTED_NOTE}` : ""
+        }</p>`
       : ""
   }
   ${
@@ -402,6 +451,7 @@ export const FOOTER = () => `<footer>
   <div class="fcol">
     <span class="fh">Product</span>
     <a href="/#find">Find your corner</a>
+    <a href="/audited">Audited corners</a>
     <a href="/watchlist">Watchlist</a>
     <a href="/methodology">How it is scored</a>
   </div>
@@ -445,6 +495,7 @@ export const MASTHEAD = ({ scored = 0, active = "" } = {}) => {
   ${scored ? `<span class="mastcount">${n(scored)} SF intersections scored</span>` : ""}
   <a class="mastfind" href="/#find">Find your corner</a>
   <nav class="mastnav" aria-label="Trust surfaces">
+    ${link("/audited", "Audited", "audited")}
     ${link("/watchlist", "Watchlist", "watchlist")}
     ${link("/methodology", "Methodology", "methodology")}
     ${link("/status", "Status", "status")}
@@ -456,6 +507,7 @@ export const MASTHEAD = ({ scored = 0, active = "" } = {}) => {
   <button class="mastmenu" id="mastmenu" type="button" aria-expanded="false" aria-controls="mastnav-collapsed">Menu</button>
 </nav>
 <nav class="mastdrop" id="mastnav-collapsed" hidden aria-label="Trust surfaces">
+  ${link("/audited", "Audited", "audited")}
   ${link("/watchlist", "Watchlist", "watchlist")}
   ${link("/methodology", "Methodology", "methodology")}
   ${link("/status", "Status", "status")}
@@ -1026,6 +1078,26 @@ button.offer[disabled]{opacity:.55;cursor:not-allowed}
 .voice{background:var(--card);border-radius:11px;padding:15px 17px;margin-bottom:11px}
 .voice p{margin:0;font-family:Lora,Georgia,serif;font-style:italic;font-size:14.5px;line-height:1.6}
 .voice .m{font-size:11.5px;color:var(--dim);margin-top:9px;text-transform:capitalize}
+.casefile{margin:26px 0 8px}
+.cfrows{list-style:none;margin:0;padding:0;border:1px solid var(--line2);border-radius:11px;background:var(--card);overflow:hidden}
+.cfrows li{display:flex;align-items:baseline;gap:10px;padding:8px 14px;font-size:12px;border-top:1px solid var(--line)}
+.cfrows li:first-child{border-top:none}
+.cfrows a{color:var(--ink);text-decoration:none}
+.cfrows a:hover{text-decoration:underline}
+.cfchip{flex-shrink:0;min-width:86px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.cfdate{margin-left:auto;font-size:11px;color:var(--dim);white-space:nowrap}
+.cfpend{opacity:.62}
+.cfpend .cfdate{font-style:italic}
+.cfyou .cfchip,.cfyou a{color:var(--accent)}
+/* The qualifier on a corridor quote. Deliberately not the accent colour and
+   not a warning: this is a true label on real evidence, in the same register
+   as the provenance chip beside it. */
+.corrchip{display:inline-block;font-size:10.5px;color:var(--dim);background:var(--card);
+  border:1px solid var(--line2);border-radius:999px;padding:2px 9px;margin-top:6px;text-transform:none}
+.corrnote{display:inline-block;font-size:10.5px;color:var(--dim);margin-left:7px;text-transform:none}
+.apichip{display:inline-block;font-size:10.5px;color:var(--dim);border:1px solid var(--line3);border-radius:999px;
+  padding:2px 9px;margin-top:8px;text-decoration:none;text-transform:none}
+.apichip:hover{color:var(--ink);border-color:var(--ink)}
 .empty{margin:0;font-size:13.5px;color:var(--dim);line-height:1.55}
 
 /* The ask's summary row.
@@ -1531,19 +1603,29 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
       base: "base",
       ov: "overlay",
       hdl: "handle",
-      single: true,
-      hidden: true,
-      imgHidden: true,
+      // A corner whose record already says ready ships its photograph in the
+      // HTML. The server read that record to build this page; leaving the src
+      // for the client to fill meant the raw HTML of a fully audited corner
+      // said "loading" about bytes that were already in KV.
+      single: !(og.frames && og.frames.fix),
+      hidden: !og.frames,
+      imgHidden: !og.frames,
+      baseSrc: og.frames ? esc(og.frames.today) : "",
       baseAlt: `${esc(c.name)} today, photographed by Google Street View`,
-      ovAlt: `Annotated comparison view of ${esc(c.name)}`,
+      ovSrc: og.frames && og.frames.fix ? esc(og.frames.fix) : "",
+      ovAlt: og.frames && og.frames.fix
+        ? `AI visualization of a proposed fix at ${esc(c.name)}. Not a photograph.`
+        : `Annotated comparison view of ${esc(c.name)}`,
     })}
     <!-- Stands in for the photograph until one is loaded, and stays if none
          arrives. A card that says what is missing and why beats an image
-         element with nothing in it. -->
-    <div class="imgph" id="imgph">
+         element with nothing in it. Rendered only when the server does not
+         already have the frames: a corner that ships its photograph in the HTML
+         must not also ship a card saying the photograph is loading. -->
+    ${og.frames ? "" : `<div class="imgph" id="imgph">
       <span class="imgphl">The corner, three ways</span>
-      <p class="imgphn" id="imgphn">Loading the Street View photograph for this corner.</p>
-    </div>
+      <p class="imgphn" id="imgphn">${esc(emptyImageryNote(og.imageryStatus))}</p>
+    </div>`}
     <p class="cap" aria-live="polite"><b id="capk">Today</b><span id="capv">The corner as Street View last photographed it. Imagery: Google.</span></p>
     <div class="impact" id="impact" hidden>
       <div class="ihead">Projected outcome
@@ -1600,6 +1682,24 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
   </div>
 </section>
 
+<section class="casefile" id="casefile" aria-label="Case file: what has happened at this corner, dated from stored records">
+  <div class="eyebrow"><span>Case file</span><span class="lanenums">every date read from a stored record, none invented</span></div>
+  <ol class="cfrows">
+    <li id="cf-scored" class="cfdone"><span class="cfchip">DataSF</span><a href="#scorewrap">Scored from the city's own records</a><span class="cfdate">${
+      c.sweep?.sweepDate ? esc(c.sweep.sweepDate) : "date not recorded"
+    }</span></li>
+    <li id="cf-photo" class="cfpend"><span class="cfchip">Google Maps</span><a href="#hero">Photographed</a><span class="cfdate">checking the stored frame</span></li>
+    <li id="cf-press" class="cfpend"><span class="cfchip">Exa</span><a href="#presstape">Press read</a><span class="cfdate">checking stored coverage</span></li>
+    <li id="cf-voices" class="cfpend"><span class="cfchip">Apify</span><a href="#voices">Residents heard</a><span class="cfdate">checking stored scrapes</span></li>
+    <li id="cf-audited" class="${c.cotd ? "cfdone" : "cfpend"}"><span class="cfchip">Gemini</span><a href="#hz">Visual audit</a><span class="cfdate">${
+      c.cotd ? esc(c.cotd) : "checking the stored audit"
+    }</span></li>
+    <li id="cf-fix" class="cfpend"><span class="cfchip">Gemini</span><a href="#hero">Fix drawn</a><span class="cfdate">checking the stored render</span></li>
+    <li id="cf-letter" class="cfpend"><span class="cfchip">The gate</span><a href="#letterpanel">Letter verified</a><span class="cfdate">checking the stored letter</span></li>
+    <li id="cf-sent" class="cfyou"><span class="cfchip">You</span><a href="#letterpanel">Sent: that part is yours</a><span class="cfdate">the letter is drafted, never sent by us</span></li>
+  </ol>
+</section>
+
 <div class="cols">
   <div>
     <div class="tape" id="presstape">
@@ -1621,6 +1721,7 @@ ${MASTHEAD({ scored: og.scored || 0, active: "" })}
     </div>
     <div class="panel lane-voices">
       <div class="phs"><h2>Resident voices</h2><span class="lanenums" id="voicenums"></span><span class="tag" id="voicestag">scraped</span></div>
+      <p class="funnel" id="voicesfilter" hidden></p>
       <div class="pbody">
         <p class="funnel" id="voicefunnel" hidden></p>
         <div id="voices"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
@@ -1715,6 +1816,34 @@ ${FOOTER()}
 
 <script>
 ${PACIFIC_DAY_JS}
+
+// The case file. Rows are server-rendered; each lane payload settles its row
+// as it arrives. cfSet writes a row only from a value the payload actually
+// carried, and cfDate refuses any date beyond today in America/Los_Angeles:
+// a stored date is displayed, a missing one is said to be missing, a future
+// one is treated as missing, and nothing is ever invented here.
+function cfDate(ts){
+  var d = ptDay(ts);
+  if(!d) return "";
+  return d <= ptDay(Date.now()) ? d : "";
+}
+function cfSet(row, dated, note){
+  var li = el("cf-" + row);
+  if(!li) return;
+  li.classList.remove("cfpend","cfdone");
+  li.classList.add(dated ? "cfdone" : "cfpend");
+  li.querySelector(".cfdate").textContent = note;
+}
+function cfLane(row, ts, fallbackDone, pendingNote){
+  var d = cfDate(ts);
+  if(d) cfSet(row, true, d);
+  else if(fallbackDone) cfSet(row, true, "stored, date not recorded");
+  else cfSet(row, false, pendingNote);
+}
+// Kept byte-identical to PROMOTED_NOTE in src/imagery.js. tools/provenance.test.mjs
+// asserts the two match, because a caption that drifts from the server's own
+// definition of the claim is a caption nobody is checking.
+const PROMOTED_NOTE = "This render was promoted from the enriched pool. This corner has not had a full visual audit and is not counted in the audited coverage layer.";
 const CAPS = {
   today:["Today","The corner as Street View last photographed it. Imagery: Google."],
   hazards:["Hazards","Gemini read the real photograph and marked the zones it flags as high risk: faded crosswalk markings in red, vehicle conflict zones in amber. Drag to compare."],
@@ -1790,15 +1919,24 @@ function render(){
     hero.hidden = true;
     if(ph){
       ph.hidden = false;
-      el("imgphn").textContent = IMG.note || "Street View has no photograph of this corner.";
+      // Only a stored probe that came back empty is a claim about Google. Any
+      // other absent frame is our gap and says so. Mirrors emptyImageryNote on
+      // the server; tools/emptystate.test.mjs pins the two together.
+      el("imgphn").textContent = IMG.note || (IMG.status === "nocoverage"
+        ? "Street View has no photograph of this corner."
+        : "No photograph stored for this corner yet.");
     }
     document.querySelector(".toggle").hidden = true;
     el("capk").textContent = "No photograph";
-    el("capv").textContent = IMG.note || "Street View has no imagery for this corner.";
+    el("capv").textContent = IMG.note || (IMG.status === "nocoverage"
+      ? "Street View has no imagery for this corner."
+      : "No photograph stored for this corner yet.");
     return;
   }
   if(ph) ph.hidden = true;
   hero.hidden = false;
+  // The server may already have set these. Assigning the same src is a no-op in
+  // every browser, but the guard keeps the network panel honest on a reload.
   el("base").hidden = false;
   el("base").src = IMG.today;
   // Alt text from data, not boilerplate: the audit names what it marked.
@@ -1827,7 +1965,11 @@ function render(){
     setSplit(split);
   }
   el("capk").textContent = CAPS[state][0];
-  el("capv").textContent = CAPS[state][1] + (state === "today" && IMG.note ? " " + IMG.note : "");
+  // The promoted note rides the fix caption and nowhere else. It is a statement
+  // about where THIS render came from, so it belongs beside the render and not
+  // on the photograph or the hazard overlay, which are not promoted anything.
+  const prov = state === "fix" && IMG.provenance === "promoted-from-enriched" ? " " + PROMOTED_NOTE : "";
+  el("capv").textContent = CAPS[state][1] + prov + (state === "today" && IMG.note ? " " + IMG.note : "");
   // The projected outcome belongs to the fix state alone: it describes the
   // proposal, not the photograph.
   const ib = el("impact");
@@ -1922,6 +2064,18 @@ function applyImagery(d){
 
 function loadImagery(){
   fetch("/api/imagery" + X).then(r => r.json()).then(d => {
+    // Case file rows this payload settles.
+    cfLane("photo", d && d.today ? d.at : null, Boolean(d && d.today), "no photograph stored yet");
+    var fx = d && d.render && d.render.fix;
+    if(fx && (cfDate(fx.at) || fx.model)){
+      cfSet("fix", true, (cfDate(fx.at) || "date not recorded") + (fx.model ? ", " + fx.model : ""));
+    } else cfLane("fix", d && d.fix ? d.at : null, Boolean(d && d.fix), "no fix render yet");
+    // A dated audit block always settles the row. The negative belongs to
+    // the hazards lane, which is the record of whether an audit ran at all:
+    // writing "has not run" from here mislabelled the flagship, whose audit
+    // predates both the cotd stamp and the stored audit block.
+    var au = d && d.audit;
+    if(au && cfDate(au.at)) cfSet("audited", true, cfDate(au.at) + (au.model ? ", " + au.model : ""));
     applyImagery(d);
     const settled = !d.status || d.status !== "pending";
     if(settled) return;
@@ -2233,6 +2387,13 @@ LANE_LOADERS.cred = () => fetch("/api/cred" + X).then(r => r.json()).then(d => {
 // not, and which the record raised on its own. Deterministic server side, so
 // this is display only.
 LANE_LOADERS.hazards = () => fetch("/api/hazards" + X).then(r => r.json()).then(d => {
+  (function(){
+    var li = el("cf-audited");
+    if(li && !li.classList.contains("cfdone")){
+      if(d && d.audited) cfSet("audited", true, cfDate(d.at) || "stored, date not recorded");
+      else cfSet("audited", false, "the visual audit has not run here yet");
+    }
+  })();
   const items = d.items || [];
   // Feed the hero's alt text: the audit image's description names what the
   // audit actually flagged at this corner, not a generic phrase.
@@ -2292,6 +2453,10 @@ function paintTier(){
   if(!chips.length) return;
   let t = TIER;
   if(V.score && V.score.source === "sweep") t = "scored";
+  // A promoted corner has a proposed-fix render and no audit. Reading the chip
+  // off imagery status alone made "ready" mean AUDITED, which would have
+  // relabelled every promoted corner the moment its render published.
+  else if(IMG && IMG.provenance === "promoted-from-enriched") t = "enriched";
   else if(IMG && IMG.status === "ready") t = "audited";
   else if(IMG && IMG.status) t = "enriched";
   chips.forEach(function(chip){
@@ -2562,6 +2727,14 @@ LANE_LOADERS.news = () => fetch("/api/news" + X).then(r => r.json()).then(d => {
 // first report: Exa recall is not ground truth, and an empty year means this
 // search found nothing that year, not that nothing happened.
 LANE_LOADERS.timeline = () => fetch("/api/timeline" + X).then(r => r.json()).then(t => {
+  (function(){
+    var yrs = (t && t.years || []).filter(function(y){ return y && y.count > 0; });
+    if(yrs.length){
+      var first = yrs[0].year, last = yrs[yrs.length - 1].year;
+      cfSet("press", true, "first " + first + ", latest " + last + (cfDate(t.builtAt) ? ", read " + cfDate(t.builtAt) : ""));
+    } else if(cfDate(t && t.builtAt)) cfSet("press", true, "read " + cfDate(t.builtAt) + ", nothing found");
+    else cfSet("press", false, "press history not read here yet");
+  })();
   const years = t && t.years;
   // "The strip has nothing" is an answer the composer is waiting on just as
   // much as a full decade is, so it is reported on this path too.
@@ -2675,14 +2848,45 @@ LANE_LOADERS.connections = () => fetch("/api/connections" + X).then(r => r.json(
 }).catch(() => {});
 
 LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d => {
+  // "1 accounts" was on every single-candidate corner, which is all four that
+  // carry a quote. One helper, used by every sentence in this lane.
+  var acct = function(nn){ return nn + (Number(nn) === 1 ? " account" : " accounts"); };
+  // The filter, stated in numbers from this corner's own stored funnel. It
+  // renders wherever a scrape was commissioned, zero-kept corners included:
+  // "0 of 41 cleared" is the finding, not a gap, and the NONE FOUND state
+  // below stays exactly as it was.
+  (function(){
+    var f = el("voicesfilter");
+    if(!f || !d || !d.commissioned || typeof d.candidates !== "number") return;
+    var kept = (d.items || []).length;
+    f.innerHTML = 'Apify scraped public reviews and forums for this corner. Only accounts specifically ' +
+      'about this intersection and street safety were kept: <b>' + kept + '</b> of <b>' + d.candidates +
+      '</b> cleared the filter.' +
+      // Withheld here rather than at the scrape: the account cleared the
+      // ingest filter and then named a different crossing, which the page
+      // checks against the city's own street index before showing anything.
+      (d.suppressed
+        ? ' ' + esc(acct(d.suppressed)) + ' withheld for naming a different crossing.'
+        : '');
+    f.hidden = false;
+  })();
+  (function(){
+    var comm = cfDate(d && d.commissionedAt), ing = cfDate(d && d.collected);
+    if(comm || ing){
+      cfSet("voices", true, (comm ? "commissioned " + comm : "") + (comm && ing ? ", " : "") + (ing ? "ingested " + ing : ""));
+    } else cfSet("voices", false, "no scrape commissioned here yet");
+  })();
   const items = d.items || [];
   const tag = el("voicestag");
   if (d.commissioned && !items.length) {
-    tag.textContent = "none on topic"; tag.classList.add("pending");
+    tag.textContent = d.suppressed ? "none on this corner" : "none on topic";
+    tag.classList.add("pending");
     el("voices").innerHTML =
-      '<p class="empty">The scrapers ran here and found no account that describes the street itself.</p>' +
+      (d.suppressed
+        ? '<p class="empty">The scrapers ran here and every surviving account turned out to describe a different crossing, so none is shown as evidence for this one.</p>'
+        : '<p class="empty">The scrapers ran here and found no account that describes the street itself.</p>') +
       '<p class="pcauto">Commissioned autonomously on ' + esc(ptDay(d.commissionedAt)) +
-      ', ' + esc(d.candidates || 0) + ' accounts read. An empty lane that actually ran is worth more than a full one that guessed.</p>';
+      ', ' + esc(acct(d.candidates || 0)) + ' read. An empty lane that actually ran is worth more than a full one that guessed.</p>';
     return;
   }
   if (d.note && !items.length) {
@@ -2722,17 +2926,44 @@ LANE_LOADERS.voices = () => fetch("/api/voices" + X).then(r => r.json()).then(d 
   }
   var vn = el("voicenums");
   if(vn && typeof d.candidates === "number") vn.textContent = items.length + " kept from " + d.candidates + " read";
-  mark("voicestag", d.source);
-  el("voices").innerHTML = items.map(v =>
-    '<div class="voice"><p>&ldquo;' + esc(v.text) + '&rdquo;</p><div class="m">' +
+  // The tag is this lane's verdict, and by the time this line runs the lane
+  // has a surviving account: every zero-kept path above has already returned
+  // with its own honest tag. It used to call mark(), which returns early for
+  // a live or cached source and left the server-rendered default in place, so
+  // a corner with a quote that cleared the filter published the verdict
+  // "scraped", which describes the run rather than the result.
+  tag.textContent = "kept";
+  tag.classList.remove("pending", "sample");
+  // Which Apify actor produced a quote's source, the same ids the
+  // commissioning path starts. The chip renders only when the stored record
+  // carries the metadata: an item source these ids do not name, or a record
+  // with no collected date, gets no chip rather than an invented one.
+  var APIFY_ACTORS = {google_maps: "compass/crawler-google-places", reddit: "trudax/reddit-scraper-lite"};
+  el("voices").innerHTML = items.map(v => {
+    var actor = APIFY_ACTORS[v.source];
+    var chip = actor && d.collected
+      ? '<br><a class="apichip" href="https://apify.com/' + actor + '" target="_blank" rel="noopener">via Apify, ' +
+        actor + ', scraped ' + esc(d.collected) + '</a>'
+      : '';
+    // What this account is evidence ABOUT. A quote naming one of the two
+    // streets is real and relevant and is not testimony about this crossing,
+    // and the page has to say which it is holding rather than let the reader
+    // assume the stronger one.
+    var corridor = v.match === "corridor"
+      ? '<br><span class="corrchip" title="This account names one of the two streets at this corner and not the crossing itself.">corridor evidence</span>' +
+        '<span class="corrnote">about this street, not this exact crossing</span>'
+      : '';
+    return '<div class="voice"><p>&ldquo;' + esc(v.text) + '&rdquo;</p><div class="m">' +
     esc(String(v.source).replace("_"," ")) + (v.stars ? " &middot; " + v.stars + "&#9733;" : "") +
-    (v.when ? " &middot; " + esc(v.when) : "") + '</div></div>').join("") +
+    (v.when ? " &middot; " + esc(v.when) : "") + chip + corridor + '</div></div>';
+  }).join("") +
     // Said out loud, because it is the unusual part: nobody asked for this
     // scrape and nobody was present when it ran.
     (d.commissioned
-      ? '<p class="pcauto">Resident voices commissioned autonomously: the morning run started both scrapers for this corner on ' +
+      ? '<p class="pcauto">Commissioned autonomously: the morning run started both scrapers for this corner on ' +
         esc(ptDay(d.commissionedAt)) + ' and the next run ingested ' +
-        esc(d.candidates || 0) + ' accounts, of which these survived the relevance filter.</p>'
+        esc(acct(d.candidates || 0)) + ', of which ' + esc(items.length) +
+        ' survived the relevance filter.</p>'
       : '');
 });
 
@@ -2768,6 +2999,13 @@ LANE_LOADERS.precedents = () => fetch("/data/precedents.json").then(r => r.json(
 }).catch(() => {});
 
 LANE_LOADERS.letter = () => fetch("/api/letter" + X).then(r => r.json()).then(d => {
+  (function(){
+    var ok = d && d.verified && (d.source === "verified-cache" || d.source === "live");
+    var chk = cfDate(d && (d.checkedAt || d.generatedAt));
+    if(ok && chk) cfSet("letter", true, "verified " + chk + (d.verifyVersion ? ", gate " + d.verifyVersion : ""));
+    else if(ok) cfSet("letter", true, "verified, date not recorded");
+    else cfSet("letter", false, "no verified letter serves here yet");
+  })();
   const copyBtn = el("copy"), dlBtn = el("download");
   // Not drafted, and not pretending otherwise. A sample letter is the one
   // artifact on this site somebody might actually send, so a corner without a

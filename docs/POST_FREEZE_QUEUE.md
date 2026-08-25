@@ -632,3 +632,206 @@ So before this is built, decide:
 
 Source: coverage layer at `204387d`, which established the no-hull rule this
 would have to live beside.
+
+## 17. The head of the audit queue has never been worked, and it is not a slug collision
+
+Investigated 2026-08-20, during the enriched promotion batch. Recorded as a
+finding, nothing changed.
+
+The next seven corners in `cotd:queue`, in the order the daily cron reads them,
+have **no stored artifacts of any kind**: no `corner:` record, no `press:`, no
+`hazards:`, no `letter:verified:`, no `img:{slug}:today`, no `score:`.
+
+```
+arleta-and-bay-shore     harriet-and-harrison     2nd-and-tehama
+london-and-persia        bay-shore-and-silver     malden-and-tehama
+charter-oak-and-silver
+```
+
+The hypothesis worth ruling out was the known slug-collision class, where
+`19th Street` and `19th Avenue` resolve to slugs that look interchangeable and
+are not, so a corner appears absent while its records sit under a variant. It
+does not hold here. Checked against all 130 `corner:` records, only two produce
+a near-miss and both are genuinely different crossings rather than variants of
+the same one:
+
+```
+harriet-and-harrison   ->  KV has harriet-and-howard
+bay-shore-and-silver   ->  KV has bay-shore-and-blanken
+```
+
+The other five have no lookalike at all.
+
+The plainer explanation fits the evidence: the queue is 7,172 entries long, the
+cron audits one corner a morning, and it has run 23 times. The head of the queue
+is simply unworked. Nothing is lost or hidden.
+
+What this does mean, and it is the part worth acting on later: promoting a corner
+from the strict head of the queue is a **from-scratch enrichment**, not a
+promotion. It needs a Street View fetch, a press pass, a visual audit, voices
+commissioning and a letter, because none of those exist yet. That is a different
+and larger job than completing a corner that is already ENRICHED, and the two
+should not be planned as though they were the same size.
+
+Source: enriched promotion batch, 2026-08-20.
+
+## 18. The local render tool cannot publish, and the enriched label has nowhere to live
+
+`tools/promote_corners.mjs --publish` is documented in the tool's own header and
+does nothing. `DO_PUBLISH` is read once, to decide whether the run is plan-only,
+and there is no publish phase after it. A render that passes the legibility gate
+is written to `scratch/imagery/{slug}.fix.jpg` and stops there.
+
+Nothing is wrong on the site today, because every render attempted on
+2026-08-20 was held and none was eligible to publish. It becomes blocking the
+moment one passes, which is what tomorrow's retry is for.
+
+What a render publish actually needs, from `src/store.js`:
+
+```
+img:{slug}:fix     the JPEG bytes, via putImage(env, slug, "fix", bytes)
+imgstatus:{slug}   JSON whose `states` array includes "fix", MERGED with the
+                   corner's existing states rather than replacing them
+```
+
+Two writes per corner, so the daily KV allowance is the constraint on a batch,
+not the model.
+
+The second half is the part that needs a decision rather than code. The ruling of
+2026-08-20 was that the seven corners promoted out of the enriched pool keep the
+ENRICHED tier and carry a render **labeled honestly as promoted from enriched**.
+`promote_corners.mjs` writes `promotedFrom: "enriched"` into a local
+`{slug}.meta.json`, and nothing in `src/` reads that file, that key, or that
+field. The `imgstatus` schema has no room for it. So the label exists only on the
+maintainer's disk, and a promoted render published through the plumbing above
+would appear on the corner page indistinguishable from one of the 23 audited
+corners' renders, which is the exact confusion the ruling was written to prevent.
+
+Sequence matters here: the label needs a home in `imgstatus` and a rendering on
+the corner page BEFORE the first promoted render publishes, not after. Publishing
+first and labelling second means a window in which the site overstates what it
+audited.
+
+Coverage is unaffected either way and stays 23 discs. A promoted render does not
+make a corner audited, which is the whole point of ruling 1.
+
+Source: publish close-out, 2026-08-20.
+
+## 19. A letter with no salutation at all still skips the addressee check
+
+Closed in burn 30: a salutation without the word "Dear" no longer skips the
+addressee gate. What is still open is the case below it. `verifyLetter` runs:
+
+```js
+if (inputs.addressee) {
+  const m = body.match(SALUTATION) || body.match(SALUTATION_BARE);
+  if (m) { ...compare office and person... }
+}
+```
+
+A body matching neither pattern is not checked and not failed. Silence reads as
+consent, which is the same shape as the bug just fixed, one level down.
+
+Why it was not closed at the same time: `verifyLetter` is called on
+single-sentence fragments throughout `tools/verify.test.mjs`, which supply an
+addressee in their inputs and carry no salutation because they are testing the
+number, voices, press and magnitude rules. Requiring a salutation to exist fails
+six of those cases, and rewriting fixtures under time pressure to satisfy a rule
+change is how a real regression gets hidden in the churn.
+
+The fix wants a caller-supplied intent rather than a guess at the body's shape:
+`verifyLetter(text, inputs, { whole: true })`, set on the production paths in
+`src/index.js`, `src/agent.js` and `tools/generate_letters.mjs`, and left off in
+fragment tests. Then a whole letter with no addressee fails, and a fragment
+under test does not.
+
+Not urgent. Every one of the 116 letters published 2026-08-21 carries a
+salutation naming its own district's representative, checked directly rather
+than inferred from the gate having passed them.
+
+Source: publish close-out, 2026-08-20.
+
+## 20. Frame legibility, not quota, is what bounds the promotion strategy
+
+The five quota holds of 2026-08-20 made the render stage look rate limited. It is
+not, or not mainly. Running the preflight over the six retry candidates offline,
+against frames already stored, with zero spend:
+
+```
+6th-and-mission          checkable=false   watermark=false  street=false
+larkin-and-myrtle        checkable=true    watermark=true   street=false
+6th-and-natoma           checkable=false   watermark=false  street=false
+lafayette-and-mission    checkable=false   watermark=false  street=false
+11th-and-market          checkable=false   watermark=false  street=false
+24th-and-lilac           checkable=true    watermark=true   street=false
+```
+
+Two of six. The gate is paired, so it can only report on a region that was
+legible in the SOURCE frame. Where the source reads nothing, the gate abstains,
+and an abstain is not a pass. Those four corners cannot produce a publishable
+render from the frames currently stored for them, at any price, from any model.
+
+This matches the original calibration: tesseract read the Google watermark on
+only 9 of the 23 known-good audited frames. Roughly a third to a half of stored
+Street View frames are legible enough to verify against, and that fraction, not
+the daily cap and not the rate window, is the ceiling on how many corners can be
+promoted.
+
+Three consequences worth deciding on rather than discovering later:
+
+1. **The queue should be ordered by frame legibility, not only by danger score.**
+   Selecting the worst-ranked eligible corners first spends the daily cap on
+   corners that mostly cannot pass. Running the preflight across the whole
+   enriched pool is free and would let the ranking skip the unverifiable.
+
+2. **Re-fetching a frame is the actual fix for these corners, not re-rendering.**
+   Street View has multiple panoramas per location and the stored frame is one
+   fetch from one heading. A corner whose watermark is illegible may well have a
+   sibling frame where it is not. That is a Maps Static spend, not a Vertex one.
+
+3. **The signage signal has still never fired.** Across every corner checked so
+   far, `street=false` everywhere: no source frame has yet OCR'd its own street
+   name in the upper band. The signal is wired and tested but has never once
+   contributed a verdict, so the gate is in practice still running on the
+   watermark alone. Either the band is wrong, the corners genuinely lack
+   overhead plates, or the upscale is not enough for the type size.
+
+Source: render retry, 2026-08-21.
+
+## 21. The Worker's own letter path reads no finishReason and sets no ceiling
+
+Fixed in the offline tool, still open in the Worker. `src/index.js` builds its
+live draft with:
+
+```js
+body: JSON.stringify({ contents: [{ parts: [{ text: prompt + extra }] }] }),
+```
+
+No `generationConfig`, so no `maxOutputTokens`, and the response handler reads
+`candidates[0].content.parts` and never looks at `finishReason`. That is the
+exact shape that put 25 truncated letters on the site: a draft cut off by the
+token ceiling is indistinguishable from a finished one.
+
+It is not urgent, because the completeness rule added on 2026-08-21 catches it
+from the other side. A live draft that stops early now fails verification and
+the corner serves its pending state rather than a fragment. That is the correct
+outcome and it is vendor independent, which is the whole argument for putting
+the check in the gate rather than in the caller.
+
+What is still worth doing, in order:
+
+1. Read `finishReason` in the Worker's `draft()` and treat anything other than
+   `STOP` as a retryable fault. The retry loop already exists and already backs
+   off; it just cannot see this failure.
+2. Set an explicit `maxOutputTokens`. The offline tool needed 8192 for a 220
+   word letter because Gemini 2.5 charges thinking tokens against the same
+   budget, and relying on an undocumented API default for that is how the
+   ceiling moves under you.
+
+One corner did not fit even at 8192: `6th-market` hit MAX_TOKENS twice at that
+ceiling and stayed pending. Its prompt carries a 25 headline timeline, which is
+the largest press history in the fleet, so the prompt itself is long before the
+model starts thinking. Worth checking whether the timeline bullet should be
+summarised rather than enumerated before raising the ceiling again.
+
+Source: truncation sweep, 2026-08-21.

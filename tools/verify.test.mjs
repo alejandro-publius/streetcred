@@ -60,6 +60,59 @@ if (!retry.includes('"412"')) {
   console.log("pass  retry instruction names the failing token");
 }
 
+// Both radii are constants the prompt instructs the letter to state. 80 was
+// missing from the input set, so a draft that followed the prompt was rejected
+// for citing a figure the records "do not support".
+test_both_radii();
+function test_both_radii() {
+  const r = verifyLetter(
+    "The count covers a 150 metre radius while the grade is computed over a tighter 80 metre core.",
+    inputs,
+  );
+  const bad = r.failures.filter((f) => f.kind === "number").map((f) => f.token);
+  if (bad.length) {
+    failed++;
+    console.log(`FAIL  both radii are sourced constants (flagged: ${bad.join(", ")})`);
+  } else {
+    console.log("pass  both radii are sourced constants");
+  }
+}
+
+// The hazard lane's figures are handed to the model inside h.detail with an
+// instruction to present them as documented. Sixteen of the first fleet run's
+// twenty-one number failures were drafts doing exactly that.
+test_hazard_figures();
+function test_hazard_figures() {
+  const withHz = buildInputSet({
+    corner: { name: "Taylor Street and Turk Street", short: "Taylor & Turk", fix: {}, district: 5 },
+    stats: { crashes: 41, district: 5 },
+    news: { items: [] },
+    voices: { items: [] },
+    hazards: { items: [{ reports311: 8, crossingCollisions: 13, label: "x", verdict: "REPORTED", detail: "8 street-condition 311 reports in 12 months" }] },
+    supervisor: "Bilal Mahmood",
+  });
+  const r = verifyLetter(
+    "City records show 8 street-condition 311 reports in 12 months and 13 pedestrian crossing collisions in 5 years, in District 5.",
+    withHz,
+  );
+  const bad = r.failures.filter((f) => f.kind === "number").map((f) => f.token);
+  if (bad.length) {
+    failed++;
+    console.log(`FAIL  hazard evidence figures are sourced (flagged: ${bad.join(", ")})`);
+  } else {
+    console.log("pass  hazard evidence figures are sourced");
+  }
+
+  // And an invention still fails, so the fix did not blunt the rule.
+  const inv = verifyLetter("The corner sits in ZIP 94102.", withHz);
+  if (inv.failures.some((f) => f.kind === "number" && f.token === "94102")) {
+    console.log("pass  an invented figure still fails after the fix");
+  } else {
+    failed++;
+    console.log("FAIL  an invented figure no longer fails");
+  }
+}
+
 // ------------------------------------------------- lane consistency cases
 //
 // Every case below is a sentence with no checkable digit in it. That is the

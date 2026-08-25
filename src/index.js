@@ -2,6 +2,11 @@ import {
   CORNERS, DEFAULT_SLUG, SAMPLE, supervisorFor, canonicalSlug, makeCorner, SERVICE_NAMES,
   resolvedDistrict, addresseeFor,
   pacificToday as pacificTodayShared,
+  // The dated formatter, not the zero-argument one aliased below. `pacificDay`
+  // in this file means TODAY; passing it a timestamp silently ignores the
+  // argument and dates every row as now, which is the exact failure the alias
+  // comment warns about.
+  pacificDay as pacificDayOf,
   COTD_SEED,
 } from "./data.js";
 import { PAGE, NOT_FOUND } from "./page.js";
@@ -21,10 +26,12 @@ import {
   getLetterBackoff, setLetterBackoff,
   getVoicesStored, exaBudget, actorRunBudget, getActorCosts, getVoicesSummary,
   recordExaSpend, recordExaProbe, getExaProbe,
-  getPress, putPress, getPressRollup, bumpPressRollup, getBurnCheckpoint, putBurnCheckpoint,
+  getPress, putPress, getPressRollup, bumpPressRollup, bumpPressRollupBulk, openExaMeter,
+  getBurnCheckpoint, putBurnCheckpoint,
   radarBudget, countRadarDetection, getMonitors, putMonitors, getRadarFeed, pushRadarFeed, putRadarUnknown,
   recountPressCitations, getPressCitations, CITATION_CACHE_S,
   recountAuditTiers, getAuditTiers, AUDIT_TIER_CACHE_S,
+  getFrameIndex,
 } from "./store.js";
 import {
   judge, resultsFrom, monitorIdFrom, RADAR_VERSION,
@@ -32,15 +39,15 @@ import {
 } from "./radar.js";
 import { RADAR_PAGE } from "./radarpage.js";
 import { enrichPress, PRESS_VERSION } from "./pressenrich.js";
-import { computeScore, SCORE_VERSION, SCORE_CAVEAT } from "./score.js";
+import { computeScore, SCORE_VERSION } from "./score.js";
 import {
   cityCornerFor, getCityMeta, getRankPage, cityStats, cityScore, cityCred,
   coverageDiscs, coverageRadiusM,
   cityNews, cityVoices, cityTimeline, cityRun, cityHazards, cityLetter,
-  TIERS, tierOf, RANK_PAGE_SIZE, tagTiers, putCityMeta,
+  TIERS, tierOf, RANK_PAGE_SIZE, tagTiers, putCityMeta, getCityStreets,
 } from "./city.js";
 import { evidenceLine } from "./page.js";
-import { imageryFor } from "./imagery.js";
+import { imageryFor, provenanceOf, PROMOTED_FROM_ENRICHED } from "./imagery.js";
 import { corroborate, HAZARD_VERSION } from "./hazards.js";
 import { credCheck, isSafetyCoverage, CRED_VERSION } from "./cred.js";
 import { buildManifest, PUBLIC_TRIGGERS } from "./manifest.js";
@@ -48,13 +55,15 @@ import { classify, streetTokens, domainOf, searchQuery } from "./newsfilter.js";
 import { buildTimeline, TIMELINE_VERSION } from "./timeline.js";
 import { buildSuggestion, SUGGEST_VERSION } from "./suggest.js";
 import { buildInputSet, verifyLetter, retryInstruction, VERIFY_VERSION } from "./verify.js";
+import { buildLetterPrompt } from "./letterprompt.js";
 import { handleAgentReport, journalStats, JOURNAL_CAP } from "./agent.js";
 import { WATCHDOG } from "./watchdog.js";
 import { projectImpact } from "./impact.js";
 import { METHODOLOGY } from "./methodology.js";
 import { WATCHLIST_PAGE } from "./watchlistpage.js";
+import { AUDITED_PAGE } from "./auditedpage.js";
 import { buildWatchlist, buildConnections, reciprocal, WATCHLIST_VERSION, runCounts } from "./press.js";
-import { commissionVoices, ingestVoices } from "./voices.js";
+import { commissionVoices, ingestVoices, cornerTokens, namesForeignCrossing, cornerSides, matchLevel } from "./voices.js";
 import { CHANGES } from "./changes.js";
 import { STATUS } from "./status.js";
 
@@ -200,7 +209,11 @@ function asset(env, origin, path) {
 
 // ---------------------------------------------------------------- stats
 
-async function getStats(c) {
+// Exported so tools/generate_letters.mjs computes the letter's figures with
+// exactly this function rather than a second copy of the queries. Two stat
+// builders that drift apart would put one set of numbers in the letter and
+// another on the page beside it.
+export async function getStats(c) {
   const circle = `within_circle(point, ${c.lat}, ${c.lon}, ${c.radiusMeters})`;
   const since = new Date(Date.now() - 3 * 365 * 24 * 3600 * 1000).toISOString().slice(0, 19);
   // The collision dataset reaches back to 2005. Unbounded, the count describes
@@ -561,14 +574,63 @@ async function getNews(c, env) {
 // and would have woken up silently the first time somebody added those two
 // variables, which is the wrong way for a data path to change. Removed rather
 // than left dormant; the audit trail is in git.
+// A published account has to be about the corner it is published on.
+//
+// The relevance scorer runs at ingest and cannot be re-run without touching
+// stored records, so this bar runs on the way out instead: the stored record
+// is left exactly as the scrape and the scorer wrote it, and the page is not
+// allowed to show a quote about somewhere else. Where the two disagree, the
+// payload says so, and the count under the lane header falls with it because
+// that sentence counts the items it is handed.
+//
+// An unavailable street index is reported, never treated as a pass: a bar
+// that answers "fine" when it could not look is gotcha 22.
+async function checkVoiceItems(payload, c, env) {
+  const items = payload?.items || [];
+  if (!items.length) return payload;
+  const streets = await getCityStreets(env).catch(() => null);
+  if (!streets?.size) return { ...payload, crossCheck: "unavailable" };
+  const tokens = cornerTokens(c);
+  const sides = cornerSides(c);
+  const kept = [];
+  const dropped = [];
+  for (const v of items) {
+    let foreign = false;
+    try {
+      foreign = namesForeignCrossing(v.text, tokens, streets);
+    } catch {
+      return { ...payload, crossCheck: "unavailable" };
+    }
+    // Which of the two streets this account actually names, carried beside
+    // the account so the page can label a corridor quote as one. Annotated on
+    // the way out like the check itself: the stored record is untouched.
+    (foreign ? dropped : kept).push(foreign ? v : { ...v, match: matchLevel(v.text, sides) });
+  }
+  // `kept`, not `payload.items`: the annotated copies are the point, and
+  // returning the originals here dropped every match label on exactly the
+  // corners that have a quote to label.
+  if (!dropped.length) return { ...payload, items: kept, crossCheck: "checked" };
+  return {
+    ...payload,
+    items: kept,
+    crossCheck: "checked",
+    // What was withheld and why, so the empty state can say it in words
+    // rather than looking like a scrape that found nothing.
+    suppressed: dropped.length,
+    suppressedReason: "named a different crossing",
+    // With nothing left, this is an empty lane and has to render as one.
+    source: kept.length ? payload.source : "empty",
+  };
+}
+
 async function getVoices(c, env, origin) {
   // Voices the cron commissioned and ingested live in KV. The baked assets
   // predate that path and stay authoritative for the two corners that were
   // scraped by hand before the demo.
   const stored = await getVoicesStored(env, c.slug).catch(() => null);
-  if (stored?.items?.length) return { ...stored, source: "cache" };
+  if (stored?.items?.length) return checkVoiceItems({ ...stored, source: "cache" }, c, env);
   const baked = await bakedVoices(c, env, origin);
-  if (baked.items?.length) return baked;
+  if (baked.items?.length) return checkVoiceItems(baked, c, env);
   // A commissioned run that came back with nothing is a real result and says
   // so, rather than falling back to the generic empty state that means nobody
   // has ever looked.
@@ -648,78 +710,13 @@ async function mapImage(c, env, ctx) {
 }
 
 // ---------------------------------------------------------------- letter
-async function getLetter(c, env, ctx) {
-  const supervisor = supervisorFor(resolvedDistrict(c, ctx.stats));
-  const headlines = (ctx.news?.items || [])
-    .slice(0, 2)
-    .map((n) => `"${n.title}" (${n.domain}${n.date ? ", " + n.date : ""})`)
-    .join("; ");
-  // Only feed the letter a resident quote that is actually about the street. The
-  // scrape at this corner returns plenty of transit-station commentary, and a
-  // letter quoting a review of the escalators would weaken the ask.
-  const ONTOPIC = /crosswalk|crossing|pedestrian|sidewalk|driver|traffic|curb|intersection|corner/i;
-  const quote = (ctx.voices?.items || []).map((v) => v.text).find((t) => t && ONTOPIC.test(t));
-  // With no clear district majority the addressee is the citywide official, and
-  // the letter must not invent a district number to sound authoritative. One
-  // resolver, shared with every other path that names an official, because two
-  // paths answering this differently is exactly how a District 2 corner got a
-  // letter addressed to the Mayor.
-  const dist = resolvedDistrict(c, ctx.stats);
-  // addresseeFor carries the title rule: "Supervisor {name}" only when the
-  // district maps to a real Supervisor, and the citywide official under their
-  // own title otherwise, never "Supervisor Mayor Daniel Lurie".
-  const addressee = addresseeFor(dist);
-  const where = dist ? ` in District ${dist}` : " in San Francisco";
-  const signoff = dist ? `A resident of District ${dist}` : "A resident of San Francisco";
-  // The index only enters the letter when it actually computed. A letter that
-  // cites a score the page could not produce is a letter citing nothing.
-  // Each verdict gets its own licence. CONFIRMED may be stated as documented,
-  // REPORTED belongs to the record rather than the photograph, and CANDIDATE is
-  // an observation the letter must never dress up as established fact. Before
-  // this existed the letter asserted the same hardcoded audit sentence at every
-  // corner, including corners whose crosswalks are visibly in good condition.
-  const hz = ctx.hazards?.items || [];
-  const hazardLines = hz.length
-    ? hz
-        .map((h) => {
-          const what = h.label.toLowerCase();
-          if (h.verdict === "CONFIRMED")
-            return `- The automated visual audit flagged ${what} in the Street View photograph, and city records corroborate it: ${h.detail}. You may present this as documented.`;
-          if (h.verdict === "CANDIDATE")
-            return `- The audit also flagged ${what}, which does not yet appear in city records. Present this as an observation from the photograph only. Never state it as established fact.`;
-          return `- City records show ${h.detail} relating to ${what}, although the visual audit did not find it in the photograph. Attribute this to the records, not to the audit.`;
-        })
-        .join("\n")
-    : "- No visual audit findings are available for this corner. Do not describe any audit.";
+export async function getLetter(c, env, ctx) {
+  // Built by the shared module so the Worker and the offline generator in
+  // tools/generate_letters.mjs cannot drift. Everything this used to compute
+  // inline lives there now, unchanged.
+  const { prompt, supervisor, district: dist, quote, headlines, signoff, hazardItems, longevityLine } =
+    buildLetterPrompt(c, ctx);
 
-  // Phrased as a comparison rather than a raw score, because that is what the
-  // number now is. "99 out of 100" invites a reader to imagine a scale that
-  // stops somewhere; "worse than 99 percent of San Francisco intersections" is
-  // the actual claim and it is the one a Supervisor can check.
-  const scoreLine = ctx.score
-    ? `- This intersection shows more reported harm than ${ctx.score.index} percent of San Francisco intersections, which is grade ${ctx.score.grade} on the Danger Index. State that comparison in those terms, not as a score out of 100, and immediately add this caveat in your own words: ${SCORE_CAVEAT}\n`
-    : "";
-
-  // Only when the history is long enough to mean something, and only ever as
-  // coverage-we-can-find. Two years is the floor: one story last year and one
-  // this year is not a decade of neglect and must not be dressed up as one.
-  const yrs = ctx.timeline?.yearsReported;
-  const longevityLine =
-    Number.isFinite(yrs) && yrs >= 2
-      ? `- Press coverage of safety problems at this intersection goes back at least ${yrs} years, to ${ctx.timeline.firstReportedYear}. State this as the earliest coverage we can find, never as the first time the problem was reported.\n`
-      : "";
-
-  const prompt = `Write a respectful one-page letter from a resident to San Francisco ${addressee} about the intersection of ${c.name}${where}.
-
-Use these facts and cite them plainly:
-- ${ctx.stats?.crashes ?? 0} injury collisions recorded by the city within 150 meters of this intersection in the last five years${ctx.stats?.fatal ? `, ${ctx.stats.fatal} of them fatal` : ""}. Do not describe this figure as covering any longer period. The first time you cite this count, state in the same sentence that it covers a 150 metre radius while the Danger Index grade is computed over a tighter 80 metre core, so the two figures are measured over different areas and a reader should not expect them to reconcile.
-- ${ctx.stats?.reports311 ?? 0} street-condition 311 reports at this location in the last three years, counting street defects, sidewalk and curb, signs, streetlights and blocked sidewalks only.
-${headlines ? `- Recent press coverage: ${headlines}.` : "- No press coverage was found for this corner. Do not cite or invent any news reporting."}
-${scoreLine}${longevityLine}${hazardLines}
-${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident testimony."}
-- The request: fund ${c.fix.name}, estimated ${c.fix.cost}, through the ${c.fix.grant}.
-
-Rules: plain civic English. Under 220 words. Address only ${addressee}. Distinguish clearly between what city records document and what the visual audit merely observed. Never present an observation as a documented fact. No em dashes anywhere. No placeholders in brackets. Sign off as "${signoff}". Return only the letter text.`;
 
   // 3.7-flash returns UNAVAILABLE under load often enough that a single attempt
   // makes the letter lane look broken when it is only busy. Transient statuses
@@ -781,10 +778,16 @@ Rules: plain civic English. Under 220 words. Address only ${addressee}. Distingu
     news: ctx.news,
     timeline: ctx.timeline,
     supervisor: dist ? supervisor : null,
+    // Arms the completeness rule. A letter served to a visitor must have
+    // reached its request, and the signoff is where a finished letter ends.
+    signoff,
     // The voices lane was already fetched to pick the prompt's quote. Passing
     // it here is what lets the verifier refuse a letter that describes what
     // residents said at a corner where nobody said anything.
     voices: ctx.voices,
+    // The prompt quotes h.detail and tells the model to present it as
+    // documented, so the figures inside it have to be sourced.
+    hazards: ctx.hazards,
   });
 
   let text = await draft();
@@ -803,7 +806,7 @@ Rules: plain civic English. Under 220 words. Address only ${addressee}. Distingu
   const inputs = ["stats"];
   if (headlines) inputs.push("press");
   if (quote) inputs.push("voices");
-  if (hz.length) inputs.push("audit");
+  if (hazardItems.length) inputs.push("audit");
   if (ctx.score) inputs.push("index");
   if (longevityLine) inputs.push("history");
   const generatedAt = new Date().toISOString();
@@ -1159,6 +1162,20 @@ export const PRESS_BATCH_PER_NIGHT = 100;
 // does not save. Overnight that is roughly 190 corners, at a cost the cap
 // still governs.
 export const PRESS_BATCH_PER_TICK = 6;
+
+// What the provider says when the key itself is out of credit, as opposed to
+// when our own cap is reached. Two different facts: the first needs a new key,
+// the second needs a new period or a raised cap, and reporting either as the
+// other sends somebody to fix the wrong thing.
+export const EXA_CREDITS_SPENT = /\b402\b|credits?/i;
+
+// What both Exa lanes say when the key is refused on balance. One sentence, so
+// the press lane and the watchlist lane cannot describe the same condition two
+// different ways, and it names the remedy because "paused" without one reads as
+// a state somebody else is responsible for.
+export const EXA_PAUSED_NOTE =
+  "the exa key was refused on credit (402); the lane is paused, not broken, and resumes when a " +
+  "funded key is installed with: npx wrangler secret put EXA_API_KEY";
 const PRESS_FRESH_DAYS = 30;
 const PRESS_LANES = 4;
 
@@ -1198,6 +1215,13 @@ export async function pressBatch(env, limit = PRESS_BATCH_PER_NIGHT) {
   }
 
   const out = { source: "live", checked: 0, withCoverage: 0, empty: 0, deferred: 0, failed: 0, spentUsd: 0 };
+  // One metering session and one rollup write for the whole tick, instead of
+  // three meter writes per Exa call and a rollup write per corner. The lane was
+  // spending roughly 2,976 KV writes a day against a 1,000 a day allowance, and
+  // almost all of it was write amplification rather than work: the counts stay
+  // identical, the ledger still measures every dollar, and nothing is throttled.
+  const meter = openExaMeter(env);
+  const rollup = [];
   let next = 0;
   const worker = async () => {
     for (;;) {
@@ -1206,24 +1230,52 @@ export async function pressBatch(env, limit = PRESS_BATCH_PER_NIGHT) {
       if (out.deferred) return;   // the cap is reached, stop the whole run
       try {
         const corner = { slug: row.slug, name: row.name, city: "San Francisco", lat: row.lat, lon: row.lon };
-        const rec = await enrichPress(env, corner);
+        const rec = await enrichPress(env, corner, meter);
         if (rec.source === "budget-deferred") {
           out.deferred += 1;
-          await bumpPressRollup(env, rec).catch(() => {});
+          rollup.push(rec);
           return;
         }
         await putPress(env, row.slug, rec);
-        await bumpPressRollup(env, rec).catch(() => {});
+        rollup.push(rec);
         out.checked += 1;
         out.spentUsd = Math.round((out.spentUsd + (rec.cost?.usd || 0)) * 1e6) / 1e6;
         if (rec.source === "live") out.withCoverage += 1;
         else out.empty += 1;
-      } catch {
+      } catch (e) {
+        // A key with no credit left is not a corner that failed.
+        //
+        // exaPost throws "exa 402 credits" when the provider refuses on
+        // balance, and this catch counted it as a generic failure, so a key at
+        // its ceiling read as six corners breaking for unknown reasons. That is
+        // the silent degradation: the lane looked broken instead of paused, and
+        // nothing on the site said the word credit.
+        //
+        // Recorded as its own state, and the run stops: every remaining corner
+        // in this tick would refuse for the same reason and counting them as
+        // failures would bury the one fact worth reporting.
+        if (EXA_CREDITS_SPENT.test(String(e?.message || e))) {
+          out.paused = (out.paused || 0) + 1;
+          out.pausedReason = EXA_PAUSED_NOTE;
+          rollup.push({
+            source: "budget-paused",
+            version: PRESS_VERSION,
+            slug: row.slug,
+            reason: out.pausedReason,
+            fetchedAt: new Date().toISOString(),
+          });
+          return;
+        }
         out.failed += 1;
       }
     }
   };
   await Promise.all(Array.from({ length: Math.min(PRESS_LANES, targets.length) }, worker));
+  // Flushed after the lanes finish, in a fixed order, so a partial tick still
+  // records what it measured. bumpPressRollupBulk has existed since the rollup
+  // was written and nothing called it.
+  await meter.flush().catch(() => {});
+  if (rollup.length) await bumpPressRollupBulk(env, rollup).catch(() => {});
   // The stored press records are what make this resumable corner by corner.
   // The checkpoint only carries the reader's place in the rank and the running
   // totals the status card reads.
@@ -1539,9 +1591,38 @@ async function ogFor(c, env) {
   // Whether this corner actually has a generated fix image. The page's own
   // subtitle promises "a picture of the fix", and it must not promise one it
   // is not showing. It comes back by itself when generation does.
+  // The frames, in the server HTML.
+  //
+  // The stage used to ship a loading card on every corner and let the client
+  // fill it, even when this very function had already read the record that says
+  // which states exist. So the raw HTML of a fully audited corner said "loading"
+  // about photographs that were sitting in KV, and anything reading the page
+  // without running scripts saw a corner with no imagery at all.
+  //
+  // Only a record that says ready earns srcs. A pending or failed one still
+  // hands the client the placeholder, because those are the cases where the
+  // answer genuinely is not known yet.
+  const st = imagery?.states || [];
+  const frames =
+    imagery?.status === "ready"
+      ? {
+          today: `/gen/${c.slug}/today.jpg`,
+          hazards: st.includes("hazards") ? `/gen/${c.slug}/hazards.jpg` : null,
+          fix: st.includes("fix") ? `/gen/${c.slug}/fix.jpg` : null,
+        }
+      : null;
+
   return {
     score,
     cred,
+    frames,
+    // Where the render came from, so the caption can say so without waiting on
+    // the imagery fetch.
+    provenance: provenanceOf(imagery),
+    // Whether a stored probe actually confirmed Street View has nothing here,
+    // as opposed to us simply not having fetched it. Those are different facts
+    // and only the first is a claim about Google.
+    imageryStatus: imagery?.status || null,
     // Same gate as the API path. This one writes the letter straight into the
     // server HTML, so a letter that may not be served over the API must not
     // arrive by the shorter route either; that is how a rail becomes a
@@ -1549,6 +1630,87 @@ async function ogFor(c, env) {
     letter: storedLetterServes(letter) ? letter : null,
     tier: tierOf(c, imagery),
     showsFix: Boolean(imagery?.states?.includes("fix")),
+  };
+}
+
+// ---------------------------------------------------------------- the audited index
+
+// Everything /audited renders, assembled from stored records only.
+//
+// The section a corner lands in is decided by the provenance field on its
+// imagery record, not by which roster list it appears in. Those two can drift,
+// and when they do the provenance is the one attached to the render itself, so
+// it is the one that decides what the page may claim about it.
+//
+// Every lane cell is read rather than inferred. "No press found" is a result
+// and it renders as one; a corner with no press record at all lands in the same
+// cell, because an absent record is not evidence of a lane that ran.
+export async function auditedIndex(env) {
+  const meta = await getCityMeta(env).catch(() => null);
+  const roster = [...new Set([...(meta?.audited || []), ...(meta?.enriched || [])])];
+  const log = (await env.STORE?.get("cotd:log", "json").catch(() => null)) || [];
+  const dateBySlug = new Map(
+    (Array.isArray(log) ? log : log.entries || []).filter((e) => e?.slug).map((e) => [e.slug, e.date]),
+  );
+
+  const rows = await Promise.all(
+    roster.map(async (slug) => {
+      const img = await getImageryStatus(env, slug).catch(() => null);
+      // Only a corner that actually holds a fix render belongs on this page.
+      // The roster lists corners at every stage; this page is about the ones
+      // carrying generated imagery.
+      if (img?.status !== "ready" || !(img.states || []).includes("fix")) return null;
+      const [corner, score, letter, press, voices] = await Promise.all([
+        cornerBySlug(env, slug).catch(() => null),
+        getScore(env, slug, SCORE_VERSION).catch(() => null),
+        getVerifiedLetter(env, slug).catch(() => null),
+        getPress(env, slug, PRESS_VERSION).catch(() => null),
+        getVoicesStored(env, slug).catch(() => null),
+      ]);
+      return {
+        slug,
+        name: corner?.name || slug,
+        grade: score?.grade || null,
+        index: Number.isFinite(score?.index) ? score.index : null,
+        // Two different facts, and the row says which it is showing. cotd:log
+        // records the morning cron auditing a corner, which is the audit date.
+        // imgstatus.at records when the imagery was generated, which is not the
+        // same claim and must not borrow the same label. The log only reaches
+        // back three mornings, so without the fallback 22 of 23 rows would
+        // carry no date at all and the sort would be alphabetical wearing a
+        // chronological caption.
+        // A date beyond today in America/Los_Angeles is treated as absent:
+        // an absent date sorts last and reads "no recorded date", which is
+        // true; a future one would be a claim about an audit yet to happen.
+        date: (() => {
+          const d = dateBySlug.get(slug) || (Number.isFinite(img.at) ? pacificDayOf(img.at) : null);
+          return d && String(d) > pacificDay() ? null : d;
+        })(),
+        dateKind: dateBySlug.has(slug) ? "audited" : "generated",
+        provenance: provenanceOf(img),
+        letter: storedLetterServes(letter),
+        fix: true,
+        // Three states, not two. "No press found" says a search ran and came
+        // back empty, which is a result. Most audited corners have no
+        // press:corner record at all, meaning the batch lane has not reached
+        // them: /api/news answers those with a LIVE Exa search at read time,
+        // which is why the corner page shows items the store does not hold.
+        // Reporting that as "no press found" would be the page claiming a
+        // result for a search that never ran.
+        press: !press ? "unchecked" : (press.items || []).length > 0 ? "found" : "none",
+        voices: !voices ? "unchecked" : (voices.items || []).length > 0 ? "found" : "none",
+      };
+    }),
+  );
+
+  const live = rows.filter(Boolean);
+  // Most recently audited first, so the morning cron's newest corner is on top
+  // by itself. A corner with no recorded date sorts last rather than to the
+  // top, because an absent date is not a recent one.
+  const bydate = (a, b) => String(b.date || "").localeCompare(String(a.date || "")) || a.slug.localeCompare(b.slug);
+  return {
+    full: live.filter((r) => r.provenance !== PROMOTED_FROM_ENRICHED).sort(bydate),
+    promoted: live.filter((r) => r.provenance === PROMOTED_FROM_ENRICHED).sort(bydate),
   };
 }
 
@@ -1911,6 +2073,12 @@ export async function watchlistRun(env) {
     }
     await putWatchlist(env, w);
     const counts = runCounts(w);
+    // A key refused on balance is a paused lane, not a broken one. The press
+    // lane learned this on 2026-08-22 and this one did not: every search in a
+    // run refuses for the same reason, so the run reported itself failed and
+    // nothing on the site said the word credit. Same rule, same wording, so the
+    // two lanes describe the same condition the same way.
+    const pausedOnCredit = Boolean(counts.failed) && EXA_CREDITS_SPENT.test(String(counts.commonReason || ""));
     const record = {
       at: started,
       ok: counts.failed === 0,
@@ -1921,12 +2089,16 @@ export async function watchlistRun(env) {
       rejected: w.rejected,
       cycle: w.cycle,
       ...(counts.commonReason ? { reason: counts.commonReason } : {}),
+      ...(pausedOnCredit ? { paused: true, pausedReason: EXA_PAUSED_NOTE } : {}),
     };
     await putWatchlistRun(env, record);
     // A run that did not complete every search it attempted is the exact
     // failure this move was made to end, so it is logged loudly rather than
-    // left to be inferred from the page.
-    if (counts.failed) {
+    // left to be inferred from the page. A paused run is said differently,
+    // because "incomplete" invites somebody to go looking for a fault.
+    if (pausedOnCredit) {
+      console.log(`watchlist run paused: ${EXA_PAUSED_NOTE}`);
+    } else if (counts.failed) {
       console.log(
         `watchlist run incomplete: ${counts.completed} of ${counts.attempted} completed, ${counts.failed} cut off`,
       );
@@ -1934,6 +2106,13 @@ export async function watchlistRun(env) {
     return { ok: true, ...record };
   } catch (e) {
     const reason = String(e?.message || e).slice(0, 200);
+    // The whole run refused before any entry completed. Same distinction.
+    if (EXA_CREDITS_SPENT.test(reason)) {
+      const record = { at: started, ok: false, paused: true, pausedReason: EXA_PAUSED_NOTE, reason };
+      await putWatchlistRun(env, record).catch(() => {});
+      console.log(`watchlist run paused: ${EXA_PAUSED_NOTE}`);
+      return { ok: false, ...record };
+    }
     await putWatchlistRun(env, { at: started, ok: false, reason }).catch(() => {});
     console.log(`watchlist run failed: ${reason}`);
     return { ok: false, reason };
@@ -2268,7 +2447,18 @@ export default {
               live: !burn.stopReason && Date.now() - Date.parse(burn.updatedAt || 0) < 30 * 60 * 1000,
             }
           : null;
-        return new Response(STATUS(synth, incidents, changes, origin, spend, Boolean(env.PREVIEW), await mastScored(), scan, await getWatchlist(env, WATCHLIST_VERSION).catch(() => null)), {
+        return new Response(STATUS(synth, incidents, changes, origin, spend, Boolean(env.PREVIEW), await mastScored(), scan, await getWatchlist(env, WATCHLIST_VERSION).catch(() => null), await env.STORE?.get("budget:gemini", "json").catch(() => null)), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+
+      // Deliberately above the corner lookup, for the same reason /watchlist
+      // and /watchdog are: `corner(url, env)` resolves any unclaimed path as a
+      // corner slug, so a surface routed after it is answered with NOT_FOUND
+      // for a corner named "audited" that does not exist.
+      if (p === "/audited" || p === "/audited/") {
+        const rows = await auditedIndex(env);
+        return new Response(AUDITED_PAGE(rows, origin, Boolean(env.PREVIEW), await mastScored()), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -2360,31 +2550,52 @@ export default {
           if (!log.length) return null;
           const newest = log[log.length - 1];
 
-          // The hero features the newest corner that actually has both frames,
-          // not simply the newest corner. The embed's whole point is the drag
-          // slider, and a slider needs two panes: featuring a corner whose
-          // imagery lane has not returned puts a pending card where the product
-          // demonstration should be. Bounded walk backwards, because the log is
-          // long and this runs on every homepage load.
+          // The hero is the newest audit that has a complete visual lane, and
+          // it says so out loud when a newer one exists without imagery.
+          //
+          // This has now been both other things and each was wrong on its own.
+          // Featuring the newest corner carrying both frames gave a card
+          // reading "19th and Mission, audited 2026-08-18" directly above
+          // streak chips showing today: one page, two answers to what did we
+          // audit most recently, and the wrong one was the headline. Featuring
+          // the newest audit full stop fixed the contradiction and cost the
+          // card its subject, because the embed is a drag slider and a slider
+          // with one pane is a photograph with a handle on it.
+          //
+          // The rule below is the pair rather than either half. The card
+          // features a corner that can actually be dragged, and a sub-line
+          // names the newer audit whose imagery has not landed and links to it,
+          // so the page still gives exactly one answer to what was audited most
+          // recently. The walk is bounded because the log is long and this runs
+          // on every homepage load; beyond the window the hero falls back to the
+          // newest audit, which is the old behaviour and a true card.
           const WALK = 20;
+          // A slider needs two panes, so a lane is complete when both are
+          // stored. The fix render is the one that matters and the one the
+          // rule is written about, but featuring a corner holding a fix and no
+          // hazards frame would put the handle back on a single image.
+          const laneComplete = (st) => st.includes("hazards") && st.includes("fix");
+
           let featured = null;
           let fimg = null;
           for (let i = log.length - 1; i >= 0 && i >= log.length - WALK; i -= 1) {
             const img = await getImageryStatus(env, log[i].slug).catch(() => null);
-            const st = img?.states || [];
-            if (st.includes("hazards") && st.includes("fix")) {
+            if (img?.status === "ready" && laneComplete(img.states || [])) {
               featured = log[i];
               fimg = img;
               break;
             }
           }
-          // Nothing in living memory has both frames. Fall back to the newest
-          // rather than showing nothing: a text-only hero is worse than a
-          // slider and better than a hole.
           if (!featured) {
             featured = newest;
             fimg = await getImageryStatus(env, newest.slug).catch(() => null);
           }
+
+          // The newer audit the card is not featuring, if there is one. Not
+          // "the newest audit" unconditionally: when the newest audit is the
+          // featured corner there is nothing to disclose and the sub-line does
+          // not appear at all.
+          const pending = featured.slug === newest.slug ? null : newest;
 
           const [ec, escore, ecred] = await Promise.all([
             cornerBySlug(env, featured.slug).catch(() => null),
@@ -2393,13 +2604,26 @@ export default {
           ]);
           const states = fimg?.states || [];
           const base = `/gen/${featured.slug}`;
+          // A corner whose frame was published in the city bulk fetch has
+          // bytes in KV and no imgstatus record at all, which is the shape
+          // imageryFor already handles by consulting img:index. Without the
+          // same fallback here the hero declared "No photograph is stored for
+          // this corner" about a corner whose own page was serving the
+          // photograph, which is the newest-audit case every morning.
+          const framed = fimg ? null : await getFrameIndex(env).catch(() => null);
+          const hasToday = fimg ? fimg.status !== "nocoverage" : Boolean(framed?.slugs?.has(featured.slug));
           // A frame is only offered if it is actually stored. The embed never
           // borrows another corner's imagery and never re-shows yesterday's.
           const frames = {
-            today: fimg && fimg.status !== "nocoverage" ? `${base}/today.jpg` : null,
+            today: hasToday ? `${base}/today.jpg` : null,
             hazards: states.includes("hazards") ? `${base}/hazards.jpg` : null,
             fix: states.includes("fix") ? `${base}/fix.jpg` : null,
           };
+          // Where the featured corner's render came from, so the hero can say
+          // so under the image. Resolved from the stored record rather than
+          // inferred from the roster: absent means the record predates the
+          // field and the hero says nothing at all.
+          const featuredProvenance = provenanceOf(fimg);
           const hasGenerated = Boolean(frames.hazards || frames.fix);
 
           // The daily cadence is carried by the subtitle, which says one is
@@ -2413,6 +2637,7 @@ export default {
             slug: featured.slug,
             name: ec?.name || featured.name || featured.slug,
             date: featured.date,
+            provenance: featuredProvenance,
             // "This morning" is only true if this audit ran this morning in
             // Pacific, which is the timezone the claim is about. An older
             // featured corner states its real date and drops the claim rather
@@ -2423,6 +2648,18 @@ export default {
             evidence: evidenceLine(ecred, ec?.district),
             frames,
             state: hasGenerated ? "full" : frames.today ? "text-only" : "none",
+            // The newer audit whose visual lanes have not landed, for the
+            // sub-line. Carries its own date so the card can say "this
+            // morning" only when that is true of it, which is the same rule
+            // the featured corner's own caption follows.
+            pending: pending
+              ? {
+                  slug: pending.slug,
+                  name: pending.name || pending.slug,
+                  date: pending.date,
+                  auditedToday: pending.date === today,
+                }
+              : null,
           };
         })();
 
@@ -2479,7 +2716,7 @@ export default {
         // what makes the batch lane visible to a reader. A deferred record is
         // not an answer: that corner was never checked.
         const stored = await getPress(env, c.slug, PRESS_VERSION).catch(() => null);
-        if (stored && stored.source !== "budget-deferred") {
+        if (stored && stored.source !== "budget-deferred" && stored.source !== "budget-paused") {
           return await edgeCached(ctx, `news-${c.slug}`, 600, async () => stored);
         }
         // Press coverage is an Exa search per corner. Running one for every
@@ -2640,6 +2877,25 @@ export default {
             backoff,
           });
         }
+        // A stored letter is served before anything is drafted.
+        //
+        // This used to sit only inside the backoff branch above, so a corner
+        // with a perfectly good verified letter served it only while a backoff
+        // record happened to exist. That record has a TTL. When it expired the
+        // request fell through to drafting, drafting failed, and the catch
+        // below returned the pending state for a corner whose letter was
+        // sitting in KV the whole time. Corners went dark one at a time as
+        // their edge caches expired, which is why it looked per-corner.
+        //
+        // Drafting is the fallback, not the default. The letter lane's own
+        // claim is that it serves what passed the check; going to the model
+        // first and only remembering the stored answer on one particular
+        // failure path had that backwards.
+        const alreadyVerified = await getVerifiedLetter(env, c.slug).catch(() => null);
+        if (storedLetterServes(alreadyVerified)) {
+          return json({ ...alreadyVerified, source: "verified-cache" });
+        }
+
         // The slowest lane by far, and the one worth caching hardest: a fresh
         // draft costs several seconds of Gemini time.
         return await edgeCached(ctx, `letter-${LETTER_VERSION}-${c.slug}`, 24 * 3600, () =>
