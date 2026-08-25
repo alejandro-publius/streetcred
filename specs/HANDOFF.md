@@ -793,13 +793,25 @@ read behind it.
 
 ## FROZEN 2026-08-24. Read this block first.
 
-**Production: `44f5c9ac-cc49-4adb-b6b1-9524bfddc66d`**, deployed 2026-08-25,
-the breakage pass: two live faults fixed, the streak rendered, the Exa lanes
-made honest.
+**Production: `f7981e67-c5ac-46f2-b17d-7c44bbd6b723`**, deployed 2026-08-25,
+the powered-by card. The breakage pass before it is
+`44f5c9ac-cc49-4adb-b6b1-9524bfddc66d`.
 
 ```
-npx wrangler rollback 7fc904fd-7c1f-4d5d-8239-95765e700d5d
+npx wrangler rollback 44f5c9ac-cc49-4adb-b6b1-9524bfddc66d   # drop the card only
+npx wrangler rollback 7fc904fd-7c1f-4d5d-8239-95765e700d5d   # back to the freeze
 ```
+
+**The stripe on the powered-by card is an exception, not a precedent.** `.tape`
+is the hazard signal and it means one thing everywhere else: somebody outside
+this project is already saying this corner is dangerous, which is why it frames
+the press card and nothing else. The powered-by card is not that. The operator
+chose the treatment deliberately on 2026-08-25. If a third striped card ever
+appears, the signal is gone and the press card's frame stops carrying meaning.
+
+That card sits in whitespace the left column already had, by making the hero
+span both grid rows. `.herohead` is 636px with it against 635 without. Removing
+the span moves the fold 148px, and `tools/casefile_live.mjs` refuses that.
 
 That target is the state at the freeze, before anything on 2026-08-25. The
 intermediate `634e520c-d42b-4fc9-b967-63e14cc2fba0` is the corner-of-the-day
