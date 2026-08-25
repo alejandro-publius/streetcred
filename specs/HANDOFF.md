@@ -793,16 +793,48 @@ read behind it.
 
 ## FROZEN 2026-08-24. Read this block first.
 
-**Production: `634e520c-d42b-4fc9-b967-63e14cc2fba0`**, deployed 2026-08-25,
-corner-of-the-day selection rule plus the streak render backfill.
+**Production: `44f5c9ac-cc49-4adb-b6b1-9524bfddc66d`**, deployed 2026-08-25,
+the breakage pass: two live faults fixed, the streak rendered, the Exa lanes
+made honest.
 
 ```
 npx wrangler rollback 7fc904fd-7c1f-4d5d-8239-95765e700d5d
 ```
 
-That target is the state at the freeze, before the 2026-08-25 pass. The older
-`d8e50565-546f-48a7-9ff8-a87b4ce24524` is one step further back and was the
-rollback named at the freeze itself.
+That target is the state at the freeze, before anything on 2026-08-25. The
+intermediate `634e520c-d42b-4fc9-b967-63e14cc2fba0` is the corner-of-the-day
+pass, and `d8e50565-546f-48a7-9ff8-a87b4ce24524` was the rollback named at the
+freeze itself.
+
+**The freeze still stands.** Feature-frozen, breakage only. Everything on
+2026-08-25 was breakage: a ReferenceError that took the letter lane down on any
+morning the model answered, a cache short-circuit that stopped the imagery lane
+running at all, a hero card whose slider had one pane, and two Exa lanes
+describing the same paused key as a fault.
+
+**Two live faults, fixed 2026-08-25.**
+
+1. `hz` and `longevityLine` were read in `src/index.js` and defined only inside
+   `buildLetterPrompt`. Two ReferenceErrors, one line apart, on any morning the
+   model actually answered. Masked for five days by gemini 429 and 503 failing
+   earlier in the lane; 2026-08-23 is the one entry in `cotd:log` that reached
+   it. `buildLetterPrompt` returns both facts now and
+   `tools/letterlane.test.mjs` drives the lane past a mocked answering model.
+2. `imageryFor` returned `scoredonly`, a terminal status, for any corner in the
+   frame index. That block is an optimisation about the photograph budget and
+   its return value also meant "no visual audit". A cached frame now means only
+   that the fetch is unnecessary. `tools/framecache.test.mjs` covers both
+   branches.
+
+**When the Exa key runs out.** It is already a `secret_text`, so this is the
+whole procedure and no deploy is needed:
+
+```
+npx wrangler secret put EXA_API_KEY
+```
+
+Both lanes report `paused` rather than `failed` while it is refused, using one
+shared sentence that names that command.
 
 **2026-08-25, held out of the freeze as breakage:** the hero card featured a
 corner whose slider had one pane, and its caption read "with some lanes
