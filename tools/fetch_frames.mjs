@@ -5,6 +5,29 @@
 //   node tools/fetch_frames.mjs --fetch --set=top500
 //   node tools/fetch_frames.mjs --publish
 //
+// Re-fetching a corner that already has a frame:
+//
+//   node tools/fetch_frames.mjs --refetch=a-and-b,c-and-d --fetch --heading=90
+//   node tools/fetch_frames.mjs --refetch=a-and-b,c-and-d --publish
+//
+// The ordinary sets fill gaps: `need()` drops any corner that already has a
+// stored frame, which is right for a backfill and useless for the one case
+// that actually needs a new frame. A corner whose stored frame is unreadable
+// has a frame, and tools/promote_corners.mjs refuses to render it because no
+// render of an unreadable source can be verified. Its own advice is to
+// re-fetch, and until now there was no way to.
+//
+// --heading matters more than it looks. Street View Static is deterministic:
+// the same location, heading, pitch and fov return the same bytes, so a plain
+// re-request of an unreadable frame returns the same unreadable frame. Moving
+// the camera is the only thing that can produce a different photograph of the
+// same corner, so a re-fetch that does not change the view is a billed request
+// that cannot change the answer, and this says so rather than pretending.
+//
+// --publish is scoped to the named slugs when --refetch is set. Publishing the
+// whole staging directory to fix four corners would spend 586 KV writes out of
+// a 1,000 a day allowance.
+//
 // Two endpoints, and the difference between them is the whole cost model.
 // The metadata endpoint is free and unmetered, so coverage is established for
 // every corner before a single billable request is made. Only a corner that
@@ -35,6 +58,13 @@ const SET = argOf("set", "warmed");
 const LIMIT = Number(argOf("limit", "0")) || 0;
 const DO_FETCH = has("--fetch");
 const DO_PUBLISH = has("--publish");
+// Named corners to re-photograph even though they already have a frame. See
+// the header: the sets cannot express this and it is the only way to unblock a
+// corner whose stored frame the legibility gate cannot read.
+const REFETCH = (argOf("refetch", "") || "").split(",").map((x) => x.trim()).filter(Boolean);
+// Camera heading in degrees, or empty to keep whatever the row carries. A
+// re-fetch at the same heading returns identical bytes.
+const HEADING = argOf("heading", "");
 
 // Street View Static, current published rates. 0 to 100,000 requests a month is
 // $7.00 per 1,000, and the first 10,000 a month are free. Metadata is its own
@@ -104,9 +134,12 @@ async function coverage(row) {
 }
 
 async function frame(row) {
+  // HEADING overrides the row so a re-fetch can actually differ. Street View
+  // Static is deterministic on these parameters.
+  const heading = HEADING === "" ? (row.heading ?? 0) : Number(HEADING);
   const u =
     "https://maps.googleapis.com/maps/api/streetview?size=640x400" +
-    `&location=${row.lat},${row.lon}&heading=${row.heading ?? 0}&pitch=${row.pitch ?? 0}` +
+    `&location=${row.lat},${row.lon}&heading=${heading}&pitch=${row.pitch ?? 0}` +
     `&fov=90&key=${KEY}`;
   const r = await fetch(u);
   const type = r.headers.get("content-type") || "";
@@ -129,6 +162,27 @@ if (IS_MAIN) {
     city: need(all, haveFrame, probedSlugs),
   };
 
+  // The named set, which deliberately does not go through need(): every corner
+  // in it already has a frame and that is the reason it is here. A slug the
+  // census does not know is named rather than skipped, because a typo that
+  // silently fetches nothing looks exactly like a corner with no coverage.
+  const byAnySlug = new Map(all.map((r) => [r.slug, r]));
+  const refetchRows = REFETCH.map((slug) => byAnySlug.get(slug)).filter(Boolean);
+  if (REFETCH.length) {
+    const missing = REFETCH.filter((s) => !byAnySlug.has(s));
+    console.log(
+      `\nrefetch: ${refetchRows.length} of ${REFETCH.length} named corners resolved` +
+        (HEADING === "" ? ", heading unchanged" : `, heading ${HEADING}`),
+    );
+    if (HEADING === "") {
+      console.log(
+        "  WARNING: the same heading returns the same bytes. Pass --heading to move the camera,",
+      );
+      console.log("  or this is a billed request that cannot change the answer.");
+    }
+    for (const m of missing) console.log(`  NOT IN THE CENSUS: ${m}`);
+  }
+
   console.log("| set | corners | missing a frame | image requests | gross at $7/1000 | after the 10,000 free | kv writes |");
   console.log("|---|---|---|---|---|---|---|");
   for (const [name, rows] of Object.entries({
@@ -147,8 +201,13 @@ if (IS_MAIN) {
   }
 
   if (DO_FETCH) {
-    const rows = LIMIT ? (SETS[SET] || []).slice(0, LIMIT) : SETS[SET] || [];
-    console.log(`\nfetching ${rows.length} corners in set "${SET}"\n`);
+    const chosen = REFETCH.length ? refetchRows : SETS[SET] || [];
+    const rows = LIMIT ? chosen.slice(0, LIMIT) : chosen;
+    console.log(
+      REFETCH.length
+        ? `\nre-fetching ${rows.length} named corners\n`
+        : `\nfetching ${rows.length} corners in set "${SET}"\n`,
+    );
     let got = 0, none = 0, failed = 0, requests = 0;
     for (const [i, row] of rows.entries()) {
       try {
@@ -186,8 +245,16 @@ if (IS_MAIN) {
   }
 
   if (DO_PUBLISH) {
-    const files = readdirSync(STAGE).filter((f) => f.endsWith(".jpg") && !f.startsWith(".") && !f.startsWith("_"));
-    console.log(`\npublishing ${files.length} frames`);
+    const staged = readdirSync(STAGE).filter((f) => f.endsWith(".jpg") && !f.startsWith(".") && !f.startsWith("_"));
+    // Scoped when --refetch named corners. Publishing the whole staging
+    // directory to fix four of them would spend 586 KV writes out of a 1,000 a
+    // day allowance, and the other 582 are already in KV unchanged.
+    const files = REFETCH.length ? staged.filter((f) => REFETCH.includes(f.replace(/\.jpg$/, ""))) : staged;
+    console.log(
+      REFETCH.length
+        ? `\npublishing ${files.length} of ${staged.length} staged frames, scoped to --refetch`
+        : `\npublishing ${files.length} frames`,
+    );
     let wrote = 0;
     // The slugs whose bytes actually landed. The index used to be built from
     // `files.slice(0, wrote)`, which assumes every failure is at the tail: on
