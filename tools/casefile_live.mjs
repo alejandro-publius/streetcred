@@ -256,3 +256,52 @@ test("the powered-by card does not move the fold at desktop", () => {
   const desktop = (css.match(/@media\(min-width:901px\)\{([\s\S]*?)\n\}/) || [])[1] || "";
   assert.ok(desktop.includes("grid-row:1 / span 2"), "the span belongs to the two-column layout only");
 });
+
+test("the hero only ever offers a compare it can keep the promise of", async () => {
+  // A slider claims its two panes are the same photograph, before and after.
+  // The frame and the render are written by different lanes and either can be
+  // replaced without the other, so that claim needs enforcing rather than
+  // assuming. On 2026-08-25 london-and-persia was re-fetched at a new heading
+  // to pass the legibility gate, and the hero showed the pre-refetch photograph
+  // beside the new render.
+  const hero = home.slice(home.indexOf('class="herocorner"'), home.indexOf("</section>", home.indexOf('class="herocorner"')));
+  const slug = (hero.match(/href="\/c\/([a-z0-9-]+)"/) || [])[1];
+  assert.ok(slug, "the hero must name a corner");
+
+  const hasHandle = hero.includes('class="shdl"');
+  if (!hasHandle) return; // a text-only hero makes no comparison claim
+
+  const api = await fetch(`${ORIGIN}/api/imagery?x=${slug}`).then((r) => r.json()).catch(() => null);
+  assert.ok(api, "the hero corner's imagery must resolve");
+  // Both panes come from the same versioned frame, so the version travels on
+  // both URLs or on neither.
+  const base = (hero.match(/class="sbase"[^>]*src="([^"]+)"/) || [])[1] || "";
+  const ov = (hero.match(/class="sov"[^>]*src="([^"]+)"/) || [])[1] || "";
+  const vOf = (u) => (u.match(/[?&]v=([a-f0-9]+)/) || [])[1] || null;
+  assert.equal(
+    vOf(base),
+    vOf(ov),
+    `the two panes carry different frame versions: ${base} vs ${ov}`,
+  );
+  assert.ok(!hero.includes("re-fetched after this visualization"), "a slider must not carry the incoherence note");
+});
+
+test("a versioned frame URL is what makes a republished photograph reach a browser", () => {
+  // The bug underneath the bug. /gen was cached for a week under a key with
+  // nothing in it that changes when the bytes do, so republishing a frame never
+  // reached anyone: KV held the new photograph and the edge served the old one
+  // beside the new render for ten hours. The version is the frame's own hash.
+  const hero = home.slice(home.indexOf('class="herocorner"'), home.indexOf("</section>", home.indexOf('class="herocorner"')));
+  const srcs = [...hero.matchAll(/src="(\/gen\/[^"]+)"/g)].map((m) => m[1]);
+  if (!srcs.length) return;
+  for (const s of srcs) {
+    assert.match(s, /\/gen\/[a-z0-9-]+\/(today|hazards|fix)\.jpg(\?v=[a-f0-9]{8})?$/, `unexpected frame url: ${s}`);
+  }
+  // Where a version is present it must be present on all of them: a mixed set
+  // would mean one pane is bustable and the other is pinned.
+  const versioned = srcs.filter((s) => s.includes("?v="));
+  assert.ok(
+    versioned.length === 0 || versioned.length === srcs.length,
+    `some hero frames are versioned and some are not: ${srcs.join(" ")}`,
+  );
+});

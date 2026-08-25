@@ -30,6 +30,42 @@ import { skipsAudit } from "./city.js";
 // `IMG.status === "ready"` meant AUDITED. That would have flipped a promoted
 // corner's chip to AUDITED the moment its render published, which is the exact
 // confusion this field exists to prevent.
+// The conditioning frame, identified by its bytes.
+//
+// A compare slider promises one thing: these are the same photograph, before
+// and after. It cannot keep that promise on its own, because the frame and the
+// render are written by different lanes at different times and either can be
+// replaced without the other. On 2026-08-25 london-and-persia was re-fetched at
+// a new heading to get past the legibility gate, the render was made from the
+// new frame, and the page still served the old one for ten hours because the
+// URL had not changed and the edge holds /gen for a week.
+//
+// So every render records the hash of the frame it was conditioned on, every
+// frame records its own, and the two are compared before a slider is offered.
+// The same hash versions the image URL, which is what makes a republished frame
+// reach a browser at all.
+//
+// Four bytes. This is a cache key and a coherence check between two artefacts
+// this project wrote, not a signature: it has to notice a different photograph,
+// not resist someone constructing one.
+export async function frameSha(bytes) {
+  const d = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(d).slice(0, 4)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Whether this corner's fix render was made from the frame now stored as today.
+//
+// Absent hashes are NOT a mismatch. Every render made before 2026-08-25 has no
+// sourceFrameSha and most of them are perfectly coherent; treating unknown as
+// broken would take the slider off 30 corners to fix one. Unknown means unknown
+// and the pair is offered, which is the behaviour those corners already had.
+export function coherentPair(img) {
+  const made = img?.render?.fix?.sourceFrameSha;
+  const now = img?.frameSha;
+  if (!made || !now) return true;
+  return made === now;
+}
+
 export const AUDITED = "audited";
 export const PROMOTED_FROM_ENRICHED = "promoted-from-enriched";
 const KNOWN_PROVENANCE = new Set([AUDITED, PROMOTED_FROM_ENRICHED]);
@@ -295,6 +331,7 @@ export async function imageryFor(c, env, ctx, opts = {}) {
   }
 
   let today;
+  let todaySha = null;
   if (!frameCached) {
     // First ask for this corner. Confirm free things before spending anything.
     //
@@ -333,6 +370,7 @@ export async function imageryFor(c, env, ctx, opts = {}) {
     try {
       today = await fetchToday(c, env);
       await putImage(env, c.slug, "today", today);
+      todaySha = await frameSha(today).catch(() => null);
     } catch {
       await putImageryStatus(env, c.slug, { status: "nocoverage", states: [], at: Date.now() });
       return {
@@ -352,7 +390,7 @@ export async function imageryFor(c, env, ctx, opts = {}) {
   // generations per corner would buy nothing it needs, so they are not spent,
   // and the panel says so rather than showing an empty state that looks broken.
   if (skipsAudit(c)) {
-    await putImageryStatus(env, c.slug, { status: "scoredonly", states: [], at: Date.now() });
+    await putImageryStatus(env, c.slug, { status: "scoredonly", states: [], at: Date.now(), ...(todaySha ? { frameSha: todaySha } : {}) });
     return {
       source: "live",
       status: "scoredonly",
@@ -402,7 +440,7 @@ export async function imageryFor(c, env, ctx, opts = {}) {
     };
   }
 
-  await putImageryStatus(env, c.slug, { status: "pending", states: [], at: Date.now() });
+  await putImageryStatus(env, c.slug, { status: "pending", states: [], at: Date.now(), ...(todaySha ? { frameSha: todaySha } : {}) });
   ctx.waitUntil(generateStates(c, env));
   return { source: "live", status: "pending", today: `${base}/today.jpg`, hazards: null, fix: null };
 }
