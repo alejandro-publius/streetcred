@@ -338,7 +338,14 @@ export const HERO_CORNER = (e) => {
     e.auditedToday
       ? `Audited autonomously this morning, ${esc(e.date)}`
       : `Audited autonomously ${esc(e.date)}`
-  }${e.partial ? ". Records audited; visual lanes pending" : ""}</p>
+  }${
+    // The run's own status says a lane degraded; this clause says which, and it
+    // is only true while the visual lane is actually missing. A corner whose
+    // render landed later, through the promote pipeline rather than the cron,
+    // carries a stale "partial" in cotd:log forever, and the card would then
+    // announce pending lanes directly above the slider showing them.
+    e.partial && !frames.fix ? ". Records audited; visual lanes pending" : ""
+  }</p>
   ${
     // The newer audit this card is not featuring. The card features the newest
     // corner that can actually be dragged, so on any morning whose imagery has
