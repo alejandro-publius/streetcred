@@ -793,11 +793,47 @@ read behind it.
 
 ## FROZEN 2026-08-24. Read this block first.
 
-**Production: `7fc904fd-7c1f-4d5d-8239-95765e700d5d`.**
+**Production: `634e520c-d42b-4fc9-b967-63e14cc2fba0`**, deployed 2026-08-25,
+corner-of-the-day selection rule plus the streak render backfill.
 
 ```
-npx wrangler rollback d8e50565-546f-48a7-9ff8-a87b4ce24524
+npx wrangler rollback 7fc904fd-7c1f-4d5d-8239-95765e700d5d
 ```
+
+That target is the state at the freeze, before the 2026-08-25 pass. The older
+`d8e50565-546f-48a7-9ff8-a87b4ce24524` is one step further back and was the
+rollback named at the freeze itself.
+
+**2026-08-25, held out of the freeze as breakage:** the hero card featured a
+corner whose slider had one pane, and its caption read "with some lanes
+degraded", which describes the site as broken. The card now features the newest
+audit holding a complete visual lane and names the newer pending one in a
+sub-line. Renders were backfilled for the streak: 1st-and-bush passed the gate
+and is AUDITED, 2nd-and-tehama held twice on the watermark and published hazards
+only, and four corners were refused at preflight because their source frames are
+unreadable. See the root-cause note below on why the cron stopped producing
+renders at all after 2026-08-18.
+
+**Why the morning cron degrades its imagery lane (found 2026-08-25, not fixed).**
+Not a credential and not quota. `imageryFor` in `src/imagery.js` short-circuits
+on the frame index:
+
+```js
+const framed = await getFrameIndex(env).catch(() => null);
+if (framed?.slugs?.has(c.slug)) {
+  return { source: "cache", status: "scoredonly", ... hazards: null, fix: null };
+}
+```
+
+The block exists so a scored corner with bulk-fetched bytes does not re-reserve
+the photograph budget, and its return value overloads "the frame is already
+here" with "this corner gets no visual audit". The cron deliberately strips
+`corner.tier` before the lanes run so `skipsAudit` cannot decline, and then this
+fires anyway. The city bulk fetch staged 586 frames around 2026-08-18, which is
+exactly when the streak stopped producing renders: 2026-08-18 is the last
+`imagery=ready` in `cotd:log` and every morning since reads `scoredonly` or
+`failed`. The standing fix is to let that branch return the cached frame and
+continue into the generation lanes rather than returning a terminal status.
 
 Feature-frozen from 2026-08-24, breakage only. The three crons keep running by
 design and stopping them counts as breakage, not as a feature. 396 offline
