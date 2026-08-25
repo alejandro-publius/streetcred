@@ -710,11 +710,12 @@ async function mapImage(c, env, ctx) {
 }
 
 // ---------------------------------------------------------------- letter
-async function getLetter(c, env, ctx) {
+export async function getLetter(c, env, ctx) {
   // Built by the shared module so the Worker and the offline generator in
   // tools/generate_letters.mjs cannot drift. Everything this used to compute
   // inline lives there now, unchanged.
-  const { prompt, supervisor, district: dist, quote, headlines, signoff } = buildLetterPrompt(c, ctx);
+  const { prompt, supervisor, district: dist, quote, headlines, signoff, hazardItems, longevityLine } =
+    buildLetterPrompt(c, ctx);
 
 
   // 3.7-flash returns UNAVAILABLE under load often enough that a single attempt
@@ -805,7 +806,7 @@ async function getLetter(c, env, ctx) {
   const inputs = ["stats"];
   if (headlines) inputs.push("press");
   if (quote) inputs.push("voices");
-  if (hz.length) inputs.push("audit");
+  if (hazardItems.length) inputs.push("audit");
   if (ctx.score) inputs.push("index");
   if (longevityLine) inputs.push("history");
   const generatedAt = new Date().toISOString();

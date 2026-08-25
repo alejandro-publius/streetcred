@@ -115,5 +115,20 @@ ${quote ? `- A resident said: ${quote}` : "- Do not quote or invent any resident
 
 Rules: never write a count immediately before the literal 311, because the two run together and read as a single number; write "311 reports: 30" or put a word between them as in "street-condition 311 reports". Plain civic English. Under 220 words. Address only ${addressee}. Distinguish clearly between what city records document and what the visual audit merely observed. Never present an observation as a documented fact. No em dashes anywhere. No placeholders in brackets. Sign off as "${signoff}". Return only the letter text.`;
 
-  return { prompt, addressee, supervisor, signoff, district: dist, quote, headlines };
+  // hazardItems and longevityLine are returned because index.js records which
+  // lanes reached the prompt, and it was reading both off variables that live
+  // only in here. That is a ReferenceError on any morning the model actually
+  // answers, and it was masked for days by gemini 429 and 503 failing earlier
+  // in the lane. See tools/letterlane.test.mjs.
+  return {
+    prompt,
+    addressee,
+    supervisor,
+    signoff,
+    district: dist,
+    quote,
+    headlines,
+    hazardItems: hz,
+    longevityLine,
+  };
 }

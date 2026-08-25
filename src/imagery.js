@@ -258,14 +258,32 @@ export async function imageryFor(c, env, ctx, opts = {}) {
     };
   }
 
-  // A stored frame answers before anything is reserved or fetched.
+  // A stored frame answers before anything is reserved or fetched, and that is
+  // the only question it answers.
   //
   // Without this, a scored corner whose frame was published in bulk had no
   // imgstatus record, fell through to the live path, reserved against the daily
   // photograph budget and re-fetched bytes that were already in KV. The index
   // is one read per isolate for the whole city.
+  //
+  // It used to return `scoredonly` here, which is a terminal status meaning
+  // "this corner gets no visual audit", and that made a cache hit and a policy
+  // decision the same answer. The cost was the entire morning audit: the cron
+  // strips `corner.tier` before its lanes run precisely so `skipsAudit` cannot
+  // decline the corner it woke up for, and then this fired anyway because the
+  // city bulk fetch had staged a frame for it. 2026-08-18 is the last
+  // `imagery=ready` in cotd:log and the 586-frame bulk fetch is the same week.
+  // Every morning after it reads `scoredonly` or `failed`.
+  //
+  // So a cached frame now means only that the fetch is unnecessary. Whether the
+  // corner is audited is still decided below, by the check that exists for it.
   const framed = await getFrameIndex(env).catch(() => null);
-  if (framed?.slugs?.has(c.slug)) {
+  const frameCached = Boolean(framed?.slugs?.has(c.slug));
+
+  // A records-only corner whose bytes are already stored is finished here.
+  // There is nothing to fetch and nothing it wants generated, which is the case
+  // the early return was written for and the only one it is still used for.
+  if (frameCached && skipsAudit(c)) {
     return {
       source: "cache",
       status: "scoredonly",
@@ -276,54 +294,56 @@ export async function imageryFor(c, env, ctx, opts = {}) {
     };
   }
 
-  // First ask for this corner. Confirm free things before spending anything.
-  //
-  // A corner that will not be audited still shows its real photograph, and the
-  // metadata check below is free, but the frame itself is a billed Maps
-  // request. There are 7,353 scored corners and one crawler is enough to fetch
-  // all of them, so this lane reserves against a daily ceiling first. Nothing
-  // is written when the reservation fails: the next visitor retries rather than
-  // finding the corner pinned photoless forever.
-  if (skipsAudit(c) && !(await reservePhoto(env))) {
-    const b = await photoBudget(env);
-    return {
-      source: "live",
-      status: "scoredonly",
-      note:
-        `${SCORED_ONLY_NOTE} The Street View frame is not loaded here yet: the daily photograph ` +
-        `budget for scored corners is spent (${b.used} of ${b.cap}). It resets tomorrow.`,
-      today: null,
-      hazards: null,
-      fix: null,
-    };
-  }
-
-  if (!(await hasCoverage(c, env))) {
-    await putImageryStatus(env, c.slug, { status: "nocoverage", states: [], at: Date.now() });
-    return {
-      source: "live",
-      status: "nocoverage",
-      note: "Street View has no imagery for this corner.",
-      today: null,
-      hazards: null,
-      fix: null,
-    };
-  }
-
   let today;
-  try {
-    today = await fetchToday(c, env);
-    await putImage(env, c.slug, "today", today);
-  } catch {
-    await putImageryStatus(env, c.slug, { status: "nocoverage", states: [], at: Date.now() });
-    return {
-      source: "live",
-      status: "nocoverage",
-      note: "Street View has no imagery for this corner.",
-      today: null,
-      hazards: null,
-      fix: null,
-    };
+  if (!frameCached) {
+    // First ask for this corner. Confirm free things before spending anything.
+    //
+    // A corner that will not be audited still shows its real photograph, and
+    // the metadata check below is free, but the frame itself is a billed Maps
+    // request. There are 7,353 scored corners and one crawler is enough to
+    // fetch all of them, so this lane reserves against a daily ceiling first.
+    // Nothing is written when the reservation fails: the next visitor retries
+    // rather than finding the corner pinned photoless forever.
+    if (skipsAudit(c) && !(await reservePhoto(env))) {
+      const b = await photoBudget(env);
+      return {
+        source: "live",
+        status: "scoredonly",
+        note:
+          `${SCORED_ONLY_NOTE} The Street View frame is not loaded here yet: the daily photograph ` +
+          `budget for scored corners is spent (${b.used} of ${b.cap}). It resets tomorrow.`,
+        today: null,
+        hazards: null,
+        fix: null,
+      };
+    }
+
+    if (!(await hasCoverage(c, env))) {
+      await putImageryStatus(env, c.slug, { status: "nocoverage", states: [], at: Date.now() });
+      return {
+        source: "live",
+        status: "nocoverage",
+        note: "Street View has no imagery for this corner.",
+        today: null,
+        hazards: null,
+        fix: null,
+      };
+    }
+
+    try {
+      today = await fetchToday(c, env);
+      await putImage(env, c.slug, "today", today);
+    } catch {
+      await putImageryStatus(env, c.slug, { status: "nocoverage", states: [], at: Date.now() });
+      return {
+        source: "live",
+        status: "nocoverage",
+        note: "Street View has no imagery for this corner.",
+        today: null,
+        hazards: null,
+        fix: null,
+      };
+    }
   }
 
   // A corner deliberately warmed for records only. The whole point of these is
