@@ -32,6 +32,7 @@ import {
   recountPressCitations, getPressCitations, CITATION_CACHE_S,
   recountAuditTiers, getAuditTiers, AUDIT_TIER_CACHE_S,
   getFrameIndex,
+  getAgentRescore, getAgentLetter, getAgentFlag, appendAgentReject, getAgentRejectLog,
 } from "./store.js";
 import {
   judge, resultsFrom, monitorIdFrom, RADAR_VERSION,
@@ -2192,6 +2193,26 @@ export default {
       if (p === "/api/agent/report") {
         const out = await handleAgentReport(request, env, {
           countReject: countAgentReject,
+          // Rejections are stored with their reason and published on /watchdog.
+          recordReject: (envRef, rec) => appendAgentReject(envRef, rec),
+          // Read back for the idempotency check: the actor retries with backoff
+          // and a retry that lands twice would publish one decision as two.
+          journalEntries: (envRef) => getJournal(envRef).catch(() => []),
+          // What this site can actually see of a claimed consequence. Only the
+          // artefacts it stored itself count, which is the whole point.
+          consequencesFor: async (envRef, slug) => {
+            const seen = new Set();
+            if (!slug) return seen;
+            const [rescore, letter, flag] = await Promise.all([
+              getAgentRescore(envRef, slug).catch(() => null),
+              getAgentLetter(envRef, slug).catch(() => null),
+              getAgentFlag(envRef, slug).catch(() => null),
+            ]);
+            if (rescore) seen.add("rescore");
+            if (letter) { seen.add("regenerate_letter"); seen.add("reaudit_imagery"); }
+            if (flag) seen.add("flag");
+            return seen;
+          },
           appendJournal: (envRef, record) => appendJournal(envRef, record, JOURNAL_CAP),
           // An accepted agent rescore that disagrees with the published grade
           // is a grade-change event, and it goes in the same public changelog
@@ -2480,11 +2501,12 @@ export default {
       }
 
       if (p === "/watchdog" || p === "/watchdog/") {
-        const [journal, rejects] = await Promise.all([
+        const [journal, rejects, rejectLog] = await Promise.all([
           getJournal(env).catch(() => []),
           getAgentRejects(env).catch(() => 0),
+          getAgentRejectLog(env).catch(() => []),
         ]);
-        return new Response(WATCHDOG(journal, rejects, origin, Boolean(env.PREVIEW), await mastScored()), {
+        return new Response(WATCHDOG(journal, rejects, origin, Boolean(env.PREVIEW), await mastScored(), rejectLog), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
@@ -2714,7 +2736,7 @@ export default {
           checkCitations: pressCites?.citations || 0,
           asOf: fmtAsOf(pressCites?.at || pressRoll?.updated || pressSummary?.at),
         };
-        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressTile, spendUsd, embed, auditTiers, { discs: coverage, radiusM: coverageRadiusM(meta) }), {
+        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressTile, spendUsd, embed, auditTiers, { discs: coverage, radiusM: coverageRadiusM(meta) }, (await getJournal(env).catch(() => [])).length), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
