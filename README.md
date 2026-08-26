@@ -381,7 +381,7 @@ flowchart TB
         SCHED["<b>Cloud Scheduler</b><br/>watchdog-daily-cycle<br/>07:00 America/Los_Angeles"]
         DATASF["<b>DataSF</b><br/>311 and collisions<br/>keyless, read only"]
         SWEEP["<b>Sweep</b><br/>diff each of 25 corners against<br/>the stored Firestore snapshot"]
-        REFLEX["<b>Reflex tier</b><br/>served today by <b>RuleTriage</b>: deterministic<br/>thresholds, no model, no network<br/><i>Gemma is not wired, and every entry it writes says so</i>"]
+        REFLEX["<b>Reflex tier</b><br/>served today by <b>Gemma</b>, google/gemma-4-26b-a4b-it-maas<br/>on Vertex locations/global<br/><i>a call the shared pool refuses falls back to a rule,<br/>and the entry records which one decided it</i>"]
         SCHED --> SWEEP
         DATASF --> SWEEP
         SWEEP --> REFLEX
