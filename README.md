@@ -364,6 +364,86 @@ Two deliberate rules govern it. **Sample and empty payloads are never cached**, 
 
 Adding a corner is one object in `CORNERS` plus one imagery run. What that object cannot do is paper over code that assumed one specific corner, which is what the second corner was for.
 
+## The autonomous agent, end to end
+
+The Worker is one half of a loop. The other half is [the Corner
+Watchdog](https://github.com/alexschroeder/streetcred-watchdog), a Python agent on Google
+Cloud that reads the city's data every morning, decides on its own whether anything
+changed enough to act on, and posts what it decided here. Most mornings it decides to do
+nothing, and it posts those mornings too.
+
+```mermaid
+%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 45, "rankSpacing": 55, "padding": 14, "wrappingWidth": 460}}}%%
+flowchart TB
+
+    subgraph OBSERVER["Observer service &nbsp;&middot;&nbsp; Cloud Run, scales to zero"]
+        direction LR
+        SCHED["<b>Cloud Scheduler</b><br/>watchdog-daily-cycle<br/>07:00 America/Los_Angeles"]
+        DATASF["<b>DataSF</b><br/>311 and collisions<br/>keyless, read only"]
+        SWEEP["<b>Sweep</b><br/>diff each of 25 corners against<br/>the stored Firestore snapshot"]
+        REFLEX["<b>Reflex tier</b><br/>served today by <b>RuleTriage</b>: deterministic<br/>thresholds, no model, no network<br/><i>Gemma is not wired, and every entry it writes says so</i>"]
+        SCHED --> SWEEP
+        DATASF --> SWEEP
+        SWEEP --> REFLEX
+    end
+
+    subgraph ACTOR["The escalation path: Pub/Sub, then the Actor service on Cloud Run"]
+        direction LR
+        PS["<b>Pub/Sub</b><br/>topic <b>corner-deltas</b>, push subscription with OIDC<br/><i>the quiet corners stop here, and tier two<br/>is never built, called or billed</i>"]
+        JUDGE["<b>Judgment tier</b><br/>served today by an <b>ADK LlmAgent</b> on<br/><b>gemini-3.5-flash</b>, Vertex locations/global"]
+        TOOLS["<b>Five tools, exactly one call</b><br/>rescore &middot; regenerate_letter &middot; re_audit &middot; flag<br/><b>decline</b>, which is a signed decision, not a silence"]
+        PS --> JUDGE
+        JUDGE --> TOOLS
+    end
+
+    subgraph PUBLISH["The record, the boundary, and the public page"]
+        direction LR
+        FS[("<b>Firestore journal</b><br/>watchdog database, append only,<br/>declines and failed publishes included")]
+        INGEST{{"<b>Authenticated ingest</b><br/>POST /api/agent/report<br/><b>one bearer token, one direction</b><br/>the cloud writes in and reads nothing back"}}
+        GATE["<b>Validation gate</b><br/>six rejection classes, unknown tools refused,<br/>a claim the site cannot verify is turned away"]
+        DIARY["<b>Public diary and Activity Inspector</b><br/>/watchdog: every decision, every decline,<br/>every rejected ingest, each with its reason"]
+        FS --> INGEST
+        INGEST --> GATE
+        GATE --> DIARY
+    end
+
+    OBSERVER -->|"escalations only"| ACTOR
+    ACTOR -->|"decided, then journaled, then published"| PUBLISH
+
+    classDef source fill:#eef2f0,stroke:#5c6a6e,stroke-width:1.5px,color:#161d1f
+    classDef gcp fill:#f7ecdf,stroke:#a1571c,stroke-width:1.5px,color:#161d1f
+    classDef model fill:#e7efea,stroke:#2f5d50,stroke-width:2.5px,color:#161d1f
+    classDef boundary fill:#fbecec,stroke:#8c2f2f,stroke-width:2.5px,color:#161d1f
+    classDef edge fill:#eaf0f6,stroke:#2b4d73,stroke-width:1.5px,color:#161d1f
+
+    class DATASF source
+    class SCHED,PS,SWEEP,TOOLS,FS gcp
+    class REFLEX,JUDGE model
+    class INGEST boundary
+    class GATE,DIARY edge
+
+    style OBSERVER fill:#fdfaf6,stroke:#a1571c,stroke-width:2px,color:#a1571c
+    style ACTOR fill:#fdfaf6,stroke:#a1571c,stroke-width:2px,color:#a1571c
+    style PUBLISH fill:#fbfcfb,stroke:#5c6a6e,stroke-width:2px,color:#5c6a6e
+```
+
+**StreetCred's job in that picture is the two blue boxes.** The ingest endpoint is
+authenticated with a single bearer token and traffic runs one way: the cloud writes in
+and reads nothing back. This site holds no credential for the agent and cannot call it.
+
+**The gate validates on content, not on the sender.** Six rejection classes, in
+`src/agent.js`: an unknown corner, a future timestamp, a malformed decision, a tool this
+site does not recognise, a duplicate decision id, and a claimed consequence the site
+cannot verify. An unknown tool is refused rather than quietly filtered, because filtering
+would let a decision land here shorter than the agent made it.
+
+**A rejection is published, not counted.** Every refused ingest shows on
+[/watchdog](https://streetcred.thealexschroeder.workers.dev/watchdog) with its reason
+alongside the decisions that were accepted. The first real cloud deliberation was
+refused: the agent claimed it had redrafted a letter and this site holds no letter for
+that corner. That entry is still on the page, because a gate whose refusals are invisible
+is indistinguishable from no gate.
+
 ## What the second corner exposed
 
 Generalizing from one corner to two is where a demo either holds up or quietly starts lying. Three bugs only became visible under a second corner, and each one had been silently wrong the whole time.
