@@ -149,7 +149,7 @@ function severityLine(c) {
   return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
 
-export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null, press = null, spendUsd = null, embed = null, tiers = null, coverage = null) => {
+export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null, press = null, spendUsd = null, embed = null, tiers = null, coverage = null, agentEntries = 0) => {
   // A corner without finite geometry poisons every pin: fitView produces a NaN
   // center and every overlay lands at left:NaN%. One bad row on the board must
   // cost that row its pin, not the whole map its anchors. It happened: a board
@@ -495,6 +495,14 @@ ${MASTHEAD({ scored, active: "" })}
     <div class="findmsg" id="findmsg" role="status" hidden></div>
   </form>
   <p class="scope" id="scope">${scopeLine}</p>
+  <p class="scope scopewd">${
+    // The agent's own page, linked from the one place every visitor lands. The
+    // count is read from the journal rather than written here, so a link that
+    // promises a diary cannot outlive the diary having anything in it.
+    agentEntries
+      ? `<a href="/watchdog">The agent's diary</a>: ${n(agentEntries)} decision${agentEntries === 1 ? "" : "s"} published, including the mornings it decided nothing.`
+      : `<a href="/watchdog">The agent's diary</a>: every decision it publishes, including the mornings it decides nothing.`
+  }</p>
   <div class="sfmark">
     <svg class="ggb" viewBox="0 0 600 200" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
       <!-- Drawn, not traced: two towers, the main cable and its side spans, and

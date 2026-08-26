@@ -144,7 +144,118 @@ function weeklyPrecision(entries) {
     .filter((w) => w.pct !== null);
 }
 
-export const WATCHDOG = (journal = [], rejects = 0, origin = "", preview = false, scored = 0) => {
+// The activity inspector.
+//
+// Every field here is already in the journal. The agent records what it spent
+// and what ran while it was deciding, and until now none of it was on a page:
+// the cost of an autonomous system is part of whether you would leave it
+// running, and a system whose cost you cannot see is one you have to take on
+// trust.
+//
+// Nothing is computed that the record does not carry. A missing latency renders
+// as "not recorded" rather than as a zero, because a zero is a measurement and
+// an absence is not.
+const na = '<span class="na">not recorded</span>';
+
+function costOf(e) {
+  const c = e.cost || {};
+  const actual = Number(c.actualTokens) || 0;
+  const projected = (Number(c.projectedPromptTokens) || 0) + (Number(c.projectedOutputTokens) || 0);
+  return { actual, projected, projectionOnly: actual === 0 && projected > 0 };
+}
+
+export function inspectorTotals(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  let actual = 0;
+  let projected = 0;
+  let withModel = 0;
+  let latencySum = 0;
+  let latencyN = 0;
+  for (const e of list) {
+    const c = costOf(e);
+    actual += c.actual;
+    projected += c.projected;
+    if (e.model) withModel += 1;
+    if (Number.isFinite(e.latencyMs)) { latencySum += e.latencyMs; latencyN += 1; }
+  }
+  return {
+    decisions: list.length,
+    withModel,
+    ruleOnly: list.length - withModel,
+    actualTokens: actual,
+    projectedTokens: projected,
+    meanLatencyMs: latencyN ? Math.round(latencySum / latencyN) : null,
+    latencyN,
+  };
+}
+
+const INSPECTOR = (entries) => {
+  const list = Array.isArray(entries) ? entries : [];
+  if (!list.length) {
+    return `<section class="panel insp"><div class="phs"><h2>Activity inspector</h2></div>
+  <div class="pbody"><p class="tfoot quiet">Nothing to inspect yet. When the agent runs, every decision
+  lists what ran, how long it took and what it cost, from the record it wrote at the time.</p></div></section>`;
+  }
+  const t = inspectorTotals(list);
+  const rows = [...list].reverse().slice(0, 40).map((e) => {
+    const c = costOf(e);
+    return `<tr>
+      <td><a href="/c/${esc(e.slug || "")}">${esc(e.name || e.slug || "unknown")}</a></td>
+      <td>${esc(e.tool || (e.actions || []).join(", ") || "decline")}</td>
+      <td>${e.model ? `${esc(e.model)}${e.modelVersion ? ` ${esc(e.modelVersion)}` : ""}` : '<span class="rulechip">rule, no model</span>'}</td>
+      <td class="num">${Number.isFinite(e.latencyMs) ? `${esc(e.latencyMs)} ms` : na}</td>
+      <td class="num">${c.actual ? esc(c.actual) : c.projected ? `${esc(c.projected)} projected` : na}</td>
+    </tr>`;
+  }).join("");
+
+  return `<section class="panel insp"><div class="phs"><h2>Activity inspector</h2>
+    <span class="tag">${t.decisions} decision${t.decisions === 1 ? "" : "s"}</span></div>
+  <div class="pbody">
+  <p class="tfoot">What ran while it was deciding, from the records it wrote at the time.
+  ${t.ruleOnly} of ${t.decisions} were settled by a rule with no model call at all.
+  ${t.actualTokens ? `${t.actualTokens} tokens actually spent.` : "No model tokens have been spent by this agent yet."}
+  ${t.projectedTokens ? `${t.projectedTokens} projected across the journal.` : ""}
+  ${t.meanLatencyMs !== null ? `Mean latency ${t.meanLatencyMs} ms across ${t.latencyN} recorded.` : "No latency recorded yet."}</p>
+  <div class="itwrap"><table class="itab">
+    <thead><tr><th>Corner</th><th>Tool</th><th>Model</th><th class="num">Latency</th><th class="num">Tokens</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>
+  </div></section>`;
+};
+
+// Rejected ingests.
+//
+// Publishing what was thrown away is the house style, and this endpoint is the
+// one place the site accepts facts from outside the building. A refusal nobody
+// can read is a refusal nobody can check.
+const REJECTS = (log) => {
+  const list = Array.isArray(log) ? log : [];
+  if (!list.length) {
+    return `<section class="panel"><div class="phs"><h2>Rejected ingests</h2></div>
+  <div class="pbody"><p class="tfoot quiet">Nothing has been refused. When the site refuses a decision,
+  the reason appears here rather than in a counter: an unknown corner, a date in the future, a decline
+  with no reasoning, a tool outside the known set, a consequence this site cannot verify from its own
+  records, or a decision it has already stored.</p></div></section>`;
+  }
+  const rows = [...list].reverse().slice(0, 30).map((r) => `<tr>
+      <td>${esc(pacific(r.at, { dateStyle: "medium", timeStyle: "short" }) || r.at || "")}</td>
+      <td>${esc(r.slug || "no corner")}</td>
+      <td><span class="rejwhy">${esc(r.why || "refused")}</span></td>
+      <td>${esc(r.detail || "")}</td>
+    </tr>`).join("");
+  return `<section class="panel"><div class="phs"><h2>Rejected ingests</h2>
+    <span class="tag">${list.length} refused</span></div>
+  <div class="pbody">
+  <p class="tfoot">The site is as strict with the agent as it is with a model draft. Every refusal is
+  stored with its reason and published here.</p>
+  <div class="itwrap"><table class="itab">
+    <thead><tr><th>When</th><th>Corner</th><th>Why</th><th>Detail</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>
+  </div></section>`;
+};
+
+export const WATCHDOG = (journal = [], rejects = 0, origin = "", preview = false, scored = 0, rejectLog = []) => {
   const entries = Array.isArray(journal) ? journal : [];
   const s = journalStats(entries);
   const trend = weeklyPrecision(entries);
@@ -159,7 +270,10 @@ export const WATCHDOG = (journal = [], rejects = 0, origin = "", preview = false
   const headlineStat = ran
     ? `<div class="bignum">${s.restraintPct}<i>%</i></div>
        <p class="bigsub">of the changes it evaluated ended in <b>no action at all</b>.
-       ${s.evaluated} evaluated, ${s.acted} acted on, ${s.declined} escalated and then declined.</p>`
+       ${s.evaluated} evaluated, ${s.acted} acted on, ${s.declined} escalated and then declined.</p>
+       <p class="bigcav">A restraint rate is gameable by declining everything, which is why every
+       decline on this page carries the reasoning that produced it and links to the corner it is
+       about. The number is only worth what the sentences under it are worth.</p>`
     : `<div class="bignum quiet">Not yet</div>
        <p class="bigsub">The agent has not run. This page will fill itself in when it does,
        and it will show the declines as prominently as the actions.</p>`;
@@ -198,6 +312,18 @@ ${BASE_CSS}
    on white, so the number wears the same hue darkened one step. */
 .bignum{font-size:64px;font-weight:700;letter-spacing:-.03em;line-height:1;color:#d96a10}
 .bignum i{font-size:30px;font-style:normal;margin-left:2px}
+.bigcav{margin:10px 0 0;font-size:11.5px;color:var(--dim);line-height:1.55;max-width:64ch}
+.insp{margin-top:22px}
+.itwrap{overflow-x:auto}
+.itab{width:100%;border-collapse:collapse;font-size:12px}
+.itab th{text-align:left;font-weight:600;color:var(--dim);font-size:11px;letter-spacing:.04em;
+  text-transform:uppercase;padding:6px 10px 6px 0;border-bottom:1px solid var(--line2);white-space:nowrap}
+.itab td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line);color:var(--ink);vertical-align:top}
+.itab td.num,.itab th.num{text-align:right;font-variant-numeric:tabular-nums;padding-right:0}
+.itab a{color:var(--ink)}
+.na{color:var(--dim);font-style:italic}
+.rulechip{font-size:11px;color:var(--dim)}
+.rejwhy{font-weight:600;color:#8a1c1c}
 .bignum.quiet{color:var(--dim);font-size:40px}
 .bigsub{font-size:14px;color:var(--dim);margin:12px 0 0;line-height:1.6;max-width:620px}
 .bigsub b{color:var(--ink)}
@@ -276,6 +402,9 @@ ${
 ${entries.map(entryHtml).join("\n")}`
     : ""
 }
+
+${INSPECTOR(entries)}
+${REJECTS(rejectLog)}
 
 <p class="meta">
   ${

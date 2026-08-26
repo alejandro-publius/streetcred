@@ -37,6 +37,55 @@ const KINDS = new Set(["journal_entry", "rescore", "letter", "flag"]);
 const ACTIONS = new Set(["rescore", "reaudit_imagery", "regenerate_letter", "flag"]);
 const GRADES = new Set(["A", "B", "C", "D", "F"]);
 
+// Every tool the agent may report having called, including the one that does
+// nothing. `decline` is a tool here for the same reason it is a tool there: an
+// agent that ends a deliberation by returning an empty list has not decided
+// anything, and this endpoint refuses to record an absence as a decision.
+export const TOOLS = new Set([...ACTIONS, "decline"]);
+
+// Why an ingest was refused. Named rather than free text so /watchdog can group
+// them and so a test can assert on the class rather than on a sentence.
+export const REJECT = {
+  UNKNOWN_CORNER: "unknown corner",
+  FUTURE_DATE: "decided_at is in the future",
+  DECLINE_NO_REASON: "decline carries no reasoning",
+  UNKNOWN_TOOL: "tool outside the known set",
+  UNVERIFIABLE_CONSEQUENCE: "claimed consequence this site cannot verify",
+  DUPLICATE: "duplicate decision id",
+  SHAPE: "malformed record",
+};
+
+// Today in Pacific, which is the timezone every date claim on this site is
+// about. A decision stamped tomorrow is either a clock fault or a fabrication
+// and neither belongs in a journal that reads as a record of what happened.
+export function pacificDay(now = Date.now()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(now));
+}
+
+function isFuture(ts, now = Date.now()) {
+  if (!ts) return false;
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return false;
+  return pacificDay(d.getTime()) > pacificDay(now);
+}
+
+// What the agent says it did, and whether this site can see it. A consequence
+// is verifiable when the site holds the artefact the agent claims to have
+// produced: a rescore it stored, a letter it stored, a flag it stored. An
+// action claimed with nothing behind it is a promise, and a promise published
+// as a decision is the thing this whole project argues against.
+//
+// `decline` and an empty action list are always verifiable, because the claim
+// being made is that nothing happened, and nothing is what the site can see.
+export function unverifiableConsequences(actions, seen) {
+  return (actions || []).filter((a) => !seen.has(a));
+}
+
 // Length-independent comparison. Workers has no timingSafeEqual, so this is the
 // honest version: fold every byte into an accumulator and compare once at the
 // end. It leaks the length of the configured token and nothing else.
@@ -72,15 +121,63 @@ function validate(kind, body) {
   if (needsSlug && !slug) return { error: "slug required" };
 
   if (kind === "journal_entry") {
-    const actions = Array.isArray(body.actions)
-      ? [...new Set(body.actions.map((a) => str(a, 40)).filter((a) => ACTIONS.has(a)))]
-      : [];
-    if (!str(body.tier1?.reason) && !str(body.tier2?.reasoning)) {
-      return { error: "an entry must carry a reason from at least one tier" };
+    // An unknown tool is refused, not dropped.
+    //
+    // This used to filter the list, so a decision reporting a tool this site
+    // has never heard of published as a decision with fewer actions than the
+    // agent claimed. Silently agreeing with a caller about a smaller version of
+    // what it said is the quietest way to publish something false.
+    const claimed = Array.isArray(body.actions) ? body.actions.map((a) => str(a, 40)) : [];
+    const unknown = claimed.filter((a) => !TOOLS.has(a));
+    if (unknown.length) {
+      return { error: `${REJECT.UNKNOWN_TOOL}: ${unknown.slice(0, 3).join(", ")}`, why: REJECT.UNKNOWN_TOOL };
     }
+    const tool = str(body.tool, 40);
+    if (tool && !TOOLS.has(tool)) {
+      return { error: `${REJECT.UNKNOWN_TOOL}: ${tool}`, why: REJECT.UNKNOWN_TOOL };
+    }
+    const actions = [...new Set(claimed.filter((a) => ACTIONS.has(a)))];
+
+    if (!str(body.tier1?.reason) && !str(body.tier2?.reasoning)) {
+      return { error: "an entry must carry a reason from at least one tier", why: REJECT.SHAPE };
+    }
+
+    // A decline is the outcome this whole page exists to make legible, and a
+    // decline with no reasoning is indistinguishable from a lane that fell over.
+    // Deliberated means tier two answered; the reasoning is what it answered.
+    const declined = Boolean(body.tier2) && actions.length === 0;
+    if (declined && !str(body.tier2?.reasoning)) {
+      return { error: REJECT.DECLINE_NO_REASON, why: REJECT.DECLINE_NO_REASON };
+    }
+    if (tool === "decline" && !str(body.tier2?.reasoning) && !str(body.tier1?.reason)) {
+      return { error: REJECT.DECLINE_NO_REASON, why: REJECT.DECLINE_NO_REASON };
+    }
+
+    const ts = str(body.ts, 40) || str(body.decided_at, 40) || new Date().toISOString();
+    if (isFuture(ts)) {
+      return { error: `${REJECT.FUTURE_DATE}: ${ts}`, why: REJECT.FUTURE_DATE };
+    }
+
     return {
       record: {
-        ts: str(body.ts, 40) || new Date().toISOString(),
+        // The agent's own id for this decision, which is what makes a repost
+        // idempotent. Derived here when absent so an older agent build still
+        // gets deduplicated on the fields it does send.
+        decisionId:
+          str(body.decisionId, 120) ||
+          `${str(body.runId, 60) || "norun"}:${slug || "noslug"}:${ts}`,
+        ts,
+        tool: tool || (actions.length ? actions[0] : declined ? "decline" : null),
+        // Which tier settled it, in the vocabulary the brief asked for. byRule
+        // means the deterministic floor answered before any tier was consulted.
+        tier: body.tier1?.byRule ? "rule" : body.tier2 ? "judgment" : "reflex",
+        // What ran, structured rather than buried in the degraded sentence, so
+        // the inspector can render it without parsing prose.
+        model: str(body.model, 80) || null,
+        modelVersion: str(body.modelVersion, 40) || null,
+        latencyMs: int(body.latencyMs),
+        cost: body.cost && typeof body.cost === "object" ? body.cost : null,
+        runId: str(body.runId, 60) || null,
         slug: slug || null,
         name: str(body.name, 120) || null,
         delta: str(body.delta, 600),
@@ -170,13 +267,62 @@ export async function handleAgentReport(request, env, deps) {
     return { status: 400, body: { error: `kind must be one of ${[...KINDS].join(", ")}` } };
   }
 
+  // Every refusal from here down is stored with its reason and published on
+  // /watchdog. A rejection nobody can read is a rejection nobody can check, and
+  // this endpoint is the one place on the site that accepts facts from outside.
+  const refuse = async (why, detail, extra = {}) => {
+    await deps.recordReject(env, {
+      at: new Date().toISOString(),
+      kind,
+      why,
+      detail: str(detail, 300),
+      slug: str(body?.slug, 80) || null,
+      decisionId: str(body?.decisionId, 120) || null,
+      ...extra,
+    });
+    return { status: 400, body: { accepted: false, error: detail, why } };
+  };
+
   const v = validate(kind, body);
-  if (v.error) return { status: 400, body: { error: v.error } };
+  if (v.error) return await refuse(v.why || REJECT.SHAPE, v.error);
   const record = v.record;
 
   if (kind === "journal_entry") {
+    // The corner has to be one this site knows. An entry about a slug that
+    // resolves to nothing is a decision about a street that, as far as this
+    // product is concerned, does not exist, and it would render as a dead link
+    // beside real ones.
+    if (record.slug) {
+      const known = await deps.cornerFor(record.slug).catch(() => null);
+      if (!known) return await refuse(REJECT.UNKNOWN_CORNER, `${REJECT.UNKNOWN_CORNER}: ${record.slug}`);
+    }
+
+    // Idempotent on the agent's own decision id. The actor retries with backoff
+    // and a retry that lands twice would publish one decision as two, which
+    // moves the restraint rate.
+    const existing = await deps.journalEntries(env).catch(() => []);
+    if (record.decisionId && existing.some((e) => e.decisionId === record.decisionId)) {
+      return {
+        status: 200,
+        body: { accepted: true, duplicate: true, kind, decisionId: record.decisionId },
+      };
+    }
+
+    // A claimed consequence this site cannot see is not published as one. The
+    // artefacts it can see are the ones it stored itself.
+    if (record.actions.length) {
+      const seen = await deps.consequencesFor(env, record.slug).catch(() => new Set());
+      const missing = unverifiableConsequences(record.actions, seen);
+      if (missing.length) {
+        return await refuse(
+          REJECT.UNVERIFIABLE_CONSEQUENCE,
+          `${REJECT.UNVERIFIABLE_CONSEQUENCE}: ${missing.join(", ")}`,
+        );
+      }
+    }
+
     const entry = await deps.appendJournal(env, record);
-    return { status: 200, body: { accepted: true, kind, entries: entry.count } };
+    return { status: 200, body: { accepted: true, kind, entries: entry.count, decisionId: record.decisionId } };
   }
 
   if (kind === "rescore") {

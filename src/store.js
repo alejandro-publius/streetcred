@@ -1446,6 +1446,34 @@ export async function getAgentFlag(env, slug) {
 
 // The only thing a failed authentication is allowed to leave behind. Counted so
 // the page can say "N rejected" without recording who, when or with what.
+// Rejected ingests, kept rather than counted.
+//
+// This used to be one integer. A number is enough to notice that something was
+// refused and useless for saying what, which put the agent's failures in the
+// one place this project refuses to put anything: out of sight. Publishing what
+// was thrown away is the house style, so the reason travels with the rejection
+// and /watchdog renders it.
+//
+// Capped like the journal. Newest last, same order as the journal, so the two
+// read together.
+export const REJECT_CAP = 60;
+
+export async function appendAgentReject(env, reject, cap = REJECT_CAP) {
+  const list = (await env.STORE?.get("agent:rejectlog", "json").catch(() => null)) || [];
+  const next = [...(Array.isArray(list) ? list : []), reject].slice(-cap);
+  await env.STORE?.put("agent:rejectlog", JSON.stringify(next));
+  // The counter stays. It has been incrementing since the endpoint opened and
+  // resetting it to the length of a capped list would lose every rejection from
+  // before this change.
+  await countAgentReject(env).catch(() => {});
+  return { count: next.length };
+}
+
+export async function getAgentRejectLog(env) {
+  const list = await env.STORE?.get("agent:rejectlog", "json").catch(() => null);
+  return Array.isArray(list) ? list : [];
+}
+
 export async function countAgentReject(env) {
   const used = parseInt((await rawGet(env, "agent:rejects")) || "0", 10) || 0;
   await rawPut(env, "agent:rejects", String(used + 1));
