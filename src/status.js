@@ -270,6 +270,25 @@ first, and a real charge can show as usage while the remaining balance does not 
 <div class="srow"><span class="ep">Apify actor runs, ${esc(spend.apify.month)}</span>
   <span class="ms">${spend.apify.used} of ${spend.apify.cap} &middot; $${spend.apifyUsd.toFixed(3)} ledger</span></div>
 ${
+  spend.apify.reserved
+    ? `<div class="srow"><span class="ep">Reserved for the daily cron through month end</span>
+  <span class="ms">${spend.apify.reserved} run${spend.apify.reserved === 1 ? "" : "s"} &middot; ${spend.apify.cronFirings} firing${spend.apify.cronFirings === 1 ? "" : "s"} &times; 2</span></div>`
+    : ""
+}
+${
+  spend.apify.paused
+    ? `<p class="note"><strong>Commissioning paused to protect the monthly ceiling.</strong> ${spend.apify.used}
+of ${spend.apify.cap} runs are used, ${spend.apify.remaining} remain, and all ${spend.apify.reserved} of them are
+reserved for the ${spend.apify.cronFirings} remaining daily cron firing${spend.apify.cronFirings === 1 ? "" : "s"} at two
+runs each. Anything other than the morning cycle is refused by name and the refusal is written to the same
+ledger the runs are, so a paused lane and a lane nobody asked to run do not read the same. The ceiling is not
+raised to make this go away.</p>`
+    : spend.apify.availableToOthers
+      ? `<p class="note">${spend.apify.availableToOthers} run${spend.apify.availableToOthers === 1 ? "" : "s"} beyond the
+cron reserve remain available this month.</p>`
+      : ""
+}
+${
   spend.invoice
     ? `<div class="srow"><span class="ep">Apify invoice for the cycle, from the provider</span>
   <span class="ms">$${Number(spend.invoice.cycleUsd).toFixed(4)} of $${spend.invoice.cycleCapUsd}</span></div>`
