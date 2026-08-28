@@ -24,7 +24,7 @@ import {
   getScoreRaw, appendChange, getChanges,
   getWatchlist, putWatchlist, getWatchlistRun, putWatchlistRun, getConnections, putConnections,
   getLetterBackoff, setLetterBackoff,
-  getVoicesStored, exaBudget, actorRunBudget, getActorCosts, getVoicesSummary,
+  getVoicesStored, exaBudget, actorRunBudget, getActorCosts, getVoicesSummary, getPressRecent,
   recordExaSpend, recordExaProbe, getExaProbe,
   getPress, putPress, getPressRollup, bumpPressRollup, bumpPressRollupBulk, openExaMeter,
   getBurnCheckpoint, putBurnCheckpoint,
@@ -59,6 +59,7 @@ import { buildInputSet, verifyLetter, retryInstruction, VERIFY_VERSION } from ".
 import { buildLetterPrompt } from "./letterprompt.js";
 import { handleAgentReport, journalStats, JOURNAL_CAP } from "./agent.js";
 import { WATCHDOG } from "./watchdog.js";
+import { collectTicker } from "./ticker.js";
 import { projectImpact } from "./impact.js";
 import { METHODOLOGY } from "./methodology.js";
 import { WATCHLIST_PAGE } from "./watchlistpage.js";
@@ -1932,7 +1933,9 @@ async function cornerOfTheDay(env, ctx, origin) {
   // Commission tomorrow's resident voices for this corner. Two actor runs,
   // started and not awaited, against a hard monthly ceiling. The next cycle
   // reads them.
-  const commissioned = await lane("voices commission", () => commissionVoices(env, corner));
+  const commissioned = await lane("voices commission", () =>
+    // The cron is the reserve. Everything else is held to what is left after it.
+    commissionVoices(env, corner, { forCron: true }));
 
   // The press, connected. findSimilar on this corner's best story, every
   // crossing named in the related coverage put through the same verification
@@ -2736,7 +2739,15 @@ export default {
           checkCitations: pressCites?.citations || 0,
           asOf: fmtAsOf(pressCites?.at || pressRoll?.updated || pressSummary?.at),
         };
-        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressTile, spendUsd, embed, auditTiers, { discs: coverage, radiusM: coverageRadiusM(meta) }, (await getJournal(env).catch(() => [])).length), {
+        // The day's findings row. Seven capped list reads, no fan-out, no
+        // per-corner lookup, and it fails to an absent row rather than to an
+        // error: an ornament under the masthead must never be able to take the
+        // most-loaded page on the site down with it.
+        const ticker = await collectTicker(env, {
+          getPressRecent, getActorCosts, getWatchlist, getJournal, getCotdLog,
+          exaBudget, actorRunBudget, watchlistVersion: WATCHLIST_VERSION,
+        }).catch(() => null);
+        return new Response(HOME(corners, origin, cotdLog, suggestion, Boolean(env.PREVIEW), city, watchlist, voicesSummary, pressTile, spendUsd, embed, auditTiers, { discs: coverage, radiusM: coverageRadiusM(meta) }, (await getJournal(env).catch(() => [])).length, ticker), {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }

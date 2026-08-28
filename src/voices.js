@@ -356,7 +356,10 @@ async function datasetItems(env, datasetId, limit = 200) {
 // reviews a corner and not one of them cleared the street-safety bar, while
 // four of the five corners that got a Reddit run produced a quote.
 export async function commissionVoices(env, c, opts = {}) {
-  const budget = await actorRunBudget(env);
+  // `opts.now` exists so a test can ask about a fixed instant. The reserve is
+  // a function of the calendar, so a test that reads the wall clock passes or
+  // fails depending on the hour it runs at, which is not a test.
+  const budget = await actorRunBudget(env, opts.now);
   const started = [];
   const failed = [];
 
@@ -366,8 +369,20 @@ export async function commissionVoices(env, c, opts = {}) {
   ].filter(([name]) => !opts.only || opts.only === name);
 
   for (const [name, actor, input] of wanted) {
-    if (!(await reserveActorRun(env))) {
-      failed.push({ actor: name, reason: `monthly actor run cap reached (${budget.cap})` });
+    const slot = await reserveActorRun(env, { forCron: Boolean(opts.forCron), now: opts.now });
+    if (!slot.ok) {
+      // Two refusals, said apart. The ceiling means the month is spent. The
+      // reserve means the month is spoken for by the daily cron, which is a
+      // different thing to fix and must never read as the same failure.
+      failed.push({
+        actor: name,
+        reason:
+          slot.why === "reserved"
+            ? `commissioning paused to protect the monthly ceiling: ${slot.used} of ${slot.cap} runs used, ` +
+              `${slot.remaining} left and all ${slot.reserved} reserved for the daily cron through month end`
+            : `monthly actor run cap reached (${budget.cap})`,
+        why: slot.why,
+      });
       continue;
     }
     try {
@@ -379,6 +394,19 @@ export async function commissionVoices(env, c, opts = {}) {
   }
 
   if (!started.length) {
+    // Journaled in the same ledger the successful runs use. A refusal that
+    // leaves no record is indistinguishable from a lane nobody asked to run,
+    // and the status page reads this to say which of the two happened.
+    await appendActorCost(env, {
+      slug: c.slug,
+      name: c.name,
+      at: new Date().toISOString(),
+      event: "refused",
+      reason: failed[0]?.reason || "no run started",
+      why: failed[0]?.why || "error",
+      runs: [],
+      costUsd: 0,
+    }).catch(() => {});
     return { ok: false, slug: c.slug, started: [], failed };
   }
 

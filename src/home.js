@@ -7,6 +7,7 @@
 // cost of a single image request.
 
 import { FONT_LINK, BASE_CSS, META, MASTHEAD, FOOTER, STATBAND, HERO_CORNER, PACIFIC_DAY_JS } from "./page.js";
+import { TICKER, TICKER_CSS, TICKER_JS } from "./ticker.js";
 import { pacificToday } from "./data.js";
 
 // The streak, newest first, with no chip dated beyond today in
@@ -149,7 +150,7 @@ function severityLine(c) {
   return bits.length ? bits.join(", ") : "no injury collisions in 5 years";
 }
 
-export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null, press = null, spendUsd = null, embed = null, tiers = null, coverage = null, agentEntries = 0) => {
+export const HOME = (corners, origin = "", cotd = [], suggestion = null, preview = false, city = null, watchlist = null, voices = null, press = null, spendUsd = null, embed = null, tiers = null, coverage = null, agentEntries = 0, ticker = null) => {
   // A corner without finite geometry poisons every pin: fitView produces a NaN
   // center and every overlay lands at left:NaN%. One bad row on the board must
   // cost that row its pin, not the whole map its anchors. It happened: a board
@@ -215,6 +216,7 @@ ${ranked.length ? `<meta property="og:image" content="${origin}/og.jpg?x=${ranke
 ${FONT_LINK}
 <style>
 ${BASE_CSS}
+${TICKER_CSS}
 .askhero{text-align:center;padding:26px 0 30px}
 .askq{font-size:clamp(26px, 4.5vw, 40px);font-weight:700;letter-spacing:-.02em;margin:0 0 18px}
 .findbig{margin:0 auto;max-width:520px;display:flex;justify-content:center;position:relative}
@@ -483,6 +485,7 @@ a.cfrow:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 <body>
 <div class="wrap">
 ${MASTHEAD({ scored, active: "" })}
+${TICKER(ticker)}
 <main>
 
 <div class="herohead">
@@ -705,6 +708,7 @@ ${FOOTER()}
 </div>
 
 <script>
+${TICKER_JS}
 ${PACIFIC_DAY_JS}
 const el = id => document.getElementById(id);
 document.querySelectorAll(".eyebrow").forEach(e => e.classList.add("drawn"));

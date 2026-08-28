@@ -255,7 +255,12 @@ test("the actor ceiling refuses per run and names the cap instead of throwing", 
   const { commissionVoices } = await import("../src/voices.js");
   const env = fakeEnv({ [`apifyruns:${utcMonth()}`]: String(MONTHLY_ACTOR_RUN_CAP) });
 
-  assert.equal(await reserveActorRun(env), false, "the ceiling returns false");
+  // reserveActorRun answers with a reason now, because "the month is spent" and
+  // "the month is reserved for the cron" need different repairs. See
+  // tools/apifyreserve.test.mjs for the second one.
+  const refused = await reserveActorRun(env);
+  assert.equal(refused.ok, false, "the ceiling refuses");
+  assert.equal(refused.why, "cap", "at the ceiling the reason is the ceiling");
 
   const out = await withFetch(
     async () => { env.__mark("provider:apify"); throw new Error("a run was started past the cap"); },
@@ -415,7 +420,7 @@ test("the actor ceiling archives by month key, so last month's count is still th
 
   // Each month is its own key, so the archive is the key naming and the
   // rollover costs nothing. The TTL is what keeps it from being forever.
-  assert.equal(await reserveActorRun(env), true);
+  assert.equal((await reserveActorRun(env)).ok, true);
   const put = env.__log.find((e) => e.op === "put" && e.key === `apifyruns:${utcMonth()}`);
   assert.ok(put, "the current month's key was written");
   assert.ok(put.ttl >= 60 * 24 * 3600, `a written count should outlive the month, got ttl ${put.ttl}`);

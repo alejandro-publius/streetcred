@@ -859,6 +859,52 @@ export async function getPress(env, slug, version) {
 
 export async function putPress(env, slug, rec) {
   await rawPut(env, `press:corner:${slug}`, JSON.stringify(rec));
+  await appendPressRecent(env, slug, rec).catch(() => {});
+}
+
+// A short citywide index of press that arrived, newest first.
+//
+// The per-corner records carry everything and there are thousands of them, so
+// answering "what came in today" from those means listing and reading the lot.
+// The homepage cannot do that, and a bounded scan that stops early would answer
+// a question about today with a sample, which is the kind of number this site
+// exists not to print. So the index is written at ingest time, where the answer
+// is already in hand, beside the roll-up that is written there for the same
+// reason.
+//
+// Capped small on purpose. This is a day's findings row, not an archive; the
+// archive is the per-corner records and /watchlist links to them.
+export const PRESS_RECENT_CAP = 40;
+
+export async function appendPressRecent(env, slug, rec) {
+  const items = (rec?.items || [])
+    .slice(0, 3)
+    .map((a) => ({ title: a.title || "", publisher: a.publisher || a.source || "", url: a.url || "" }))
+    .filter((a) => a.title);
+  if (!items.length) return null;
+
+  const raw = await rawGet(env, "press:recent");
+  let log = [];
+  try {
+    const parsed = raw ? JSON.parse(raw) : [];
+    log = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    log = [];
+  }
+  const entry = { slug, name: rec?.name || slug, at: rec?.fetchedAt || new Date().toISOString(), items };
+  const next = [entry, ...log.filter((e) => e.slug !== slug)].slice(0, PRESS_RECENT_CAP);
+  await rawPut(env, "press:recent", JSON.stringify(next));
+  return next;
+}
+
+export async function getPressRecent(env) {
+  const raw = await rawGet(env, "press:recent");
+  try {
+    const l = raw ? JSON.parse(raw) : [];
+    return Array.isArray(l) ? l : [];
+  } catch {
+    return [];
+  }
 }
 
 // The roll-up the watchlist page reads. Counted as corners are written rather
@@ -1204,18 +1250,83 @@ export const MONTHLY_ACTOR_RUN_CAP = 70;
 
 const monthKey = () => new Date().toISOString().slice(0, 7);
 
-export async function actorRunBudget(env) {
-  const used = parseInt((await rawGet(env, `apifyruns:${monthKey()}`)) || "0", 10) || 0;
-  return { used, cap: MONTHLY_ACTOR_RUN_CAP, remaining: Math.max(0, MONTHLY_ACTOR_RUN_CAP - used), month: monthKey() };
+// The daily corner-of-the-day cron commissions two actor runs, one Maps and one
+// Reddit, for one corner. Both numbers are here rather than inferred, and
+// tools/cron.test.mjs already pins the schedule this reads.
+export const CRON_UTC_HOUR = 13;
+export const CRON_UTC_MINUTE = 10;
+export const RUNS_PER_CRON = 2;
+
+// How many runs the daily cron still needs this month.
+//
+// Written after the counter reached 62 of 70 with four cron firings left, which
+// need eight. The remainder was exactly the reserve, so any other commissioning
+// would have taken a morning's voices away from the cron and the failure would
+// have looked like an ordinary ceiling hit on whichever call lost the race.
+//
+// Pure and dated, so a test can ask it about any instant rather than about now.
+// Counts firings still ahead of `now` through the last day of the month, because
+// the counter this protects is monthly and rolls with it.
+export function cronRunsReserved(now = new Date()) {
+  const d = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(d.getTime())) return 0;
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth();
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  let firings = 0;
+  for (let day = d.getUTCDate(); day <= lastDay; day += 1) {
+    const at = Date.UTC(year, month, day, CRON_UTC_HOUR, CRON_UTC_MINUTE, 0, 0);
+    if (at > d.getTime()) firings += 1;
+  }
+  return firings * RUNS_PER_CRON;
 }
 
-export async function reserveActorRun(env) {
+export async function actorRunBudget(env, now) {
+  const at = now || new Date();
+  const used = parseInt((await rawGet(env, `apifyruns:${monthKey()}`)) || "0", 10) || 0;
+  const remaining = Math.max(0, MONTHLY_ACTOR_RUN_CAP - used);
+  const reserved = cronRunsReserved(at);
+  const availableToOthers = Math.max(0, remaining - reserved);
+  return {
+    used,
+    cap: MONTHLY_ACTOR_RUN_CAP,
+    remaining,
+    month: monthKey(),
+    // The reserve, and whether it is currently biting. `paused` is what the
+    // status page and the ticker read, so neither has to recompute the rule.
+    reserved,
+    availableToOthers,
+    paused: remaining > 0 && availableToOthers === 0,
+    cronFirings: reserved / RUNS_PER_CRON,
+  };
+}
+
+// `forCron` is the daily cycle spending the reserve it is the reserve for.
+// Everything else is held to what is left after it, and refused by name rather
+// than by returning the same false the ceiling returns, because "the month is
+// spent" and "the month is spoken for" need different repairs.
+export async function reserveActorRun(env, opts = {}) {
   const key = `apifyruns:${monthKey()}`;
   const used = parseInt((await rawGet(env, key)) || "0", 10) || 0;
-  if (used >= MONTHLY_ACTOR_RUN_CAP) return false;
+  if (used >= MONTHLY_ACTOR_RUN_CAP) return { ok: false, why: "cap", used, cap: MONTHLY_ACTOR_RUN_CAP };
+
+  if (!opts.forCron) {
+    const budget = await actorRunBudget(env, opts.now || new Date());
+    if (budget.availableToOthers <= 0) {
+      return {
+        ok: false,
+        why: "reserved",
+        used,
+        cap: MONTHLY_ACTOR_RUN_CAP,
+        reserved: budget.reserved,
+        remaining: budget.remaining,
+      };
+    }
+  }
+
   // Two months, so a counter written on the last day cannot linger a year.
   await rawPut(env, key, String(used + 1), 62 * 24 * 3600);
-  return true;
+  return { ok: true, used: used + 1, cap: MONTHLY_ACTOR_RUN_CAP };
 }
 
 // What the site commissioned for a corner, and where the results will land.
