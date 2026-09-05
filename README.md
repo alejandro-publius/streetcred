@@ -1,5 +1,7 @@
 # StreetCred
 
+[![CI](https://github.com/alejandro-publius/streetcred/actions/workflows/ci.yml/badge.svg)](https://github.com/alejandro-publius/streetcred/actions/workflows/ci.yml)
+
 - **Live site:** https://streetcred.thealexschroeder.workers.dev
 - **Demo video:** not recorded yet. The link lands in [Demo video](#demo-video) below, with the shot list.
 - **Source:** https://github.com/alejandro-publius/streetcred
