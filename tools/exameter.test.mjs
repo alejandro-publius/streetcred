@@ -11,7 +11,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { openExaMeter } from "../src/store.js";
+import { openExaMeter, EXA_PERIOD } from "../src/store.js";
 
 // A KV double that counts writes, so the saving is measured rather than argued.
 const fakeEnv = (seed = {}) => {
@@ -28,7 +28,11 @@ const fakeEnv = (seed = {}) => {
   return env;
 };
 const meterOf = (env) => JSON.parse(env._store.get("budget:exa") || "{}");
-const period = new Date().toISOString().slice(0, 7);
+// The meter's period is a deployed constant, not the calendar month:
+// readExaMeter discards any stored record whose period differs from it, and
+// rolling it is a spending decision made by hand. Seeding with the wall-clock
+// month made every test here fail from the first day of the next month.
+const period = EXA_PERIOD;
 const seeded = (over = {}) =>
   fakeEnv({ "budget:exa": JSON.stringify({ period, spentCents: 0, reservedCents: 0, searches: 0, contentPages: 0, deferrals: 0, capCents: 6500, ...over }) });
 
