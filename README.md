@@ -1,6 +1,8 @@
 # StreetCred
 
 [![CI](https://github.com/alejandro-publius/streetcred/actions/workflows/ci.yml/badge.svg)](https://github.com/alejandro-publius/streetcred/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-22-339933?logo=node.js&logoColor=white)](.github/workflows/ci.yml)
 
 - **Live site:** https://streetcred.thealexschroeder.workers.dev
 - **Demo video:** not recorded yet. The link lands in [Demo video](#demo-video) below, with the shot list.
@@ -17,6 +19,20 @@ Pick a San Francisco intersection. StreetCred shows what the city's own data rec
 Built in a single 55 minute sprint at Build Club, "Moonlighting with Gemini + Exa", August 17 2026. The git log covers the whole product.
 
 The homepage is the city: every warmed corner on one map, ranked by Danger Index, worst first. Any San Francisco intersection can be typed in and graded on the spot. Each corner lives at its own shareable URL.
+
+**Three commands, no credentials, verified 2026-09-07 (see [Running it](#running-it) for the full output):**
+
+```
+git clone https://github.com/alejandro-publius/streetcred && cd streetcred
+node --test tools/*.test.mjs          # 488 tests, 488 pass, 0 fail
+npx wrangler deploy --dry-run --outdir /tmp/build
+```
+
+**Jump to:** [What it does](#what-it-does) · [How Exa is used](#how-exa-is-used) · [How Apify is used](#how-apify-is-used) · [How we used Gemini](#how-we-used-gemini) · [Architecture](#architecture) · [How the honesty rails work](#how-the-honesty-rails-work) · [Running it](#running-it) · [Honest limits](#honest-limits)
+
+![The StreetCred homepage, captured headless against the live deployed Worker: the "What's your corner's grade?" search box on the left, and the autonomous corner-of-the-day panel on the right showing the audit-vs-fix comparison for London and Persia with its collision and 311 counts underneath.](docs/screenshots/homepage.png)
+
+*The live homepage, screenshotted headless on 2026-09-07 to confirm the front door is actually up.*
 
 ## What it does
 
@@ -576,15 +592,15 @@ The full timed script, with narration, lives in [`docs/demo_loom_script.md`](doc
 
 ## Running it
 
-**With no credentials at all**, which is most of it. Verified on a clean `git clone` into an empty directory on 2026-08-20, Node v26 locally, and this is the exact output:
+**With no credentials at all**, which is most of it. Verified on a clean `git clone` into an empty directory on 2026-09-07, Node v26 locally, and this is the exact output:
 
 ```
 git clone https://github.com/alejandro-publius/streetcred && cd streetcred
-node --test tools/*.test.mjs          # 158 tests, 158 pass, 0 fail
+node --test tools/*.test.mjs          # 488 tests, 488 pass, 0 fail
 npx wrangler deploy --dry-run --outdir /tmp/build
 ```
 
-The dry run reads 24 asset files from `public/`, reports a total upload of 503.60 KiB (135.36 KiB gzipped), and lists the two bindings the Worker uses: `env.STORE`, a KV namespace, and `env.ASSETS`. It warns that multiple environments are defined and no target was named, which is expected: production is the top-level environment and `preview` is the other one.
+The dry run reads 26 asset files from `public/`, reports a total upload of 621.97 KiB (171.31 KiB gzipped), and lists the two bindings the Worker uses: `env.STORE`, a KV namespace, and `env.ASSETS`. It warns that multiple environments are defined and no target was named, which is expected: production is the top-level environment and `preview` is the other one.
 
 **There is no `package.json` and none is needed.** Nothing here is installed, bundled or transpiled. `wrangler` is invoked through `npx`, the source is plain ESM, and the tests use Node's own runner. CI runs those same two commands on **Node 22**, plus the verifier's own test file and a grep for key patterns across the tree, in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
