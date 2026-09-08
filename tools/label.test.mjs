@@ -18,3 +18,4 @@ for (const [name, flagged, ev, want] of cases) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name.padEnd(34)} -> ${String(got).padEnd(10)} (want ${want})`);
 }
 console.log(fail ? `\n${fail} FAILED` : "\nall labelling rules hold");
+process.exit(fail ? 1 : 0);
