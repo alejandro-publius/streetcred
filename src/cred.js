@@ -53,8 +53,16 @@ export function credCheck({ stats, news, voices, hazards }) {
     : "no injury collisions and too few street-condition reports";
 
   // Press coverage. Agency primary sources are excluded: a police bulletin is
-  // the record, not reporting on it.
-  const pressItems = (news?.items || []).filter((i) => !i.official && i.corroborates);
+  // the record, not reporting on it. A domain is required too: this is the
+  // grading function the site's whole "no source means no claim" rule points
+  // at, so it does not take an upstream lane's word that an item corroborates
+  // without a link a reader can actually check -- `domain` is what the
+  // citation below actually displays, and it is empty exactly when the item's
+  // url was empty or unparseable (domainOf() returns "" rather than
+  // throwing). Belt and suspenders with the filter in newsfilter.js's
+  // classify(), which is the fix for how an item with no real url got this
+  // far in the first place.
+  const pressItems = (news?.items || []).filter((i) => !i.official && i.corroborates && i.domain);
   const pressHit = pressItems.length > 0;
   const pressDetail = pressHit
     ? `${pressItems[0].domain}${pressItems[0].date ? `, ${pressItems[0].date}` : ""}` +
