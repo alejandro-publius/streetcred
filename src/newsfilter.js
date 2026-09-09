@@ -49,9 +49,23 @@ export function searchQuery(c) {
 // survives the deny list, each tagged with whether it names both streets
 // (corner level) or only one (corridor level), and whether its domain is an
 // agency primary source.
+//
+// A result with no url is required to fail here, not downstream. A title-only
+// result is not a citation a reader can check, and every caller of this
+// function turns "corroborates" into a public claim: the Cred Check's press
+// lane, the letter verifier's `citedPressCount`, and the card's own domain
+// line. pressenrich.js already refused an empty url before it ever reached
+// this function; getNews() in src/index.js does not, and called this function
+// directly on raw Exa output, so an empty-url result from that lane passed
+// straight through, with `domainOf("")` returning "" rather than throwing.
+// The result was a press "hit" whose citation rendered as a bare comma and a
+// date, and a letter sentence claiming press coverage verified against it.
+// Filtering it here, in the one function both callers share, is what the
+// module comment above already promises: two callers cannot drift apart on
+// what counts as a source if there is only one gate.
 export function classify(results, tokens) {
   return (results || [])
-    .filter((x) => x && x.title && !DENY.test(x.url || ""))
+    .filter((x) => x && x.title && x.url && !DENY.test(x.url))
     .map((x) => {
       const hay = `${x.title} ${x.url || ""} ${x.text || ""}`.toLowerCase();
       const titleHay = `${x.title} ${x.url || ""}`.toLowerCase();

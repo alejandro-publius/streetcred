@@ -134,9 +134,12 @@ export function buildInputSet({ corner, stats, score, news, timeline, supervisor
   const voicesCount = quotes.length;
 
   // Coverage, not records. An agency bulletin is the record; reporting on it is
-  // the coverage. Same exclusion the Cred Check's press lane makes.
+  // the coverage. Same exclusion the Cred Check's press lane makes, domain
+  // required for the same reason: a title with no real url behind it is not
+  // something a reader, or this verifier, can check, so it must not license a
+  // letter sentence that claims press coverage exists.
   const items = news?.items || news || [];
-  const citedPressCount = items.filter((i) => !i?.official && i?.corroborates).length;
+  const citedPressCount = items.filter((i) => !i?.official && i?.corroborates && i?.domain).length;
   // The timeline lane IS press history: headlines counted per year, from the
   // same kind of source the press lane reads. A corner can have nothing in the
   // current press window and still have 25 headlines going back to 2014, and

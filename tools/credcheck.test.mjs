@@ -108,6 +108,26 @@ test("an independent, corroborating article opens the press lane", () => {
   assert.equal(out.lanes.find((l) => l.key === "press").hit, true);
 });
 
+test("a corroborating item with no url does not open the press lane", () => {
+  // The rule this site states is "no source means no claim". A title with no
+  // url is not a source a reader can check, whatever `corroborates` says: it
+  // is exactly the shape newsfilter.classify() used to let through when a raw
+  // Exa result carried a title but an empty url, because that function only
+  // required `title`, not `url`. Fixed in newsfilter.js; this is the belt on
+  // the grading function itself, which must not take an upstream lane's word
+  // for a claim it cannot verify has a link behind it.
+  const out = credCheck({
+    stats: { crashes: 0, reports311: 0 },
+    news: { items: [{ domain: "", url: "", official: false, corroborates: true, date: "2026-01-01" }] },
+    voices: { items: [] },
+    hazards: { items: [] },
+  });
+  const press = out.lanes.find((l) => l.key === "press");
+  assert.equal(press.hit, false);
+  assert.equal(out.score, 0);
+  assert.equal(out.verdict, "REPORTED ONLY");
+});
+
 test("all four lanes hitting reaches CORROBORATED, the top verdict", () => {
   const out = credCheck({
     stats: { crashes: 1, fatal: 1, reports311: 5 },

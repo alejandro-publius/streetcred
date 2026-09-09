@@ -217,6 +217,23 @@ const laneCases = [
     false,
     "press",
   ],
+  [
+    "a corroborating item with no url is not a citation the letter can lean on",
+    "Local reporting has covered pedestrian safety on this corridor.",
+    buildInputSet({
+      corner: { name: "Taylor Street and Turk Street", short: "Taylor & Turk", fix: {} },
+      stats: { crashes: 41, district: 5 },
+      // Title and corroborates: true, no url. This is the shape a raw Exa
+      // result with a missing url used to take once classify() stopped
+      // requiring one; citedPressCount must not count it, or a letter
+      // claiming press coverage passes with nothing a reader can click.
+      news: { items: [{ domain: "", url: "", title: "Crash reported near Taylor and Turk", official: false, corroborates: true }] },
+      voices: { items: [] },
+      supervisor: "Bilal Mahmood",
+    }),
+    false,
+    "press",
+  ],
   // (c) magnitude words
   [
     "hundreds claimed where the page displays 41",
