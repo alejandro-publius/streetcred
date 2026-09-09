@@ -11,6 +11,7 @@
 
 import { supervisorFor, resolvedDistrict, addresseeFor } from "./data.js";
 import { SCORE_CAVEAT } from "./score.js";
+import { isReassuring } from "./cred.js";
 
 // "30 311 reports in 12 months" reads as one number.
 //
@@ -40,7 +41,14 @@ export function buildLetterPrompt(c, ctx) {
   // scrape at this corner returns plenty of transit-station commentary, and a
   // letter quoting a review of the escalators would weaken the ask.
   const ONTOPIC = /crosswalk|crossing|pedestrian|sidewalk|driver|traffic|curb|intersection|corner/i;
-  const quote = (ctx.voices?.items || []).map((v) => v.text).find((t) => t && ONTOPIC.test(t));
+  // And not one that reassures rather than complains. ONTOPIC only tests
+  // whether a quote names the street, not which way it points, so a review
+  // saying drivers are careful here and nothing has ever happened matched it
+  // exactly as well as a complaint would, and would have been quoted verbatim
+  // in a letter arguing the same corner needs a safety fix. Same rule
+  // isStreetQuote applies for the Cred Check and the verifier, applied here
+  // too so the quote the letter actually prints cannot contradict the letter.
+  const quote = (ctx.voices?.items || []).map((v) => v.text).find((t) => t && ONTOPIC.test(t) && !isReassuring(t));
   // With no clear district majority the addressee is the citywide official, and
   // the letter must not invent a district number to sound authoritative. One
   // resolver, shared with every other path that names an official, because two

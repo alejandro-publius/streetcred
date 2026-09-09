@@ -23,8 +23,57 @@ const SAFETY_TOKENS = [
 
 const has = (hay, list) => list.some((t) => hay.includes(t));
 
+// A quote saying the corner is fine is not testimony that it is dangerous.
+// The street-word lists above only ask whether a quote is ABOUT the street,
+// not which way it points, so a review reassuring readers that drivers are
+// careful here and nothing has ever happened passed the same gate as a
+// complaint: it raised the Resident accounts lane in the Cred Check and was
+// eligible, unedited, to be quoted in a letter to a Supervisor arguing that
+// same corner needs a safety fix.
+//
+// Every pattern here is checked for a nearby negation before it counts, using
+// a short word-window rather than one big regex, because the negation and the
+// word it negates are not always adjacent: "I don't ever feel safe crossing
+// here" negates "safe" from four words away. A regex that only excluded
+// "not safe" as a fixed phrase would flag that sentence as reassurance, which
+// is backwards: it is a complaint that happens to contain the word "safe".
+// Scraped review text drops apostrophes as often as it keeps them ("dont",
+// "isnt", "wasnt", "cant"), so a negation check anchored to "n't" alone
+// misses half of what it is looking for. Both spellings are listed rather
+// than stripping punctuation and matching one, because stripping would also
+// have to be applied everywhere else this text is read and this is the only
+// place the distinction matters.
+const NEGATED_WORD =
+  /\b(?:not|never|no|nobody|nothing|hardly|barely|rarely|don'?t|doesn'?t|isn'?t|aren'?t|wasn'?t|weren'?t|can'?t|won'?t|didn'?t)\b/;
+const negated = (window) => NEGATED_WORD.test(window);
+
+// The window checked for a negation spans both sides of the verb: "I
+// don't feel safe" negates from three words before "feel", and "it feels
+// perfectly safe" only has words between "feels" and "safe". Checking only
+// one side reads "I dont feel safe crossing here" as reassurance, which is
+// backwards -- it is the complaint the whole guard exists to keep counting.
+const REASSURE_VERB =
+  /((?:\S+\s+){0,3})\b(?:is|are|feels?|seems?|looks?|remains?)\b\s+((?:\S+\s+){0,3})safe\b/;
+const REASSURE_NOUN = /((?:\S+\s+){0,3})safe\s+(?:crossing|intersection|corner|street)\b/;
+const REASSURE_NEVER =
+  /\bnever\s+(?:had|seen|witnessed)\s+(?:an?\s+)?(?:issue|problem|incident|accident)\b/;
+const REASSURE_NO_ISSUE = /\bno\s+(?:problems?|issues?)\s+(?:here|crossing|at this corner)\b/;
+
+export function isReassuring(text) {
+  const t = String(text || "").toLowerCase();
+  const verb = t.match(REASSURE_VERB);
+  if (verb && !negated(verb[1] + " " + verb[2])) return true;
+  const noun = t.match(REASSURE_NOUN);
+  if (noun && !negated(noun[1])) return true;
+  // These two already only mean their reassuring sense in ordinary English --
+  // "never NOT had an issue" and "no NOT problems" are not real sentences --
+  // so no negation window is needed for them.
+  return REASSURE_NEVER.test(t) || REASSURE_NO_ISSUE.test(t);
+}
+
 export function isStreetQuote(text) {
   const t = String(text || "").toLowerCase();
+  if (isReassuring(t)) return false;
   if (has(t, STREET_STRONG)) return true;
   return has(t, STREET_WEAK) && has(t, STREET_STRONG);
 }
