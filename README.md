@@ -28,7 +28,7 @@ node --test tools/*.test.mjs          # 488 tests, 488 pass, 0 fail
 npx wrangler deploy --dry-run --outdir /tmp/build
 ```
 
-**Jump to:** [What it does](#what-it-does) · [How Exa is used](#how-exa-is-used) · [How Apify is used](#how-apify-is-used) · [How we used Gemini](#how-we-used-gemini) · [Architecture](#architecture) · [How the honesty rails work](#how-the-honesty-rails-work) · [Running it](#running-it) · [Honest limits](#honest-limits)
+**Jump to:** [What it does](#what-it-does) · [How Exa is used](docs/EXA_USAGE.md) · [How Apify is used](docs/APIFY_USAGE.md) · [How we used Gemini](docs/GEMINI_USAGE.md) · [Architecture](docs/ARCHITECTURE.md) · [How the honesty rails work](#how-the-honesty-rails-work) · [Running it](#running-it) · [Honest limits](#honest-limits)
 
 ![The StreetCred homepage, captured headless against the live deployed Worker: the "What's your corner's grade?" search box on the left, and the autonomous corner-of-the-day panel on the right showing the audit-vs-fix comparison for London and Persia with its collision and 311 counts underneath.](docs/screenshots/homepage.png)
 
@@ -108,279 +108,7 @@ Four independent sources cross-check each other on one specific claim, and that 
 
 The rest of the API is on the same contract and is worth clicking: `/api/score`, `/api/cred`, `/api/hazards`, `/api/impact`, `/api/connections`, `/api/suggest`, `/api/city`, `/api/board`, `/api/nearest`, `/api/watchlist`, `/api/radar`, `/api/changes` and `/api/health`, all routed in [`src/index.js`](src/index.js).
 
-## How Exa is used
-
-Exa answers the question no government dataset can: has anyone actually written
-about this corner. It runs three lanes here, and the third one is the one worth
-your time.
-
-Every figure below is read from a live constant or a stored record, and every
-one is checkable at a URL. Where a number moves, the reading date is named.
-
-**1. Press coverage, per corner, records first.** A corner page opens with the
-city's own collision and 311 counts, and press sits underneath as
-corroboration rather than as evidence. The search is `POST
-https://api.exa.ai/search` with `type: "neural"`, `category: "news"`, and page
-text pulled through the nested `contents.text` shape. Lead generation domains
-are excluded at the API rather than filtered afterwards, because law firms
-republish crash reports to farm clients and that is not coverage. Agency
-primary sources are separated out and tagged: an SFMTA project page is the
-record the reporting would be written about, so it can never satisfy the press
-lane in the Cred Check. Every headline renders with its outlet domain and
-publish date and links out, so any claim on the page can be checked in one
-click.
-
-Reading the stored rollup at 2026-08-20T17:16Z, this lane has press-checked
-**606 corners this period, found coverage at 570, and recorded 36 as searched
-and empty**, keeping **1,230 citations**. The 36 matter more than the 570: a
-lane that reports nothing when it found nothing is worth more than a lane that
-always fills.
-
-**2. The 2014 onward timeline.** For a corner worth the calls, one date-sliced
-search per year from `TIMELINE_FROM = 2014` to the current year, which is
-thirteen slices in 2026, run in parallel because thirteen sequential searches
-would cost most of a minute. That turns "this corner is dangerous" into a year by year
-count of how often it has been written about since 2014, which is a different
-and much harder claim to wave away.
-
-**3. `findSimilar` connections.** For each audited corner with a best article,
-`findSimilar` asks what else is being written in the same breath. Every
-crossing named in the related coverage goes through the same extractor and the
-same city index, and a surviving link is written to **both** corners, so the
-claim reads identically from either page. Connecting two corners is a stronger
-claim than naming one, so the connecting article must be dated and recent.
-Checked corner by corner against `/api/connections` on 2026-08-20, five of the
-23 audited corners carry a connection and eighteen carry none, which is the
-honest answer rather than a padded one.
-
-**4. The citywide watchlist: entity discovery, verified, and published with its
-failures.** Every lane above starts from a corner and asks what is written
-about it. This one runs the other way. **29 semantic sweeps** over a 90 day
-window, ten of them anchored to specific neighbourhoods and three restricted at
-the API to San Francisco outlets that write at corner resolution. Every
-crossing name in every result is extracted, and each candidate clears three
-hard bars: both names must be real San Francisco streets, checked against the
-2,219 name street index; the pair must be an exact match in the 7,355 crossing
-graded index; and the article must be about safety *at* that crossing rather
-than merely naming it.
-
-The accounting is published rather than summarised. The stored pass built
-2026-08-20T13:11Z reads **29 attempted, 7 completed, 22 failed**, and every one
-of the 22 is listed at [/watchlist](https://streetcred.thealexschroeder.workers.dev/watchlist)
-with its reason, which was "Too many subrequests by single Worker invocation".
-That failure was real and is now fixed at the schedule: the lane used to run as
-the last thing inside the daily audit and inherited a nearly spent subrequest
-budget, so it now has **its own cron trigger at 13:20 UTC and therefore its own
-budget**, with a ceiling of 40 searches a run against a set of 29. All 29 fit
-in one run. If the set ever outgrows the ceiling the lane rotates through it
-least recently run first and publishes each query's last run date, rather than
-silently truncating the way it did before. The first pass under the new
-schedule has not run at the time of writing, so the split above is still the
-old one; `/watchlist` will show the new one the morning after it fires.
-
-That pass read 101 articles, surfaced 5 corners, published 7 rejects and
-discarded 27 phrases that named no crossing in the city. The rejects are the
-interesting half: pairs of real streets with no crossing between them, streets
-that never meet, an article that named a corner but was not about safety there.
-
-**5. Spend, metered from Exa's own numbers.** Cost is recorded from the
-`costDollars` field on every Exa response rather than estimated from a price
-list. The period meter reads **$21.45 spent against a $65.00 ceiling** across
-**1,858 searches and 3,888 content pages**, all time $23.20, and the batch
-lanes reserve cents before they call and refuse past the cap. It is public at
-[/status](https://streetcred.thealexschroeder.workers.dev/status), not in a
-spreadsheet. The method behind all of it is at
-[/methodology](https://streetcred.thealexschroeder.workers.dev/methodology).
-
-This design publishes what it threw away because a discovery pipeline that
-shows only its hits is indistinguishable from a search box that got lucky, and
-the same is true of a budget that only reports what it meant to spend.
-
-## How Apify is used
-
-Apify is the resident voices lane: what people say about a corner in the places
-they actually say it, which is the one thing no government database records.
-The part worth your attention is that **nobody asks for these scrapes and
-nobody is present when they run**.
-
-**The site commissions its own scrapes, unattended.** When the 06:10 Pacific
-cron promotes a corner it starts both actors for that corner over the Apify
-API, writes down the run ids, and does not wait. An actor run takes minutes and
-a cron handler must not sit on one, so the *next* morning's run ingests
-whatever finished, scores it, and publishes what survives. A resident voices
-lane that only covers corners somebody scraped by hand before a demo covers two
-corners.
-
-**Two actors, and each needed a different trick.**
-
-[`compass/crawler-google-places`](https://apify.com/compass/crawler-google-places) for Google Maps reviews. An intersection is not
-a place: geocoding "16th and Mission" resolves to a road junction, which has no
-reviews attached, so the obvious query returns nothing. The working approach
-treats the corner as a **geographic circle of roughly 350m** and collects
-reviews from the real businesses and transit stops standing inside it. The
-corner gets a voice by borrowing the voices of everything on it.
-
-[`trudax/reddit-scraper-lite`](https://apify.com/trudax/reddit-scraper-lite) for Reddit. Driven by **explicit `startUrls`**
-rather than the actor's search builder, which in this configuration enqueued
-zero requests and returned an empty dataset. Pointing it at specific threads is
-less elegant and completely reliable.
-
-The two output shapes have nothing in common. Google Maps nests `reviews[]`
-with `text`, `stars` and `publishedAtDate`; Reddit returns flat records with
-`title`, `body` and `createdAt` and no rating at all. Both are flattened into
-one contract, `{source, stars, text, when}`. Reviewer names are dropped on
-purpose, quotes are truncated, and boilerplate is stripped.
-
-**The real funnel, from the stored record at 2026-08-23T13:10:10Z.** **17
-corners commissioned. 4 currently carry an account that clears the relevance
-filter. The other 13 are recorded as scraped and empty**, which is a result and
-not a gap: the corner page says so in those words, and the drafted letter for
-such a corner quotes no resident rather than inventing testimony. The four
-carrying live scraper output, one click each:
-[24th and Valencia](https://streetcred.thealexschroeder.workers.dev/c/24th-and-valencia),
-[4th and Ellis](https://streetcred.thealexschroeder.workers.dev/c/4th-and-ellis),
-[9th and Mission](https://streetcred.thealexschroeder.workers.dev/c/9th-and-mission),
-[Polk and Willow](https://streetcred.thealexschroeder.workers.dev/c/polk-and-willow).
-Every published quote carries a provenance chip naming the Apify actor that
-scraped it and the date it was scraped. Three more corners were commissioned on
-2026-08-23 and ingest on the next morning cycle.
-
-Those numbers went **down** rather than up, and that is the point. The ledger
-shows earlier ingests keeping 15 quotes across 9 corners; the filter was then
-tightened, every stored scrape was re-scored against the stricter rule, and the
-published count fell to 4. A review of a BART escalator is not testimony about
-a crossing. It is easier to ship the larger number and never look again.
-
-**Autonomous means budgeted, or it means nothing.** A hard ceiling of
-**`MONTHLY_ACTOR_RUN_CAP = 70` actor runs** is checked before anything starts,
-which sits just above two runs a morning and far below the credit. **54 of
-those 70 are used this month**, after an operator-authorized burst of two extra
-corners on 2026-08-23 that left the morning cron its full share through Aug 31.
-Every run is written to a public cost ledger from the number Apify itself
-reports: both actors are pay per event, the inputs cap at 12 places and 25
-Reddit results, a corner with both actors costs about **24 cents** measured
-over 25 settled corners, and the ledger stands at **$5.91 across 54 actor
-runs** against the provider's own cycle invoice of **$6.41 of $105**. Both
-figures sit side by side in the
-[Apify ledger block on /status](https://streetcred.thealexschroeder.workers.dev/status),
-which also states, in both directions, which one is reading high.
-An autonomous system spending real credit without a ledger is the thing nobody
-should ship.
-
-**The honest limit.** Reviews near a station skew toward escalators, cleanliness
-and policing rather than crossing conditions. That is why the filter is strict
-and why thirteen of seventeen corners show an empty lane. The fix is better
-targeting, not a looser filter.
-
-## How we used Gemini
-
-Gemini does two distinct jobs here, on two different models, and the first one is the reason this product exists.
-
-| Role | Model | Job |
-| --- | --- | --- |
-| Vision | `gemini-3.1-flash-image` | Reads the real Street View frame, returns it annotated with hazard zones and a legend. Also renders the proposed-fix visualization. |
-| Text | `gemini-3.7-flash` | Turns collisions, 311 counts, press headlines, resident quotes, and the audit findings into a letter to the correct District Supervisor, citing each source. |
-
-**Vision: the corner seen three ways.** Not a before and after pair. A three state narrative, observation to diagnosis to prescription:
-
-1. **Today.** The real Street View frame for the corner, fetched server side after the free metadata endpoint confirms coverage. Google attribution stays visible in the image.
-2. **Hazards.** The Today frame goes to `gemini-3.1-flash-image`, which reads the actual photograph and returns it annotated: red hatching over sub-standard or faded crosswalk markings, amber over vehicle turning conflict zones, plus a legend naming the intersection. The distinction that matters is that this is an **audit of a real photograph**, not an invented scene: the model is finding the hazards in a specific corner that exists, and the annotation is rendered onto that frame. The overlay marks the zones the model flags as high risk. It is zonal, not surveyed, and it does not measure anything.
-3. **Proposed fix.** The same Today frame, edited to hold everything constant (buildings, vehicles, people, sky, poles, signals, camera angle, lighting) while changing only the safety infrastructure: fresh asphalt, high visibility continental crosswalks, a green painted bike lane with white flex posts, and a concrete curb extension with plantings. Labeled on the page as an AI visualization of a proposed fix, never as a photograph of something that exists.
-
-Both derived states are generated in parallel, on demand, the first time a corner is opened, and stored in Cloudflare KV keyed by corner and state. A page never blocks on generation: the imagery lane returns `pending` immediately and the panel polls until the frames land, usually within ten seconds. Nothing regenerates for a corner that already has frames, which is what keeps a public, billed image model from being an open tap.
-
-The pipeline is not tuned to one corner. It was validated first on a completely different intersection, Telegraph Avenue and Durant Avenue in Berkeley, producing the same three states from the same code path. Any intersection with Street View coverage works, typed into the search box, with no code change.
-
-**Text: the ask.** `gemini-3.7-flash` receives the corner, the district, the Supervisor's name, the live collision and 311 counts, the top two Exa headlines with outlets, one resident quote, the hazards the visual audit named, and the costed fix with its grant program. It returns a letter under 220 words in plain civic English.
-
-The sentence only this product can write is the audit finding, and the whole discipline of the letter is in how much licence that finding gets. A separate structured audit pass looks at the Today frame and answers yes or no to each hazard in a fixed vocabulary. Each answer is then checked against the city's own records for the same corner, and the letter is told what it may say: a CONFIRMED hazard, seen in the photograph and corroborated by records, may be presented as documented; a REPORTED one belongs to the records rather than the photograph; a CANDIDATE is an observation the letter is explicitly forbidden to dress up as fact. The letter earlier in this project's life asserted one hardcoded audit sentence at every corner, including corners whose crosswalks are visibly in good condition. That is the failure this replaced.
-
-The letter renders as a draft with a copy button. **Nothing is ever sent to any official, and no email addresses appear anywhere in this product.**
-
-## Architecture
-
-One Cloudflare Worker, no build step, no framework.
-
-The tree below was written against `git ls-files` on 2026-08-20 rather than from memory. The version that stood here until 2026-08-19 was wrong in three ways and is worth naming, because it is the ordinary way a README rots: it omitted nineteen source files added after it was written, it pointed at `docs/` for the hero image that now lives in `assets/`, and it described `tools/` as holding two test files when it holds fourteen.
-
-```
-src/
-  index.js          router, every data lane, both cron handlers, health, graceful degradation
-  store.js          KV: corners, scores, imagery, budgets, cost ledgers, rate limits,
-                    queues, run manifests, press records, the audit log
-
-  page.js           one corner, as one HTML string, plus the CSS every other page imports
-  home.js           the city map and the scoreboard
-  city.js           the graded city, read from KV shards, plus the tier vocabulary
-  methodology.js    /methodology, the arithmetic and the limits in prose
-  watchlistpage.js  /watchlist, entries and rejects together
-  radarpage.js      /radar, the standing monitors and what they caught
-  status.js         /status, uptime, verifier incidents and the cost ledgers
-  changes.js        /changes, every stored grade movement
-  watchdog.js       /watchdog, what the autonomous agent decided and why
-
-  resolve.js        free text to a corner: normalizing, DataSF lookup, districts
-  score.js          the Danger Index, DataSF arithmetic only, no model
-  distribution.js   the frozen census, 8,254 values, dated and declared final
-  data.js           corner registry, Supervisor roster, 311 allow list, samples
-
-  press.js          entity discovery over citywide coverage: the watchlist builder
-  pressenrich.js    the frugal per-corner press check, one search, tier untouched
-  newsfilter.js     the press relevance filter, one copy, several callers
-  radar.js          standing Exa monitors and the webhook's filter
-  timeline.js       the Exa time machine, one date-bounded search per year since 2014
-  suggest.js        findSimilar to a related corner worth auditing next
-  voices.js         resident voices, commissioned through Apify and normalized
-
-  imagery.js        on-demand Street View and Gemini generation, never blocking a page
-  hazards.js        the structured audit pass and the deterministic corroboration rule
-  cred.js           four lanes to one verdict, no model
-  verify.js         the letter verifier: deterministic, and it can refuse to serve
-  impact.js         the projection engine over the CMF table, ranges only
-  manifest.js       what each tool actually did on this corner
-  agent.js          the Corner Watchdog's ingest boundary
-
-tools/    61 tracked files: 36 scripts, 14 test files, 8 recorded fixtures, 3 shared
-          modules in tools/lib/. `node --test tools/*.test.mjs`
-public/   20 tracked files: logos, wordmark, grade cards, the typeahead and map
-          scripts. Wrangler reports 24 because it counts the four subdirectories
-assets/   the README hero composite
-data/     committed sweep artifacts: city meta, twin slugs, the CMF table, precedents
-synth/    the hourly synthetic monitor, its own Worker
-specs/    handoff and working notes
-docs/     prose written alongside the code, including the full counts derivation
-```
-
-```mermaid
-flowchart LR
-  V["Visitor or crawler"] --> W
-  CRON1["Cron 13:10 UTC<br/>corner of the day, then press"] --> W
-  CRON2["Cron every 15 min<br/>press batch, 6 corners a tick"] --> W
-  HOOK["Exa Monitors<br/>push a detection"] -->|"POST /api/radar/hook/:secret"| W
-  SYNTH["synth/ hourly monitor<br/>service binding"] --> W
-
-  subgraph CFLARE["Cloudflare"]
-    W["Worker, src/index.js<br/>router, lanes, letter, verifier"]
-    KV[("KV STORE<br/>city shards, corners, scores, imagery,<br/>budgets, ledgers, queues, manifests")]
-    W <--> KV
-  end
-
-  W --> DSF["DataSF, keyless<br/>collisions ubvf-ztfx<br/>311 vw6y-z8j6<br/>intersections gmfx-8h6i"]
-  W --> EXA["Exa<br/>search, contents, findSimilar<br/>date-bounded, monitors"]
-  W --> APIFY["Apify<br/>google places reviews<br/>reddit threads"]
-  W --> GEM["Gemini<br/>3.1-flash-image: audit and fix<br/>3.7-flash: the letter"]
-  W --> GSV["Google<br/>Street View metadata and frames<br/>Static Maps"]
-```
-
-Every provider lane is optional at request time. A lane that fails answers with its labelled degraded state instead of an error, so a panel is never dead and a page never half renders.
-
-**Imagery lives in KV, not in the repo.** Generated frames are 700 to 830KB each and there is no reason to carry them in git. Every corner, precomputed or typed, serves its three states from KV through the edge cache on one code path.
-
-**Caching, in two layers.** An in-process `Map` sits inside the Worker isolate, and a Cloudflare edge cache (`caches.default`) sits in front of it. The second layer is the one that matters: Worker isolates are short lived and per-colo, so warming the in-process map does nothing for the next visitor, who usually lands on a cold isolate and pays the full upstream cost again. With the edge cache in place every lane on both corners returns in under 0.26s, and the letter went from about 7s to 0.16s.
-
-Two deliberate rules govern it. **Sample and empty payloads are never cached**, so a lane that failed once is retried on the next request rather than pinned in that state for an hour. And what goes back to the browser is always `no-store` while the internally cached copy carries `max-age`: fast internally, never stale externally, so a data correction ships and actually shows up. A `CACHE_VERSION` constant invalidates every cached payload at once when the numbers change.
-
-Adding a corner is one object in `CORNERS` plus one imagery run. What that object cannot do is paper over code that assumed one specific corner, which is what the second corner was for.
+The mechanics of how each provider lane runs — the retries, the filters, the honest-empty accounting — are in [`docs/EXA_USAGE.md`](docs/EXA_USAGE.md), [`docs/APIFY_USAGE.md`](docs/APIFY_USAGE.md), and [`docs/GEMINI_USAGE.md`](docs/GEMINI_USAGE.md). The full system diagram is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## The autonomous agent, end to end
 
@@ -390,60 +118,7 @@ Cloud that reads the city's data every morning, decides on its own whether anyth
 changed enough to act on, and posts what it decided here. Most mornings it decides to do
 nothing, and it posts those mornings too.
 
-```mermaid
-%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 45, "rankSpacing": 55, "padding": 14, "wrappingWidth": 460}}}%%
-flowchart TB
-
-    subgraph OBSERVER["Observer service &nbsp;&middot;&nbsp; Cloud Run, scales to zero"]
-        direction LR
-        SCHED["<b>Cloud Scheduler</b><br/>watchdog-daily-cycle<br/>07:00 America/Los_Angeles"]
-        DATASF["<b>DataSF</b><br/>311 and collisions<br/>keyless, read only"]
-        SWEEP["<b>Sweep</b><br/>diff each of 25 corners against<br/>the stored Firestore snapshot"]
-        REFLEX["<b>Reflex tier</b><br/>served today by <b>Gemma</b>, google/gemma-4-26b-a4b-it-maas<br/>on Vertex locations/global<br/><i>a call the shared pool refuses falls back to a rule,<br/>and the entry records which one decided it</i>"]
-        SCHED --> SWEEP
-        DATASF --> SWEEP
-        SWEEP --> REFLEX
-    end
-
-    subgraph ACTOR["The escalation path: Pub/Sub, then the Actor service on Cloud Run"]
-        direction LR
-        PS["<b>Pub/Sub</b><br/>topic <b>corner-deltas</b>, push subscription with OIDC<br/><i>the quiet corners stop here, and tier two<br/>is never built, called or billed</i>"]
-        JUDGE["<b>Judgment tier</b><br/>served today by an <b>ADK LlmAgent</b> on<br/><b>gemini-3.5-flash</b>, Vertex locations/global"]
-        TOOLS["<b>Five tools, exactly one call</b><br/>rescore &middot; regenerate_letter &middot; re_audit &middot; flag<br/><b>decline</b>, which is a signed decision, not a silence"]
-        PS --> JUDGE
-        JUDGE --> TOOLS
-    end
-
-    subgraph PUBLISH["The record, the boundary, and the public page"]
-        direction LR
-        FS[("<b>Firestore journal</b><br/>watchdog database, append only,<br/>declines and failed publishes included")]
-        INGEST{{"<b>Authenticated ingest</b><br/>POST /api/agent/report<br/><b>one bearer token, one direction</b><br/>the cloud writes in and reads nothing back"}}
-        GATE["<b>Validation gate</b><br/>six rejection classes, unknown tools refused,<br/>a claim the site cannot verify is turned away"]
-        DIARY["<b>Public diary and Activity Inspector</b><br/>/watchdog: every decision, every decline,<br/>every rejected ingest, each with its reason"]
-        FS --> INGEST
-        INGEST --> GATE
-        GATE --> DIARY
-    end
-
-    OBSERVER -->|"escalations only"| ACTOR
-    ACTOR -->|"decided, then journaled, then published"| PUBLISH
-
-    classDef source fill:#eef2f0,stroke:#5c6a6e,stroke-width:1.5px,color:#161d1f
-    classDef gcp fill:#f7ecdf,stroke:#a1571c,stroke-width:1.5px,color:#161d1f
-    classDef model fill:#e7efea,stroke:#2f5d50,stroke-width:2.5px,color:#161d1f
-    classDef boundary fill:#fbecec,stroke:#8c2f2f,stroke-width:2.5px,color:#161d1f
-    classDef edge fill:#eaf0f6,stroke:#2b4d73,stroke-width:1.5px,color:#161d1f
-
-    class DATASF source
-    class SCHED,PS,SWEEP,TOOLS,FS gcp
-    class REFLEX,JUDGE model
-    class INGEST boundary
-    class GATE,DIARY edge
-
-    style OBSERVER fill:#fdfaf6,stroke:#a1571c,stroke-width:2px,color:#a1571c
-    style ACTOR fill:#fdfaf6,stroke:#a1571c,stroke-width:2px,color:#a1571c
-    style PUBLISH fill:#fbfcfb,stroke:#5c6a6e,stroke-width:2px,color:#5c6a6e
-```
+The full escalation-path diagram is in [`docs/WATCHDOG_INTEGRATION.md`](docs/WATCHDOG_INTEGRATION.md).
 
 **StreetCred's job in that picture is the two blue boxes.** The ingest endpoint is
 authenticated with a single bearer token and traffic runs one way: the cloud writes in
@@ -462,44 +137,7 @@ refused: the agent claimed it had redrafted a letter and this site holds no lett
 that corner. That entry is still on the page, because a gate whose refusals are invisible
 is indistinguishable from no gate.
 
-## What the second corner exposed
-
-Generalizing from one corner to two is where a demo either holds up or quietly starts lying. Three bugs only became visible under a second corner, and each one had been silently wrong the whole time.
-
-**The district boundary bug.** The Supervisor lookup took the first row DataSF happened to return and read its `supervisor_district`. That works until the corner sits on a district line, and major streets very often are one. Within 150 meters of 6th and Market, DataSF holds 242 crash records in District 6 and 114 in District 5, so the answer depended entirely on row order. The lookup is now a grouped majority query, and the corner's configured district is authoritative with the majority as corroboration and fallback. A wrong answer here does not look like a bug, it looks like a letter confidently addressed to the wrong elected official.
-
-**Hardcoded Exa relevance tokens.** The press filter tested titles against the literal strings `16th`, `mission`, and `sixteenth`. Every result for the second corner failed that test, so the lane discarded its entire result set and fell through to sample. Tokens now derive from the corner name.
-
-**The sample quote fallback.** The last-resort resident quotes named 16th and Mission in their text. Under any other corner they would have been not merely generic but flatly, specifically wrong, and they would have rendered as testimony. That fallback is gone. A corner with no usable scrape now shows an empty state that says so.
-
-**The related landmine, for anyone extending this:** `supervisor_district` comes back as `"11"` from the collisions dataset and `"9.00000"` from 311. Always `parseInt`.
-
-**An honest empty state, live right now.** The Reddit scrape for 6th and Market returned 40 items and nothing that was actually about the street. That corner's voices panel says no on-topic resident accounts were found, and its letter quotes no resident at all. That is the correct output, not a gap waiting to be filled.
-
-**Data corrections shipped at the same time.** The 311 filter had been substring matching on "Street", which swept in Street and Sidewalk Cleaning, a 3.4M row sanitation queue. That single bug inflated this corner from roughly 355 street-condition reports to 8,546. It is now an explicit allow list of service types. The collision count had also been unbounded back to 2005, describing two decades of a corner that has since been rebuilt; it is now bounded to five years and shows the fatal count alongside it.
-
-## Any corner
-
-Type two cross streets and the whole page rebuilds around them. The registry is now a fast path, not the whole product.
-
-**Geocoding uses the city's own data, not a general geocoder.** San Francisco publishes `gmfx-8h6i`, 18,546 rows, keyless and unthrottled. Those rows are not 18,546 intersections. Its shape is not obvious: it stores **one row per street leg**, so an intersection is two or three rows sharing a `cnn` and an identical point, and grouping them gives the 8,254 crossings the census is built from. Matching a typed pair is therefore a self-join, expressed as one grouped query with `count(distinct st_name) > 1`. The dataset agrees with the hand-configured 16th and Mission coordinates to about two meters. Nominatim stays as a fallback with a real User-Agent and an SF viewbox, but it cannot resolve intersection-style queries at all, so in practice DataSF answers or nobody does.
-
-**The quirk that would have broken it:** single-digit ordinals are zero-padded. `01ST`, `02ND`, `09TH` exist; `1ST`, `2ND`, `9TH` return nothing. Without that, "6th and Market" silently fails to resolve.
-
-**One canonical corner per intersection.** Input is lowercased, punctuation-stripped, split on `and`, `&`, `/`, `+`, `at` or `x`, relieved of its street type suffix, and spelled ordinals become numeric. The two street names are then sorted alphabetically to build the slug, so "24th and Valencia" and "Valencia and 24th" are one cached corner that is geocoded once and generates imagery once. The two precomputed corners keep their original slugs as aliases, so no existing link breaks.
-
-**Rejections say which kind of miss it was.** Both streets real but never crossing is a different answer from a misspelling, which is different again from a corner in another city. Telegraph and Bancroft is the interesting case: San Francisco has Telegraph Place on Telegraph Hill and Bancroft Avenue in the Bayview, six miles apart, so the honest answer is that both are SF streets that do not intersect, not that the corner is out of town.
-
-**Imagery never blocks the page.** `/api/imagery` answers immediately with the Street View frame and `status: "pending"`, the two Gemini states generate in the background, and the page polls every 3 seconds up to a 90 second ceiling, enabling each toggle button as its state lands. Coverage is confirmed first against the free Street View metadata endpoint, so a corner with no photograph says so and still renders every records lane. Precomputed corners return no status field at all and skip the entire mechanism.
-
-**Spending is bounded in four places**, because a public URL that triggers paid image generation is a standing invitation:
-
-- a query that does not resolve to a real SF intersection spends nothing, and nonsense never leaves the Worker
-- resolved corners are cached in KV with no TTL, so a corner is geocoded once and generated once
-- a global daily generation cap, currently 25 corners, after which new corners still render every records lane and the photograph with an honest at-capacity label
-- per-IP rate limiting on the resolve endpoint, 20 lookups per 10 minutes
-
-A corner whose records lanes all come back empty never generates imagery either, since that is a strong signal the resolve was wrong.
+Two bug write-ups from generalizing past one hardcoded corner are in [`docs/SECOND_CORNER.md`](docs/SECOND_CORNER.md) (the district-boundary bug, the hardcoded relevance tokens, the sample-quote fallback) and [`docs/ANY_CORNER.md`](docs/ANY_CORNER.md) (how a typed pair of cross streets resolves against DataSF's own intersection table).
 
 ## The scoreboard
 
@@ -517,19 +155,7 @@ all within 80 meters, collisions over five years, filtered 311 over twelve month
 
 Two radii live in this product and they are not the same claim. The Danger Index counts within **80 meters** (`SCORE_RADIUS` in [`src/score.js`](src/score.js)); the `/api/stats` lane counts within **150 meters**. The same corner therefore has two honest counts: at 6th and Mission, `ubvf-ztfx` returns 9 severe injuries within 80m over five years and 11 within 150m over the same five years, checked against data.sfgov.org on 2026-08-20. The gap is the radius and nothing else. The full derivation of every count this product publishes is in [`docs/COUNTS.md`](docs/COUNTS.md).
 
-The first version of this weighted each 311 report at half a point with no ceiling, and that was backwards. A corner with 88 street-condition reports collected 44 points of paperwork against 10 points for a death, so the complaint count, not the collision record, was deciding grades. The maintenance signal is worth keeping, because a corner nobody reports is a corner nobody is watching, but it is capped at 8 points, which is less than one fatality.
-
-**The scale is a percentile, not a ratio.** Reported harm is heavy tailed: half of San Francisco's intersections sit under 3.1 points and the worst carries 196.9, so dividing by any fixed maximum spends most of the range on corners that do not exist and pins every busy corner at 100. The yardstick is a **census, not a sample**: `tools/sweep.mjs` scores every one of the **8,254 real crossings** in `gmfx-8h6i` with this same formula (the local counter is verified to match production's `within_circle` counts exactly before anything is written) and the full sorted distribution is frozen in `src/distribution.js`, declared final and dated. It replaced an earlier 600-sample estimate that agreed with it to within a point or two, both medians 3.1. A corner's index is its position in that distribution, so **an F literally means worse than 93 percent of San Francisco intersections**: A below the 40th percentile, B to the 64th, C to the 79th, D to the 92nd, F at 93 and above. The index is capped at 99 because no corner is worse than itself.
-
-**Three populations, three numbers, and they are not interchangeable.** This file used to use them loosely. They are:
-
-- **8,254 crossings** is the census. `gmfx-8h6i` returns 18,546 rows, one per street leg; grouping them into places gives 8,254 distinct crossings, and `tools/sweep.mjs` scores every one. That full sorted array is what `src/distribution.js` freezes, and 629 of the 8,254 score exactly zero. This is the yardstick a grade is measured against, and nothing else.
-- **7,353 corners** is what the sweep writes to `sweep-results.json`: the crossings with nonzero points, after collapsing 272 cases where two `cnn` rows reduce to the same pair of street names, because a crossing cut into quadrants is one corner to the person standing on it. Source comments in `src/city.js`, `src/store.js` and `tools/build_city_shards.mjs` still use this number to describe the published city, which is two short of what the site actually publishes. Those comments are wrong and are on the list to correct.
-- **7,355 intersections** is what the site publishes and what the masthead reports. `tools/build_city_shards.mjs` takes the 7,353, adds 4 rows for the two slugs that are genuinely two different places (Funston and Lincoln is both a Presidio crossing and a Sunset crossing, 4.1km apart), and marks the 2 bare slugs as aliases so they resolve without being counted twice. 7,353 plus 4 minus 2 is 7,355, and `data/city/meta.json` records `totalScored: 7355` against `censusSize: 8254`. Reproduced here on 2026-08-20 by rerunning that arithmetic over the committed artifacts.
-
-**Every intersection in the city has a grade, and only some have an audit.** The same sweep that froze the census also publishes it: those 7,355 corners are packed into 71 KV shards keyed by the first character of the slug, so any corner in San Francisco resolves from one KV read with no geocoding and no external call at all, and renders a full page with its grade, its index, its severity mix and its provenance links. Three tiers, named the same way everywhere: **AUDITED** (every lane checked), **ENRICHED** (records and index, no visual audit yet), **SCORED** (graded against the census, no lane checked beyond the official record). A SCORED grade uses the identical formula and the identical census as an AUDITED one; the difference is how many evidence lanes have been checked, never the math. Swept numbers carry the sweep date wherever they appear, and any corner the cron promotes switches to live numbers from that moment. See "How the whole city is graded" on [/methodology](https://streetcred.thealexschroeder.workers.dev/methodology).
-
-Frozen means frozen. The array must never float with whatever corners happen to be loaded, because a corner graded B on Tuesday that becomes a C on Friday with nothing changed on the ground is a grade nobody can cite, and people screenshot these. Rerunning the sweep reproduces the census from the same public datasets. One caveat travels with the number everywhere it appears, on the page rather than buried here: there is no exposure normalization, so the index ranks reported harm, not risk per crossing.
+The weighting bug that was fixed, the percentile scale, and the three-populations breakdown (8,254 census vs. 7,353 nonzero vs. 7,355 published) are in [`docs/SCOREBOARD.md`](docs/SCOREBOARD.md).
 
 **Corroboration** is what makes the audit worth anything, and the mechanism is rail 4 of [How the honesty rails work](#how-the-honesty-rails-work), below. What it caught is the point here, because it caught this product being wrong. The letter used to assert, at every corner, that "an automated visual audit identified sub-standard, faded crosswalk markings and vehicle turning conflict zones." It was a hardcoded sentence, not an audit result, and this README used to call it the strongest and most checkable claim in the letter. Asked to actually look, the model reports that 16th and Mission's markings are **not** faded, which matches the bright continental striping plainly visible in the screenshot at the top of this file. The product was making a specific, checkable, false claim to a named elected official. The letter is now built from the labels: CONFIRMED may be stated as documented, REPORTED is attributed to the record rather than the photograph, and CANDIDATE is an observation the letter is instructed never to present as fact.
 
@@ -565,17 +191,7 @@ The tools' outputs are all over this page. The tools themselves were invisible. 
 
 There is a fifth, and it is the one that currently shows nothing. `findSimilar` on the worst corner's best headline looks for a related crossing worth auditing next, then checks every candidate against the city's intersection table before offering it. Right now the coverage related to a fatality at 16th and Mission is entirely citywide, so no candidate survives and the homepage renders nothing rather than a suggestion it cannot stand behind. `/api/suggest` returns the reason.
 
-## Sharing and the city view
-
-Corners live at `/c/{slug}`. The older `?x=` form redirects rather than dying, because links already exist in the wild.
-
-Open Graph and Twitter tags render server side carrying the real index and the real verdict, and they read only what is already cached: a crawler can never trigger a score, a corroboration pass, or a paid image generation just by fetching a page.
-
-The 1200x630 share card is built by `tools/make_og.py` rather than in the Worker, because a Worker has no image library and the alternative was shipping a WASM codec to draw two lines of text. It composites on the **unedited** Street View frame, never the hazard overlay and never the generated fix, since those are modified Street View imagery and pushing them out as social preview assets is the redistribution question the risk review flagged as unsettled. The frame is cropped from the top so Google's watermark stays visible in the finished card.
-
-**The board needs a bottom, not just a top.** The first twenty corners warmed were all drawn from the Vision Zero High Injury Network, which is the correct list to start from and the wrong list to stop at: every one of them lands above the 80th percentile, so the whole board read D and F and the scale looked broken from the outside while it was working exactly as designed. Three ordinary residential intersections in the Sunset and the Richmond were warmed to prove the range, under the identical formula with no special casing: 40th and Cabrillo scores 8 and grades A, 12th and Moraga scores 18 and grades A, 31st and Lawton scores 41 and grades B. They are warmed for their records only. Their pages show the real Street View photograph and say plainly that the visual audit was not generated, because two billed image generations per corner would buy nothing that argument needs.
-
-The homepage is one Static Maps image with every warmed corner drawn into it as a pin colored by grade, plus transparent anchors laid over it at positions computed with the same Web Mercator projection the server used to request the image. That buys a clickable map for the cost of a single image request and no map SDK at all. `tools/pin.test.mjs` checks the projection, including that north is up and east is right, which is the classic way to get this exactly backwards.
+How corners share to social (the Open Graph card, the homepage's Static Maps composite) is in [`docs/SHARING.md`](docs/SHARING.md).
 
 ## Demo video
 
@@ -638,3 +254,22 @@ status page says so rather than the number quietly improving.
 - The press watchlist attempts 29 citywide searches each morning and most of them do not run. It executes last inside the daily-audit cron invocation, so it inherits an already-spent subrequest budget and the rest fail with "Too many subrequests by single Worker invocation". On the 2026-08-19 pass, 8 of 29 completed. Every failure is stored with its reason and the count is in the generated table above, but the lane is seeing a fraction of the coverage it asks for and the fix is scheduling, not searching harder.
 - The Cred Check verdict is a count of lanes, not a weighting of them. Four weak agreements read the same as four strong ones.
 - The resident voices lane only exists for corners that were scraped ahead of time. A typed corner shows the honest empty state, because an Apify actor run takes minutes and a page load cannot wait on one.
+
+## Deeper docs
+
+Cut from this README to keep it readable, not to bury it. Each file below keeps the words it had here.
+
+| | |
+|---|---|
+| [`docs/EXA_USAGE.md`](docs/EXA_USAGE.md) | The three Exa lanes in full: press-per-corner, the 2014-onward timeline, `findSimilar`, the citywide watchlist sweep, and the spend meter |
+| [`docs/EXA_INTEGRATION.md`](docs/EXA_INTEGRATION.md) | A judge-facing, byte-level proof of the Exa lane, with `file:line` citations |
+| [`docs/APIFY_USAGE.md`](docs/APIFY_USAGE.md) | The resident-voices lane: the two actors, the unattended commission-and-ingest cycle, the budget ceiling |
+| [`docs/GEMINI_USAGE.md`](docs/GEMINI_USAGE.md) | The vision and text jobs, the three-state imagery pipeline, and how the letter is bound to CONFIRMED/REPORTED/CANDIDATE |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The full file tree, the system diagram, and the two-layer cache |
+| [`docs/WATCHDOG_INTEGRATION.md`](docs/WATCHDOG_INTEGRATION.md) | The Corner Watchdog escalation-path diagram: Observer, Actor, and the publish boundary |
+| [`docs/SECOND_CORNER.md`](docs/SECOND_CORNER.md) | Three bugs that only became visible under a second corner |
+| [`docs/ANY_CORNER.md`](docs/ANY_CORNER.md) | How a typed pair of cross streets resolves against DataSF's own intersection table |
+| [`docs/SCOREBOARD.md`](docs/SCOREBOARD.md) | The weighting bug that was fixed, the percentile scale, and the three-populations breakdown |
+| [`docs/SHARING.md`](docs/SHARING.md) | Open Graph cards, the share image, and how the homepage map is built from one Static Maps request |
+| [`docs/COUNTS.md`](docs/COUNTS.md) | The derivation of every count this product displays |
+| [`docs/ARCHITECTURE_DECISIONS.md`](docs/ARCHITECTURE_DECISIONS.md) | A dated decision log reconstructed from commits and specs |
