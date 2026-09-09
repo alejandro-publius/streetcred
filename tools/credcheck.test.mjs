@@ -22,7 +22,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { credCheck, isStreetQuote } from "../src/cred.js";
+import { credCheck, isStreetQuote, isReassuring } from "../src/cred.js";
 
 test("a strong official source (a fatal collision) closes the records lane", () => {
   const out = credCheck({
@@ -155,4 +155,34 @@ test("a strong street word alone, no weak word needed, is a street claim", () =>
 
 test("text with neither list is not a street claim", () => {
   assert.equal(isStreetQuote("Great burrito, friendly staff, would come back."), false);
+});
+
+// ------------------------------------------------- a source can't contradict
+
+test("a quote reassuring readers the crossing is safe does not count as street testimony", () => {
+  // Topically on-topic (it names the crossing and drivers) but it says the
+  // opposite of the claim the resident lane exists to corroborate, so it must
+  // not be able to raise the Cred Check the way a complaint would.
+  assert.equal(
+    isStreetQuote("This crossing is very safe, drivers are always careful and I've never had an issue here."),
+    false,
+  );
+  assert.equal(isReassuring("Drivers always stop, it's a safe intersection."), true);
+});
+
+test("a reassuring quote does not open the Cred Check's resident lane", () => {
+  const out = credCheck({
+    stats: { crashes: 0, reports311: 0 },
+    news: { items: [] },
+    voices: { items: [{ text: "I cross here every day and it feels perfectly safe.", source: "google_maps" }] },
+    hazards: { items: [] },
+  });
+  assert.equal(out.lanes.find((l) => l.key === "voices").hit, false);
+});
+
+test("negating the reassurance ('not safe') is still a complaint, not reassurance", () => {
+  // The guard must catch explicit reassurance without swallowing an ordinary
+  // complaint that happens to use the word "safe" in its negated form.
+  assert.equal(isReassuring("It is not safe to cross here, drivers never yield."), false);
+  assert.equal(isStreetQuote("It is not safe to cross here, drivers never yield."), true);
 });

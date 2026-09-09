@@ -62,6 +62,24 @@ test("a resident sentence only when a quote is actually about the street", () =>
   assert.doesNotMatch(onTopic, /Do not quote or invent any resident testimony/);
 });
 
+test("a quote that reassures rather than complains is never put in the letter's mouth", () => {
+  // ONTOPIC alone only tests whether a quote names the street, not which way
+  // it points: "drivers are always careful at this crossing" matches it as
+  // well as a complaint would. Without the reassurance guard this would have
+  // been selected and quoted verbatim in a letter arguing the same corner
+  // needs a safety fix, citing a resident who just said it doesn't.
+  const reassuring = buildLetterPrompt(
+    corner(),
+    ctx({
+      voices: {
+        items: [{ text: "This crossing is very safe, drivers are always careful and I've never had an issue here." }],
+      },
+    }),
+  ).prompt;
+  assert.doesNotMatch(reassuring, /A resident said:/);
+  assert.match(reassuring, /Do not quote or invent any resident testimony/);
+});
+
 test("no press sentence when no citations exist, and an explicit prohibition instead", () => {
   const { prompt } = buildLetterPrompt(corner(), ctx({ news: { items: [] } }));
   assert.match(prompt, /No press coverage was found for this corner\. Do not cite or invent any news reporting/);
